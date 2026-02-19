@@ -1,0 +1,196 @@
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+    <meta name="theme-color" content="#16171D" />
+    
+    <!-- PWA / iOS Meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="KILANI Reporter" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- Icons (SVG Data URIs for immediate availability) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%2316171D'/%3E%3Cpath d='M140 100 L220 100 L220 230 L340 100 L440 100 L290 260 L450 412 L350 412 L220 290 L220 412 L140 412 Z' fill='%23F5C249'/%3E%3C/svg%3E" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='0' fill='%2316171D'/%3E%3Cpath d='M140 100 L220 100 L220 230 L340 100 L440 100 L290 260 L450 412 L350 412 L220 290 L220 412 L140 412 Z' fill='%23F5C249'/%3E%3C/svg%3E" />
+    
+    <link rel="manifest" href="/manifest.json" />
+
+    <title>KILANI Diamond Reporter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              lux: {
+                black: '#16171D',    // Black Russian
+                surface: '#1F2128',  // Card Surface
+                border: '#2D313A',   // Border
+                gold: '#F5C249',     // Fox Yellow
+                cream: '#FFFFFF',
+                input: 'rgba(255,255,255,0.03)',
+              },
+              zinc: {
+                800: '#2D313A',
+                900: '#1F2128',
+                950: '#16171D',
+              }
+            },
+            fontFamily: {
+              sans: ['Poppins', '-apple-system', 'sans-serif'],
+              serif: ['Playfair Display', 'serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            borderRadius: {
+              'xl': '1rem',
+              '2xl': '1.25rem',
+              '3xl': '2rem', // Increased for vitreous look
+            },
+            boxShadow: {
+              'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+              'glow': '0 0 15px rgba(245, 194, 73, 0.15)',
+              'glow-hover': '0 0 25px rgba(245, 194, 73, 0.3)',
+              'subtle': '0 2px 10px rgba(0,0,0,0.1)',
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+    
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+        --sar: env(safe-area-inset-right);
+      }
+
+      body {
+        -webkit-font-smoothing: antialiased;
+        background-color: #16171D;
+        font-family: 'Poppins', sans-serif;
+        color: #e4e4e7;
+        overflow: hidden; /* Prevent body scroll, handle in root */
+        overscroll-behavior-y: none; /* Prevent iOS bounce */
+        /* Support safe areas for background color */
+        padding-top: var(--sat);
+        padding-bottom: var(--sab);
+        padding-left: var(--sal);
+        padding-right: var(--sar);
+      }
+      
+      .tabular-nums { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+      
+      /* Vitreous Background System */
+      .app-background {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background: radial-gradient(circle at 50% 0%, #1c1e26 0%, #16171D 80%);
+        overflow: hidden;
+      }
+
+      .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        opacity: 0.15;
+        animation: floatOrb 20s infinite alternate ease-in-out;
+      }
+
+      .orb-1 {
+        top: -10%;
+        left: -10%;
+        width: 600px;
+        height: 600px;
+        background: #F5C249;
+        animation-delay: 0s;
+      }
+
+      .orb-2 {
+        bottom: -10%;
+        right: -10%;
+        width: 500px;
+        height: 500px;
+        background: #4f46e5; /* Indigo */
+        animation-delay: -5s;
+      }
+
+      .noise-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        opacity: 0.03;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      }
+
+      @keyframes floatOrb {
+        0% { transform: translate(0, 0) scale(1); }
+        50% { transform: translate(30px, 50px) scale(1.1); }
+        100% { transform: translate(-20px, 20px) scale(0.9); }
+      }
+
+      @media (max-width: 768px) {
+        .orb { animation: none; opacity: 0.1; }
+        .noise-overlay { opacity: 0.02; }
+      }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+      
+      /* Safe Area Utilities */
+      .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+      .safe-pt { padding-top: env(safe-area-inset-top); }
+
+      /* Animation Utilities */
+      .animate-enter {
+        animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      
+      @keyframes slideUpFade {
+        from { opacity: 0; transform: translateY(20px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+    </style>
+    <!-- Polyfill for Import Maps (Critical for iOS 15 / Safari < 16.4) -->
+    <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+    "recharts": "https://esm.sh/recharts@2.12.2",
+    "react": "https://esm.sh/react@18.3.1",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@18.3.1,react-dom@18.3.1",
+    "@emailjs/browser": "https://esm.sh/@emailjs/browser@3.11.0",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "firebase/": "https://esm.sh/firebase@^12.9.0/"
+  }
+}
+</script>
+</head>
+  <body class="h-screen overflow-hidden text-[15px] leading-relaxed selection:bg-lux-gold selection:text-black">
+    <div class="app-background">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="noise-overlay"></div>
+    </div>
+    <div id="root" class="h-full relative z-10"></div>
+  </body>
+</html>
