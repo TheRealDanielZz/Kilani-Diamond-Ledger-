@@ -87,8 +87,6 @@ const InventoryPage: React.FC = () => {
   const [inlineCodeValues, setInlineCodeValues] = useState<{ [key: string]: string }>({});
   const [inlineNotesValues, setInlineNotesValues] = useState<{ [key: string]: string }>({});
   const [actionHistory, setActionHistory] = useState<{ id: string; prevData: Partial<Diamond> }[]>([]);
-  const [meleeActionHistory, setMeleeActionHistory] = useState<{ specId: string; prevPcs: number }[]>([]);
-  const [inlineMeleePcsValues, setInlineMeleePcsValues] = useState<{ [key: string]: string }>({});
 
   // Inline Operations
   const toggleSoldStatus = async (diamondId: string, currentStatus: string) => {
@@ -352,24 +350,9 @@ const InventoryPage: React.FC = () => {
     }
   }, [selectedLocation]);
 
-  // Melee inline quick edit
-  const handleMeleeQuickAdjust = (specId: string, currentPcs: number, delta: number) => {
-    const newPcs = Math.max(0, currentPcs + delta);
-    setMeleeActionHistory(prev => [...prev, { specId, prevPcs: currentPcs }]);
-    setInlineMeleePcsValues(prev => ({ ...prev, [specId]: newPcs.toString() }));
-    store.editStock(specId, newPcs, store.getCurrentUser()?.id || 'unknown', `Quick adjust: ${delta > 0 ? '+' : ''}${delta} pcs`);
-    showToast(`Stock ${delta > 0 ? 'increased' : 'decreased'} by ${Math.abs(delta)} pcs`);
-  };
-
-  const handleMeleeSetPcs = (specId: string, currentPcs: number, newPcsStr: string) => {
-    const newPcs = parseInt(newPcsStr);
-    if (isNaN(newPcs) || newPcs < 0 || newPcs === currentPcs) return;
-    setMeleeActionHistory(prev => [...prev, { specId, prevPcs: currentPcs }]);
-    store.editStock(specId, newPcs, store.getCurrentUser()?.id || 'unknown', `Inline set: ${currentPcs} → ${newPcs} pcs`);
-    showToast(`Stock updated: ${currentPcs} → ${newPcs} pcs`);
-  };
-
-  // Global Keyboard listener for Command+Z / Ctrl+Z undo action
+  // Global Keyboard listener for Command+Z / Ctrl+Z undo action (certified
+  // diamonds only). Melee stock is no longer directly editable — corrections
+  // go through the audited manager-only Inventory Correction workflow.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdZ = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z';
@@ -377,29 +360,22 @@ const InventoryPage: React.FC = () => {
         // Only trigger custom undo if NOT typing inside an active input element
         const activeEl = document.activeElement;
         const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true');
-        
+
         if (isInput) return; // Allow default text field undo behavior
-        
-        // Try diamond undo first, then melee undo
+
         if (actionHistory.length > 0) {
           e.preventDefault();
           const lastAction = actionHistory[actionHistory.length - 1];
           setActionHistory(prev => prev.slice(0, -1));
           store.updateDiamond(lastAction.id, lastAction.prevData);
           showToast("Undone last diamond adjustment");
-        } else if (meleeActionHistory.length > 0) {
-          e.preventDefault();
-          const lastMelee = meleeActionHistory[meleeActionHistory.length - 1];
-          setMeleeActionHistory(prev => prev.slice(0, -1));
-          store.editStock(lastMelee.specId, lastMelee.prevPcs, store.getCurrentUser()?.id || 'unknown', 'Undo: reverted to previous count');
-          showToast("Undone last melee stock adjustment");
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [actionHistory, meleeActionHistory]);
+  }, [actionHistory]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -430,9 +406,12 @@ const InventoryPage: React.FC = () => {
   const [brokenPcs, setBrokenPcs] = useState('');
   const [brokenSpec, setBrokenSpec] = useState('');
   
-  // Stock Edit Modal
-  const [editingStock, setEditingStock] = useState<string | null>(null); 
+  // Inventory Correction Modal (manager-only; replaces Quick Stock Adjustment)
+  const isManager = currentUser?.role === 'Manager';
+  const [editingStock, setEditingStock] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<'PCS' | 'WEIGHT'>('PCS');
   const [editPcs, setEditPcs] = useState<string>('');
+  const [editCt, setEditCt] = useState<string>('');
   const [editReason, setEditReason] = useState('');
 
   // Diamond Edit Modal State
@@ -523,76 +502,159 @@ const InventoryPage: React.FC = () => {
 
   const getCurrentUserId = () => store.getCurrentUser()?.id || 'unknown';
 
-  const handleSubmitShipment = () => {
-    const validLines = shipmentLines.filter(l => l.ct > 0); 
+  // Duplicate-submit guards for Add Stock / Breakage (double-click, retries).
+  const [shipmentSubmitting, setShipmentSubmitting] = useState(false);
+  const [breakageSubmitting, setBreakageSubmitting] = useState(false);
+
+  const handleSubmitShipment = async () => {
+    const validLines = shipmentLines.filter(l => l.ct > 0);
     if (validLines.length === 0) return;
-    
+    if (shipmentSubmitting) return;
+
     const isQuickAdd = !supplier && !invoice;
 
-    store.createInventoryMovement({
-      type: InventoryMovementType.SHIPMENT_IN,
-      createdById: getCurrentUserId(),
-      supplier: supplier || 'Internal',
-      invoiceNo: invoice || 'Quick Add',
-      notes: isQuickAdd 
-        ? `Manual Stock Add (${entryMode === 'WEIGHT' ? 'Weight' : 'Pcs'})`
-        : `Shipment from ${supplier} (${entryMode === 'WEIGHT' ? 'By Weight' : 'By Pieces'})`,
-      lines: validLines.map(l => ({
-        specId: l.specId,
-        pcs: l.pcs > 0 ? l.pcs : undefined,
-        ct: l.ct,
-        costPerCtUsd: l.cost
-      })),
-      location: selectedLocation
-    });
-
-    showToast("Stock Added Successfully");
-    setShipmentLines([]);
-    setSupplier('');
-    setInvoice('');
-    setActiveTab('stock');
+    setShipmentSubmitting(true);
+    try {
+      await store.createInventoryMovement({
+        type: InventoryMovementType.SHIPMENT_IN,
+        createdById: getCurrentUserId(),
+        // Weight mode: entered carat weight is authoritative and preserved exactly.
+        // Pieces mode: carats are re-derived full-precision from the snapshot.
+        weightAuthoritative: entryMode === 'WEIGHT',
+        supplier: supplier || 'Internal',
+        invoiceNo: invoice || 'Quick Add',
+        notes: isQuickAdd
+          ? `Manual Stock Add (${entryMode === 'WEIGHT' ? 'Weight' : 'Pcs'})`
+          : `Shipment from ${supplier} (${entryMode === 'WEIGHT' ? 'By Weight' : 'By Pieces'})`,
+        lines: validLines.map(l => ({
+          specId: l.specId,
+          pcs: l.pcs > 0 ? l.pcs : undefined,
+          ct: l.ct,
+          costPerCtUsd: l.cost
+        })),
+        location: selectedLocation
+      });
+      showToast("Stock Added Successfully");
+      setShipmentLines([]);
+      setSupplier('');
+      setInvoice('');
+      setActiveTab('stock');
+    } finally {
+      setShipmentSubmitting(false);
+    }
   };
 
-  const handleSubmitBreakage = () => {
+  const handleSubmitBreakage = async () => {
      const ctVal = parseFloat(brokenCt);
      const pcsVal = parseInt(brokenPcs) || 0;
 
      if (!brokenCt || isNaN(ctVal) || ctVal <= 0) return alert("Valid carat weight required.");
      if (!brokenNote) return alert("Reason is required.");
+     if (breakageSubmitting) return;
 
-     store.createInventoryMovement({
-        type: InventoryMovementType.BROKEN_OUT,
-        createdById: getCurrentUserId(),
-        referenceProjectId: brokenProject || undefined,
-        notes: brokenNote,
-        lines: [{
-           specId: brokenSpec || undefined,
-           pcs: pcsVal > 0 ? pcsVal : undefined,
-           ct: ctVal
-        }],
-        location: selectedLocation
-     });
-
-     showToast("Breakage Recorded");
-     setBrokenCt('');
-     setBrokenPcs('');
-     setBrokenSpec('');
-     setBrokenProject('');
-     setBrokenNote('');
-     setActiveTab('stock');
+     setBreakageSubmitting(true);
+     try {
+       await store.createInventoryMovement({
+          type: InventoryMovementType.BROKEN_OUT,
+          createdById: getCurrentUserId(),
+          weightAuthoritative: true, // breakage is captured by weight
+          referenceProjectId: brokenProject || undefined,
+          notes: brokenNote,
+          lines: [{
+             specId: brokenSpec || undefined,
+             pcs: pcsVal > 0 ? pcsVal : undefined,
+             ct: ctVal
+          }],
+          location: selectedLocation
+       });
+       showToast("Breakage Recorded");
+       setBrokenCt('');
+       setBrokenPcs('');
+       setBrokenSpec('');
+       setBrokenProject('');
+       setBrokenNote('');
+       setActiveTab('stock');
+     } finally {
+       setBreakageSubmitting(false);
+     }
   };
 
-  const handleStockEdit = () => {
-    if (editingStock) {
-       const qty = parseInt(editPcs);
-       if (isNaN(qty)) {
-          showToast("Please enter a valid quantity");
-          return;
-       }
+  // Guards against duplicate submits from double-clicks / rapid retries.
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
 
-       store.editStock(editingStock, qty, getCurrentUserId(), editReason);
-       showToast("Stock Adjusted Successfully");
-       setEditingStock(null);
+  // Manager-only reconciliation audit
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditResult, setAuditResult] = useState<any>(null);
+  const [auditBusy, setAuditBusy] = useState(false);
+
+  const runAudit = () => {
+    setAuditResult(store.getInventoryAudit(['Melee']));
+    setShowAudit(true);
+  };
+  const runAutoRepair = async () => {
+    if (auditBusy) return;
+    setAuditBusy(true);
+    try {
+      const res = await store.reconcileInventory(getCurrentUserId(), { autoRepair: true, locations: ['Melee'] });
+      setAuditResult(store.getInventoryAudit(['Melee']));
+      showToast(`Reconciliation complete — ${res.autoRepaired.length} auto-repaired, ${res.needsManagerReview.length} need review`);
+    } catch (err: any) {
+      showToast(err?.message || 'Reconciliation failed');
+    } finally {
+      setAuditBusy(false);
+    }
+  };
+
+  const handleStockEdit = async () => {
+    if (!editingStock) return;
+    if (!isManager) {
+      showToast("Only managers can correct inventory balances");
+      return;
+    }
+    if (correctionSubmitting) return;
+
+    const item = summary.find(s => s.spec.id === editingStock);
+    const spec = specs.find(s => s.id === editingStock);
+    if (!item || !spec) { showToast("Specification not found"); return; }
+
+    if (!editReason.trim()) { showToast("A correction reason is required"); return; }
+
+    let newPcs = item.pcs;
+    let newCt = item.ct;
+    if (editMode === 'WEIGHT') {
+      const ct = parseFloat(editCt);
+      if (isNaN(ct) || ct < 0) { showToast("Enter a valid carat weight"); return; }
+      newCt = ct;
+      newPcs = spec.ctPerStone > 0 ? Math.round(ct / spec.ctPerStone) : item.pcs;
+    } else {
+      const qty = parseInt(editPcs);
+      if (isNaN(qty) || qty < 0) { showToast("Enter a valid piece count"); return; }
+      newPcs = qty;
+      newCt = parseFloat((qty * spec.ctPerStone).toFixed(6));
+    }
+
+    setCorrectionSubmitting(true);
+    try {
+      await store.applyInventoryCorrection({
+        specId: editingStock,
+        location: 'Melee',
+        mode: editMode,
+        previousPcs: item.pcs,
+        previousCt: item.ct,
+        newPcs,
+        newCt,
+        reason: editReason.trim(),
+        managerId: getCurrentUserId(),
+      });
+      showToast("Inventory correction recorded");
+      setEditingStock(null);
+      setEditReason('');
+      setEditPcs('');
+      setEditCt('');
+    } catch (err: any) {
+      showToast(err?.message || "Correction failed");
+    } finally {
+      setCorrectionSubmitting(false);
     }
   };
 
@@ -916,6 +978,16 @@ const InventoryPage: React.FC = () => {
                       <FileDown size={12} className="text-zinc-500" />
                       <span>Export PDF</span>
                     </button>
+                    {isManager && isMeleeView && (
+                      <button
+                        onClick={runAudit}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                        title="Audit balance integrity (manager)"
+                      >
+                        <AlertOctagon size={12} className="text-zinc-500" />
+                        <span>Reconcile</span>
+                      </button>
+                    )}
                    {selectedShapeFilter && (
                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lux-gold/5 border border-lux-gold/10 rounded-xl">
                         <Tag size={12} className="text-lux-gold" />
@@ -1265,12 +1337,15 @@ const InventoryPage: React.FC = () => {
                                  {item.ct.toFixed(3)} <span className="text-[10px] text-zinc-600 ml-0.5">ct</span>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                 <button 
-                                   onClick={(e) => { e.stopPropagation(); setEditingStock(item.spec.id); setEditPcs(item.pcs.toString()); setEditReason(''); }}
-                                   className="w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-lux-gold hover:bg-lux-gold/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all border border-transparent hover:border-lux-gold/20"
-                                 >
-                                   <Edit2 size={14} />
-                                 </button>
+                                 {isManager && (
+                                   <button
+                                     title="Correct balance (manager)"
+                                     onClick={(e) => { e.stopPropagation(); setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
+                                     className="w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-lux-gold hover:bg-lux-gold/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all border border-transparent hover:border-lux-gold/20"
+                                   >
+                                     <Edit2 size={14} />
+                                   </button>
+                                 )}
                               </td>
                             </tr>
                             {expandedMeleeSpecId === item.spec.id && (
@@ -1299,32 +1374,33 @@ const InventoryPage: React.FC = () => {
                                         <span className={`text-lg font-bold font-mono mt-1 block ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>{item.pcs.toLocaleString()}</span>
                                       </div>
                                       <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Current Weight</span>
+                                        <span className="text-lg font-bold font-mono mt-1 block text-lux-cream">{item.ct.toFixed(3)}<span className="text-[10px] text-zinc-600 ml-0.5">ct</span></span>
+                                      </div>
+                                      <div>
                                         <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Est Value</span>
                                         <span className="text-sm text-emerald-400 font-mono mt-1 block font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                       </div>
                                     </div>
                                     <div className="md:col-span-7 flex flex-col gap-4 pl-2" onClick={(e) => e.stopPropagation()}>
-                                      <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-white/5 pb-1">Quick Stock Adjustment</div>
-                                      <div className="flex items-center gap-3 flex-wrap">
-                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Remove:</span>
-                                        {[-1, -5, -10, -25].map(delta => (
-                                          <button key={delta} onClick={() => handleMeleeQuickAdjust(item.spec.id, item.pcs, delta)} disabled={item.pcs + delta < 0} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-red-500/5 text-red-400 border-red-500/20 hover:bg-red-500/15 disabled:opacity-20 disabled:cursor-not-allowed">{delta}</button>
-                                        ))}
-                                      </div>
-                                      <div className="flex items-center gap-3 flex-wrap">
-                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Add:</span>
-                                        {[1, 5, 10, 25, 50].map(delta => (
-                                          <button key={delta} onClick={() => handleMeleeQuickAdjust(item.spec.id, item.pcs, delta)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-emerald-500/5 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15">+{delta}</button>
-                                        ))}
-                                      </div>
-                                      <div className="flex items-center gap-3 mt-1">
-                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Set to:</span>
-                                        <input type="number" min="0" defaultValue={item.pcs} onKeyDown={e => { if (e.key === 'Enter') { handleMeleeSetPcs(item.spec.id, item.pcs, (e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }} className="w-24 bg-[#16171D] border border-white/5 rounded-xl px-3 py-1.5 text-sm text-white font-mono text-center focus:border-lux-gold/50 outline-none" placeholder="Qty" />
-                                        <span className="text-[9px] text-zinc-600 italic">Press Enter to apply</span>
-                                      </div>
-                                      <div className="text-[9px] text-zinc-600 mt-1 flex items-center gap-2">
-                                        <span className="text-zinc-700">💡</span> Press <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-[8px] font-mono text-zinc-400">⌘Z</kbd> to undo last change
-                                      </div>
+                                      <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-white/5 pb-1">Inventory Correction</div>
+                                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                                        Balances update automatically from Add Stock, issues, returns and breakage.
+                                        Manual balance edits are recorded as an auditable, manager-only correction —
+                                        pieces and carat weight are always adjusted together.
+                                      </p>
+                                      {isManager ? (
+                                        <button
+                                          onClick={() => { setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
+                                          className="w-fit flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border bg-lux-gold/10 text-lux-gold border-lux-gold/20 hover:bg-lux-gold/20"
+                                        >
+                                          <Edit2 size={13} /> Correct Balance
+                                        </button>
+                                      ) : (
+                                        <div className="w-fit px-3 py-2 rounded-xl text-[11px] font-bold bg-white/[0.03] text-zinc-500 border border-white/5">
+                                          Manager approval required for corrections
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
 
@@ -1909,31 +1985,91 @@ const InventoryPage: React.FC = () => {
          </Card>
       )}
 
-      {/* Edit Stock Modal */}
-      {editingStock && (
+      {/* Inventory Correction Modal (manager-only, fully audited) */}
+      {editingStock && (() => {
+        const cItem = summary.find(s => s.spec.id === editingStock);
+        const cSpec = specs.find(s => s.id === editingStock);
+        const prevPcs = cItem?.pcs ?? 0;
+        const prevCt = cItem?.ct ?? 0;
+        const avg = cSpec?.ctPerStone || 0;
+        // Live preview of the resulting balance from the entered value.
+        let nextPcs = prevPcs;
+        let nextCt = prevCt;
+        if (editMode === 'WEIGHT') {
+          const ct = parseFloat(editCt);
+          if (!isNaN(ct) && ct >= 0) { nextCt = ct; nextPcs = avg > 0 ? Math.round(ct / avg) : prevPcs; }
+        } else {
+          const q = parseInt(editPcs);
+          if (!isNaN(q) && q >= 0) { nextPcs = q; nextCt = parseFloat((q * avg).toFixed(3)); }
+        }
+        const diffPcs = nextPcs - prevPcs;
+        const diffCt = +(nextCt - prevCt).toFixed(3);
+        return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-sm p-6 animate-in zoom-in-95 border-lux-border shadow-2xl">
-             <h3 className="font-bold text-lg mb-6 text-lux-cream">Adjust Stock</h3>
-             <div className="space-y-6">
-                <div>
-                   <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wide">New Total Count</label>
-                   <div className="relative">
-                     <input 
-                       type="number" 
-                       value={editPcs} 
-                       onChange={e => setEditPcs(e.target.value)} 
-                       className="w-full border border-lux-border bg-lux-input rounded-2xl p-4 font-mono text-2xl font-bold text-center text-lux-cream focus:ring-1 focus:ring-lux-gold focus:border-lux-gold outline-none" 
-                     />
-                     <span className="absolute right-4 top-5 text-sm text-zinc-600 font-medium">pcs</span>
+          <Card className="w-full max-w-md p-6 animate-in zoom-in-95 border-lux-border shadow-2xl">
+             <h3 className="font-bold text-lg mb-1 text-lux-cream">Inventory Correction</h3>
+             <p className="text-xs text-zinc-500 mb-5">{cSpec?.label || 'Spec'} · Melee · Manager: {currentUser?.name || '—'}</p>
+
+             {!isManager ? (
+               <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 text-sm text-red-300">
+                 Only managers can create inventory corrections.
+               </div>
+             ) : (
+             <div className="space-y-5">
+                {/* Entry mode toggle */}
+                <div className="bg-black/40 p-1.5 rounded-2xl border border-white/5 flex text-[10px] uppercase font-black tracking-widest">
+                   <button onClick={() => setEditMode('PCS')} className={`flex-1 px-4 py-2 rounded-xl transition-all ${editMode === 'PCS' ? 'bg-lux-gold text-black' : 'text-zinc-500 hover:text-zinc-300'}`}>By Pieces</button>
+                   <button onClick={() => setEditMode('WEIGHT')} className={`flex-1 px-4 py-2 rounded-xl transition-all ${editMode === 'WEIGHT' ? 'bg-lux-gold text-black' : 'text-zinc-500 hover:text-zinc-300'}`}>By Weight</button>
+                </div>
+
+                {/* Previous vs New */}
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                      <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Previous</span>
+                      <span className="text-sm font-mono text-lux-cream block">{prevPcs.toLocaleString()} pcs</span>
+                      <span className="text-xs font-mono text-zinc-400 block">{prevCt.toFixed(3)} ct</span>
+                   </div>
+                   <div className="p-3 rounded-2xl bg-lux-gold/5 border border-lux-gold/20">
+                      <span className="block text-[9px] text-lux-gold/80 font-bold uppercase tracking-wider mb-1">New</span>
+                      <span className="text-sm font-mono text-lux-cream block">{nextPcs.toLocaleString()} pcs</span>
+                      <span className="text-xs font-mono text-zinc-400 block">{nextCt.toFixed(3)} ct</span>
                    </div>
                 </div>
-                <Input label="Reason for Adjustment" value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="Required (e.g. Broken, Found)" />
+
+                {editMode === 'PCS' ? (
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wide">New Piece Count</label>
+                    <div className="relative">
+                      <input type="number" min="0" value={editPcs} onChange={e => setEditPcs(e.target.value)}
+                        className="w-full border border-lux-border bg-lux-input rounded-2xl p-4 font-mono text-2xl font-bold text-center text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none" />
+                      <span className="absolute right-4 top-5 text-sm text-zinc-600 font-medium">pcs</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-600 mt-1.5">Carats auto-derived: {avg} ct/pc → {nextCt.toFixed(3)} ct</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wide">New Carat Weight</label>
+                    <div className="relative">
+                      <input type="number" min="0" step="0.001" value={editCt} onChange={e => setEditCt(e.target.value)}
+                        className="w-full border border-lux-border bg-lux-input rounded-2xl p-4 font-mono text-2xl font-bold text-center text-emerald-400 focus:ring-1 focus:ring-lux-gold outline-none" />
+                      <span className="absolute right-4 top-5 text-sm text-zinc-600 font-medium">ct</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-600 mt-1.5">Pieces auto-derived: ≈ {nextPcs.toLocaleString()} pcs</p>
+                  </div>
+                )}
+
+                {/* Calculated difference */}
+                <div className={`text-center text-xs font-mono py-2 rounded-xl border ${diffPcs === 0 && diffCt === 0 ? 'text-zinc-500 border-white/5' : diffPcs < 0 || diffCt < 0 ? 'text-red-400 border-red-500/20 bg-red-500/5' : 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5'}`}>
+                   Difference: {diffPcs >= 0 ? '+' : ''}{diffPcs} pcs · {diffCt >= 0 ? '+' : ''}{diffCt.toFixed(3)} ct
+                </div>
+
+                <Input label="Correction Reason (required)" value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="e.g. Physical recount, data entry fix" />
+
                 <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                    <Button 
-                      variant="danger" 
+                    <Button
+                      variant="danger"
                       onClick={async () => {
-                        const spec = specs.find(s => s.id === editingStock);
-                        const label = spec ? spec.label : 'Unknown Spec';
+                        const label = cSpec ? cSpec.label : 'Unknown Spec';
                         if (confirm(`Are you sure you want to delete the spec '${label}'? This will delete the specification and all its stock movements permanently.`)) {
                           await store.deleteSpec(editingStock);
                           showToast(`Deleted ${label}`);
@@ -1941,12 +2077,71 @@ const InventoryPage: React.FC = () => {
                         }
                       }}
                     >
-                      Delete
+                      Delete Spec
                     </Button>
                    <div className="flex gap-3">
                       <Button variant="secondary" onClick={() => setEditingStock(null)}>Cancel</Button>
-                      <Button onClick={handleStockEdit}>Confirm</Button>
+                      <Button onClick={handleStockEdit} disabled={correctionSubmitting || !editReason.trim() || (diffPcs === 0 && diffCt === 0)}>
+                        {correctionSubmitting ? 'Saving…' : 'Record Correction'}
+                      </Button>
                    </div>
+                </div>
+             </div>
+             )}
+          </Card>
+        </div>
+        );
+      })()}
+
+      {/* Inventory Reconciliation Audit Modal (manager-only) */}
+      {showAudit && auditResult && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl p-6 animate-in zoom-in-95 border-lux-border shadow-2xl max-h-[85vh] flex flex-col">
+             <div className="flex items-center justify-between mb-4">
+                <div>
+                   <h3 className="font-bold text-lg text-lux-cream">Inventory Reconciliation</h3>
+                   <p className="text-xs text-zinc-500 mt-0.5">Balances recalculated from the full ledger and checked against data invariants.</p>
+                </div>
+                <button onClick={() => setShowAudit(false)} className="text-zinc-500 hover:text-white text-sm font-bold">✕</button>
+             </div>
+
+             <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
+                   <div className="text-xl font-bold font-mono text-lux-cream">{auditResult.scannedSpecs}</div>
+                   <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Scanned</div>
+                </div>
+                <div className="p-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-center">
+                   <div className="text-xl font-bold font-mono text-emerald-400">{auditResult.autoRepaired.length}</div>
+                   <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 font-bold">Auto-repairable</div>
+                </div>
+                <div className="p-3 rounded-2xl bg-orange-500/5 border border-orange-500/20 text-center">
+                   <div className="text-xl font-bold font-mono text-orange-400">{auditResult.needsManagerReview.length}</div>
+                   <div className="text-[9px] uppercase tracking-wider text-orange-400/80 font-bold">Need review</div>
+                </div>
+             </div>
+
+             <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 mb-4">
+                {auditResult.issues.length === 0 ? (
+                  <div className="py-10 text-center text-emerald-400 text-sm font-bold">✓ All balances are consistent. Nothing to repair.</div>
+                ) : auditResult.issues.map((iss: any, idx: number) => (
+                  <div key={idx} className={`p-3 rounded-xl border text-xs ${iss.autoRepairable ? 'bg-emerald-500/[0.03] border-emerald-500/15' : 'bg-orange-500/[0.03] border-orange-500/15'}`}>
+                     <div className="flex justify-between items-center">
+                        <span className="font-bold text-lux-cream">{iss.specLabel} <span className="text-zinc-600 font-normal">· {iss.location}</span></span>
+                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${iss.autoRepairable ? 'bg-emerald-500/15 text-emerald-400' : 'bg-orange-500/15 text-orange-400'}`}>{iss.autoRepairable ? 'Auto' : 'Review'}</span>
+                     </div>
+                     <div className="text-zinc-500 mt-1 font-mono">{iss.detail}</div>
+                     <div className="text-zinc-600 mt-0.5 font-mono">Raw {iss.currentPcs}pc / {iss.currentCt.toFixed(4)}ct → resolves to {iss.resolvedPcs}pc / {iss.resolvedCt.toFixed(3)}ct</div>
+                  </div>
+                ))}
+             </div>
+
+             <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                <span className="text-[10px] text-zinc-600">Only 0-piece stale-carat cases are auto-repaired. Ambiguous cases are never changed automatically.</span>
+                <div className="flex gap-3">
+                   <Button variant="secondary" onClick={() => setShowAudit(false)}>Close</Button>
+                   <Button onClick={runAutoRepair} disabled={auditBusy || auditResult.autoRepaired.length === 0}>
+                     {auditBusy ? 'Repairing…' : `Auto-repair ${auditResult.autoRepaired.length}`}
+                   </Button>
                 </div>
              </div>
           </Card>

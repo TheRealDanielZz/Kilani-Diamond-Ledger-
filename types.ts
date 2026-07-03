@@ -453,7 +453,10 @@ export enum InventoryMovementType {
   DIAMOND_UPDATE = 'DIAMOND_UPDATE',
   DIAMOND_DELETE = 'DIAMOND_DELETE',
   MELEE_SPEC_DELETE = 'MELEE_SPEC_DELETE',
-  MANUAL_ADJUSTMENT = 'MANUAL_ADJUSTMENT'
+  MANUAL_ADJUSTMENT = 'MANUAL_ADJUSTMENT',
+  // Manager-only, fully audited correction that supersedes the old silent
+  // "Quick Stock Adjustment" direct balance edit. Signed via its line deltas.
+  INVENTORY_CORRECTION = 'INVENTORY_CORRECTION'
 }
 
 export interface InventoryLine {
@@ -461,6 +464,10 @@ export interface InventoryLine {
   pcs?: number;
   ct: number;
   costPerCtUsd?: number;
+  // Immutable snapshot of the catalog average weight (ct/stone) at the moment
+  // this line was written. Guarantees carats never drift from pieces and that
+  // editing the Diamond Catalog never rewrites historical balances.
+  averageWeightSnapshot?: number;
 }
 
 export interface InventoryMovement {
@@ -528,9 +535,10 @@ export interface DiamondLedgerTransaction {
   color: string; // "White", "Yellow", etc.
   quantity: number; // Positive/Negative (pcs)
   carats: number; // Positive/Negative (ct)
-  movementType: 'added' | 'requested' | 'assigned' | 'used' | 'returned' | 'broken' | 'lost' | 'adjusted' | 'weight_tolerance';
+  movementType: 'added' | 'requested' | 'assigned' | 'used' | 'returned' | 'broken' | 'lost' | 'adjusted' | 'weight_tolerance' | 'corrected';
   unitCost: number; // Cost per carat (USD)
   totalValue: number; // carats * unitCost
+  averageWeightSnapshot?: number; // ct/stone active when this tx was created
   notes?: string;
   
   // Ledger Location Delta Tracking
@@ -548,6 +556,51 @@ export interface InventorySummaryItem {
   spec: DiamondSpec;
   pcs: number;
   ct: number;
+  // Balance health flags surfaced by the reconciled calculation.
+  negativePieces?: boolean;
+  negativeCarats?: boolean;
+}
+
+// Manager-only controlled inventory correction (replaces Quick Stock Adjustment).
+export interface InventoryCorrectionInput {
+  specId: string;
+  location: string;
+  mode: 'PCS' | 'WEIGHT';
+  previousPcs: number;
+  previousCt: number;
+  newPcs: number;
+  newCt: number;
+  reason: string;
+  managerId: string;
+}
+
+// Result of a reconciliation audit comparing displayed balances to the ledger.
+export type ReconcileIssueType =
+  | 'ZERO_PCS_NONZERO_CT'
+  | 'ZERO_PCS_NEGATIVE_CT'
+  | 'POSITIVE_PCS_ZERO_CT'
+  | 'NEGATIVE_PCS'
+  | 'NEGATIVE_CT'
+  | 'STALE_ESTIMATED_VALUE';
+
+export interface ReconcileIssue {
+  specId: string;
+  specLabel: string;
+  location: string;
+  type: ReconcileIssueType;
+  currentPcs: number;
+  currentCt: number;
+  resolvedPcs: number;
+  resolvedCt: number;
+  autoRepairable: boolean;
+  detail: string;
+}
+
+export interface ReconcileResult {
+  scannedSpecs: number;
+  issues: ReconcileIssue[];
+  autoRepaired: ReconcileIssue[];
+  needsManagerReview: ReconcileIssue[];
 }
 
 // Verification Flow types

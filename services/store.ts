@@ -26,10 +26,15 @@ import {
   Diamond, EvidenceImage, EvidenceReplacement
 } from '../types';
 import { generateThumbnail } from '../components/ImageUpload';
-import { 
-  MOCK_USERS, MOCK_PROJECTS, MOCK_SPECS, MOCK_BAGS, 
-  MOCK_REQUESTS, MOCK_SETTINGS 
+import {
+  MOCK_USERS, MOCK_PROJECTS, MOCK_SPECS, MOCK_BAGS,
+  MOCK_REQUESTS, MOCK_SETTINGS
 } from './demoData';
+import {
+  computeLineDelta, normalizeBalance, resolveAvgWeight, roundCt,
+  isAdditiveMovement, MIXED_UNSORTED_SPEC_ID
+} from './inventoryMath';
+import { InventoryCorrectionInput, ReconcileIssue, ReconcileResult } from '../types';
 
 // Helpers
 const now = () => new Date().toISOString();
@@ -2327,12 +2332,52 @@ class StoreService {
 
   getInventoryMovements() { return this.movements.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
 
-  async createInventoryMovement(mov: Partial<InventoryMovement>) {
+  // Enrich a raw movement line so that BOTH measurements are always persisted
+  // coherently at write time:
+  //   • averageWeightSnapshot = catalog ct/stone captured now (immutable history)
+  //   • ct = FULL-PRECISION carat magnitude, tied to pieces unless the entry is
+  //     explicitly weight-authoritative (Add Stock → Weight mode) or a
+  //     carat-only bucket (MIXED-UNSORTED / pcs-less line).
+  // This is the central guarantee that pieces and carats can never drift.
+  private enrichMovementLine(line: InventoryLine, weightAuthoritative: boolean): InventoryLine {
+      const spec = this.specs.find(s => s.id === line.specId);
+      const snapshot = resolveAvgWeight(line, spec);
+      const pcs = line.pcs || 0;
+      const hasExactCt = line.ct !== undefined && line.ct !== null && line.ct !== 0;
+      const isCaratOnly = line.specId === MIXED_UNSORTED_SPEC_ID || (pcs === 0 && hasExactCt);
+
+      let ct: number;
+      if (isCaratOnly || (weightAuthoritative && hasExactCt)) {
+          // Preserve the exact entered/authoritative carat weight.
+          ct = roundCt(line.ct as number);
+      } else {
+          // Pieces are authoritative: derive full-precision carats from the
+          // snapshot. Overrides any display-rounded ct supplied by the UI.
+          ct = roundCt(pcs * snapshot);
+      }
+
+      return {
+          ...line,
+          pcs: line.pcs,
+          ct,
+          averageWeightSnapshot: snapshot > 0 ? snapshot : undefined,
+      };
+  }
+
+  async createInventoryMovement(mov: Partial<InventoryMovement> & { weightAuthoritative?: boolean }) {
       const id = mov.id || 'mov-' + Math.random().toString(36).substr(2, 9);
+      const weightAuthoritative = !!mov.weightAuthoritative;
+
+      // Persist coherent, snapshot-backed lines. Strip the transient hint flag.
+      const enrichedLines = (mov.lines || []).map(l =>
+          l.specId ? this.enrichMovementLine(l, weightAuthoritative) : l
+      );
+      const { weightAuthoritative: _omit, ...movRest } = mov;
       const safeMov = deepCopySafe({
           id,
           createdAt: now(),
-          ...mov
+          ...movRest,
+          lines: enrichedLines,
       });
       if (this.isDemoMode) {
           this.movements.push(safeMov as any);
@@ -2340,27 +2385,27 @@ class StoreService {
           await setDoc(doc(db, 'movements', id), safeMov);
       }
 
-      // Automatically log ledger transactions
-      if (mov.lines && mov.lines.length > 0) {
-          for (const line of mov.lines) {
+      // Automatically log ledger transactions (kept in lock-step with movements)
+      if (enrichedLines.length > 0) {
+          for (const line of enrichedLines) {
               if (!line.specId) continue;
-              
+
               const spec = this.specs.find(s => s.id === line.specId);
               const specCost = line.costPerCtUsd || spec?.defaultCostPerCtUsd || 0;
-              const ctPerStone = spec?.ctPerStone || 0;
-              
+              const snapshot = resolveAvgWeight(line, spec);
+
               const linePcs = line.pcs || 0;
-              const lineCt = line.ct || (linePcs * ctPerStone);
-              const totalValue = lineCt * specCost;
-              
+              const lineCt = line.ct || 0; // already full-precision from enrichment
+              const totalValue = roundCt(lineCt * specCost);
+
               let mainStockChange = 0;
               let wipStockChange = 0;
               let movementType: DiamondLedgerTransaction['movementType'] = 'adjusted';
               let qty = linePcs;
               let cts = lineCt;
-              
+
               const type = mov.type;
-              
+
               if (type === InventoryMovementType.SHIPMENT_IN) {
                   movementType = 'added';
                   mainStockChange = linePcs;
@@ -2379,6 +2424,18 @@ class StoreService {
                   movementType = 'returned';
                   mainStockChange = 0;
                   wipStockChange = 0;
+              } else if (type === InventoryMovementType.MANUAL_ADJUSTMENT) {
+                  movementType = 'adjusted';
+                  mainStockChange = linePcs;
+                  wipStockChange = 0;
+              } else if (type === InventoryMovementType.INVENTORY_CORRECTION) {
+                  // Signed correction: line.pcs / line.ct carry the (already signed)
+                  // delta between previous and new balance.
+                  movementType = 'corrected';
+                  mainStockChange = linePcs;
+                  wipStockChange = 0;
+                  qty = linePcs;
+                  cts = lineCt;
               } else if (type === InventoryMovementType.BROKEN_OUT) {
                   movementType = 'broken';
                   if (mov.referenceProjectId) {
@@ -2393,10 +2450,10 @@ class StoreService {
                       cts = -lineCt;
                   }
               }
-              
+
               const color = spec?.color || 'White';
               const txId = `tx-mov-${id}-${line.specId || 'mixed'}`;
-              
+
               const transaction: DiamondLedgerTransaction = {
                   id: txId,
                   createdAt: safeMov.createdAt,
@@ -2406,16 +2463,17 @@ class StoreService {
                   specId: line.specId,
                   color,
                   quantity: qty,
-                  carats: cts,
+                  carats: roundCt(cts),
                   movementType,
                   unitCost: specCost,
                   totalValue,
+                  averageWeightSnapshot: snapshot > 0 ? snapshot : undefined,
                   notes: mov.notes || `${movementType.toUpperCase()} transaction from movement.`,
                   mainStockChange,
                   wipStockChange,
                   status: 'active'
               };
-              
+
               if (this.isDemoMode) {
                   this.diamondTransactions.push(transaction);
               } else {
@@ -2425,13 +2483,13 @@ class StoreService {
       }
 
       // 1. Notify Managers on Diamond Receive Completed
-      if (mov.type === InventoryMovementType.SHIPMENT_IN && mov.lines && mov.lines.length > 0) {
+      if (mov.type === InventoryMovementType.SHIPMENT_IN && enrichedLines.length > 0) {
           const managers = this.getUsers().filter(u => u.role === Role.MANAGER);
           const creator = this.getUser(mov.createdById || '')?.name || 'System';
-          const totalPcs = mov.lines.reduce((sum, l) => sum + (l.pcs || 0), 0);
-          const totalCt = mov.lines.reduce((sum, l) => sum + (l.ct || 0), 0);
-          const label = mov.lines.length === 1 && mov.lines[0].specId 
-              ? (this.specs.find(s => s.id === mov.lines[0].specId)?.label || 'Diamonds') 
+          const totalPcs = enrichedLines.reduce((sum, l) => sum + (l.pcs || 0), 0);
+          const totalCt = enrichedLines.reduce((sum, l) => sum + (l.ct || 0), 0);
+          const label = enrichedLines.length === 1 && enrichedLines[0].specId
+              ? (this.specs.find(s => s.id === enrichedLines[0].specId)?.label || 'Diamonds')
               : 'Diamonds';
           
           for (const m of managers) {
@@ -2475,19 +2533,23 @@ class StoreService {
               
               const spec = this.specs.find(s => s.id === l.specId);
               const specCost = l.costPerCtUsd || spec?.defaultCostPerCtUsd || 0;
-              const ctPerStone = spec?.ctPerStone || 0;
+              const snapshot = resolveAvgWeight(l, spec);
               const linePcs = l.pcs || 0;
-              const lineCt = l.ct || (linePcs * ctPerStone);
-              const totalValue = lineCt * specCost;
-              
+              // Prefer the line's persisted full-precision ct; only derive from the
+              // snapshot (not the live catalog) for legacy pre-snapshot lines.
+              const lineCt = (l.ct !== undefined && l.ct !== null && l.ct !== 0)
+                  ? roundCt(l.ct)
+                  : roundCt(linePcs * snapshot);
+              const totalValue = roundCt(lineCt * specCost);
+
               let mainStockChange = 0;
               let wipStockChange = 0;
               let movementType: DiamondLedgerTransaction['movementType'] = 'adjusted';
               let qty = linePcs;
               let cts = lineCt;
-              
+
               const type = m.type;
-              
+
               if (type === InventoryMovementType.SHIPMENT_IN) {
                   movementType = 'added';
                   mainStockChange = linePcs;
@@ -2506,6 +2568,14 @@ class StoreService {
                   movementType = 'returned';
                   mainStockChange = 0;
                   wipStockChange = 0;
+              } else if (type === InventoryMovementType.MANUAL_ADJUSTMENT) {
+                  movementType = 'adjusted';
+                  mainStockChange = linePcs;
+                  wipStockChange = 0;
+              } else if (type === InventoryMovementType.INVENTORY_CORRECTION) {
+                  movementType = 'corrected';
+                  mainStockChange = linePcs;
+                  wipStockChange = 0;
               } else if (type === InventoryMovementType.BROKEN_OUT) {
                   movementType = 'broken';
                   if (m.referenceProjectId) {
@@ -2520,7 +2590,7 @@ class StoreService {
                       cts = -lineCt;
                   }
               }
-              
+
               virtualTxs.push({
                   id: txId,
                   createdAt: m.createdAt,
@@ -2530,10 +2600,11 @@ class StoreService {
                   specId: l.specId,
                   color: spec?.color || 'White',
                   quantity: qty,
-                  carats: cts,
+                  carats: roundCt(cts),
                   movementType,
                   unitCost: specCost,
                   totalValue,
+                  averageWeightSnapshot: snapshot > 0 ? snapshot : undefined,
                   notes: m.notes || `Legacy ${movementType} transaction.`,
                   mainStockChange,
                   wipStockChange,
@@ -2721,15 +2792,22 @@ class StoreService {
       this.notify();
   }
 
+  // ── Single reconciled source of truth for Current Stock ────────────────────
+  // Pieces and carats are summed with a SHARED, snapshot-based per-line ratio
+  // (see inventoryMath.computeLineDelta) so they can never drift, then passed
+  // through normalizeBalance which enforces every data invariant:
+  //   • 0 pieces ⇒ 0 carats (except the MIXED-UNSORTED carat-only bucket)
+  //   • negatives clamped + flagged, sub-epsilon float residue snapped to 0.
+  // Every page that shows Current Stock / Estimated Value MUST read this.
   getInventorySummary(location: string = 'Melee'): InventorySummaryItem[] {
-      const summary = new Map<string, {pcs: number, ct: number}>();
+      const raw = new Map<string, { pcs: number; ct: number }>();
 
       this.movements.forEach(m => {
           m.lines.forEach(l => {
               if (!l.specId) return;
 
               // MIXED-UNSORTED only belongs to Melee
-              if (l.specId === 'MIXED-UNSORTED') {
+              if (l.specId === MIXED_UNSORTED_SPEC_ID) {
                   if (location !== 'Melee') return;
               } else {
                   const spec = this.specs.find(s => s.id === l.specId);
@@ -2737,62 +2815,191 @@ class StoreService {
                   if (specLocation !== location) return;
               }
 
-              const current = summary.get(l.specId) || {pcs: 0, ct: 0};
-
               const spec = this.specs.find(s => s.id === l.specId);
-              let lineCt = l.ct;
-              // Fallback to calculation only if exact weight is not provided
-              if (lineCt === undefined || lineCt === null) {
-                  if (l.specId !== 'MIXED-UNSORTED' && spec && spec.ctPerStone) {
-                      lineCt = (l.pcs || 0) * spec.ctPerStone;
-                  } else {
-                      lineCt = 0;
-                  }
-              }
+              const { pieceDelta, caratDelta } = computeLineDelta(m, l, spec);
 
-              if (m.type === InventoryMovementType.SHIPMENT_IN || m.type === InventoryMovementType.RETURN || m.type === InventoryMovementType.RETURN_MIXED || m.type === InventoryMovementType.BULK_RETURN_INTAKE || m.type === InventoryMovementType.MANUAL_ADJUSTMENT) {
-                  current.pcs += l.pcs || 0;
-                  current.ct += lineCt;
-              } else {
-                  current.pcs -= l.pcs || 0;
-                  current.ct -= lineCt;
-              }
-              summary.set(l.specId, current);
+              const current = raw.get(l.specId) || { pcs: 0, ct: 0 };
+              current.pcs += pieceDelta;
+              current.ct = roundCt(current.ct + caratDelta);
+              raw.set(l.specId, current);
           });
       });
 
-      return Array.from(summary.entries()).map(([specId, data]) => ({
-          spec: this.specs.find(s => s.id === specId) || { id: specId, label: 'Unknown', sizeMm: 0, ctPerStone: 0, defaultCostPerCtUsd: 0 },
-          pcs: data.pcs,
-          ct: data.ct
-      }));
+      return Array.from(raw.entries()).map(([specId, data]) => {
+          const norm = normalizeBalance(data, specId);
+          return {
+              spec: this.specs.find(s => s.id === specId) || { id: specId, label: 'Unknown', sizeMm: 0, ctPerStone: 0, defaultCostPerCtUsd: 0 },
+              pcs: norm.pcs,
+              ct: norm.ct,
+              negativePieces: norm.negativePieces,
+              negativeCarats: norm.negativeCarats,
+          };
+      });
   }
   
-  async editStock(specId: string, newPcs: number, userId: string, reason: string) {
-      const current = this.getInventorySummary().find(s => s.spec.id === specId);
-      const diff = newPcs - (current?.pcs || 0);
-      
-      if (diff === 0) return;
-      
-      const spec = this.specs.find(s => s.id === specId);
-      
+  // ── Controlled, manager-only Inventory Correction ──────────────────────────
+  // Replaces the old silent "Quick Stock Adjustment" (editStock). Instead of
+  // overwriting a balance, it writes ONE auditable INVENTORY_CORRECTION movement
+  // whose signed line delta moves the balance from previous → new. Pieces and
+  // carats are corrected together in the same transaction, so they can never
+  // diverge. Only managers may call this.
+  async applyInventoryCorrection(input: InventoryCorrectionInput) {
+      const manager = this.getUser(input.managerId) || this.currentUser;
+      if (!manager || manager.role !== Role.MANAGER) {
+          throw new Error('Inventory corrections may only be performed by a manager.');
+      }
+      if (!input.reason || !input.reason.trim()) {
+          throw new Error('A correction reason is required.');
+      }
+
+      const spec = this.specs.find(s => s.id === input.specId);
+      if (!spec) throw new Error('Diamond specification not found.');
+
+      const snapshot = spec.ctPerStone || 0;
+
+      // Resolve target balance based on the entry mode, keeping pieces & carats
+      // coherent (pieces authoritative unless the correction is weight-based).
+      let targetPcs: number;
+      let targetCt: number;
+      if (input.mode === 'WEIGHT') {
+          targetCt = roundCt(input.newCt);
+          targetPcs = snapshot > 0 ? Math.round(targetCt / snapshot) : input.newPcs;
+      } else {
+          targetPcs = Math.round(input.newPcs);
+          targetCt = roundCt(targetPcs * snapshot);
+      }
+      if (targetPcs < 0) throw new Error('Corrected pieces cannot be negative.');
+      if (targetCt < 0) throw new Error('Corrected carat weight cannot be negative.');
+
+      // Signed deltas from the CURRENT reconciled balance (not the UI-supplied
+      // previous value, which is only shown for confirmation).
+      const current = this.getInventorySummary(input.location).find(s => s.spec.id === input.specId);
+      const currentPcs = current?.pcs || 0;
+      const currentCt = current?.ct || 0;
+      const pieceDelta = targetPcs - currentPcs;
+      const caratDelta = roundCt(targetCt - currentCt);
+
+      if (pieceDelta === 0 && Math.abs(caratDelta) < 0.0005) return; // no-op
+
       await this.createInventoryMovement({
-          type: diff > 0 ? InventoryMovementType.SHIPMENT_IN : InventoryMovementType.BROKEN_OUT, 
-          createdById: userId,
-          notes: `Manual Adjustment: ${reason}`,
+          type: InventoryMovementType.INVENTORY_CORRECTION,
+          createdById: input.managerId,
+          weightAuthoritative: input.mode === 'WEIGHT',
+          notes: `Inventory Correction by ${manager.name}: ${currentPcs}pc/${currentCt.toFixed(3)}ct → ${targetPcs}pc/${targetCt.toFixed(3)}ct. Reason: ${input.reason.trim()}`,
           lines: [{
-              specId,
-              pcs: Math.abs(diff),
-              ct: Math.abs(diff) * (spec?.ctPerStone || 0)
+              specId: input.specId,
+              pcs: pieceDelta,
+              ct: caratDelta,
+              averageWeightSnapshot: snapshot > 0 ? snapshot : undefined,
           }],
-          location: spec?.location || this.getUser(userId)?.location || this.currentUser?.location || 'Toronto'
+          location: input.location,
       });
+
+      await this.addSystemLog(
+          'INVENTORY_CORRECTION',
+          `${manager.name} corrected ${spec.label} @ ${input.location}: ${currentPcs}pc/${currentCt.toFixed(3)}ct → ${targetPcs}pc/${targetCt.toFixed(3)}ct (${input.reason.trim()})`
+      );
+  }
+
+  // ── Reconciliation: audit + safe repair of historical balances ─────────────
+  // Computes the RAW (un-normalized) ledger balance per spec so we can compare
+  // it against the invariants and see residue that read-time normalization would
+  // otherwise hide. Returns a map keyed by specId.
+  private getRawSpecBalances(location: string = 'Melee'): Map<string, { pcs: number; ct: number }> {
+      const raw = new Map<string, { pcs: number; ct: number }>();
+      this.movements.forEach(m => {
+          m.lines.forEach(l => {
+              if (!l.specId) return;
+              if (l.specId === MIXED_UNSORTED_SPEC_ID) {
+                  if (location !== 'Melee') return;
+              } else {
+                  const spec = this.specs.find(s => s.id === l.specId);
+                  if ((spec?.location || 'Melee') !== location) return;
+              }
+              const spec = this.specs.find(s => s.id === l.specId);
+              const { pieceDelta, caratDelta } = computeLineDelta(m, l, spec);
+              const cur = raw.get(l.specId) || { pcs: 0, ct: 0 };
+              cur.pcs += pieceDelta;
+              cur.ct = roundCt(cur.ct + caratDelta);
+              raw.set(l.specId, cur);
+          });
+      });
+      return raw;
+  }
+
+  // Dry-run audit: classify every balance discrepancy without writing anything.
+  getInventoryAudit(locations?: string[]): ReconcileResult {
+      const locs = locations && locations.length
+          ? locations
+          : Array.from(new Set(['Melee', ...(this.settings.inventoryLocations || [])]));
+      const issues: ReconcileIssue[] = [];
+      let scannedSpecs = 0;
+
+      for (const location of locs) {
+          const raw = this.getRawSpecBalances(location);
+          raw.forEach((bal, specId) => {
+              scannedSpecs++;
+              if (specId === MIXED_UNSORTED_SPEC_ID) return; // carat-only bucket is exempt
+              const spec = this.specs.find(s => s.id === specId);
+              const norm = normalizeBalance(bal, specId);
+              const label = spec?.label || specId;
+              const base = { specId, specLabel: label, location, currentPcs: bal.pcs, currentCt: bal.ct, resolvedPcs: norm.pcs, resolvedCt: norm.ct };
+
+              const zeroPcs = Math.abs(bal.pcs) < 1e-6;
+              if (zeroPcs && bal.ct > 0.0005) {
+                  issues.push({ ...base, type: 'ZERO_PCS_NONZERO_CT', autoRepairable: true, detail: `0 pcs but ${bal.ct.toFixed(4)} ct remaining — stale carats, safe to zero.` });
+              } else if (zeroPcs && bal.ct < -0.0005) {
+                  issues.push({ ...base, type: 'ZERO_PCS_NEGATIVE_CT', autoRepairable: true, detail: `0 pcs but ${bal.ct.toFixed(4)} ct (negative) — safe to zero.` });
+              } else if (bal.pcs < -1e-6) {
+                  issues.push({ ...base, type: 'NEGATIVE_PCS', autoRepairable: false, detail: `Negative piece balance (${bal.pcs}). Requires manager review.` });
+              } else if (bal.ct < -0.0005) {
+                  issues.push({ ...base, type: 'NEGATIVE_CT', autoRepairable: false, detail: `Negative carat balance (${bal.ct.toFixed(4)}). Requires manager review.` });
+              } else if (bal.pcs > 0 && bal.ct <= 0.0005) {
+                  issues.push({ ...base, type: 'POSITIVE_PCS_ZERO_CT', autoRepairable: false, detail: `${bal.pcs} pcs but ~0 ct. Requires manager review.` });
+              }
+          });
+      }
+
+      const autoRepaired = issues.filter(i => i.autoRepairable);
+      const needsManagerReview = issues.filter(i => !i.autoRepairable);
+      return { scannedSpecs, issues, autoRepaired, needsManagerReview };
+  }
+
+  // Repair pass: auto-fixes ONLY mathematically-certain stale-zero cases by
+  // writing a permanent, audited INVENTORY_CORRECTION that nets the raw carat
+  // residue to exactly 0. Ambiguous cases are returned for manager review and
+  // left untouched. No legitimate transaction is ever deleted.
+  async reconcileInventory(userId: string, opts?: { autoRepair?: boolean; locations?: string[] }): Promise<ReconcileResult> {
+      const autoRepair = opts?.autoRepair !== false;
+      const result = this.getInventoryAudit(opts?.locations);
+      if (!autoRepair) return result;
+
+      for (const issue of result.autoRepaired) {
+          const spec = this.specs.find(s => s.id === issue.specId);
+          const snapshot = spec?.ctPerStone || 0;
+          // 0 pieces ⇒ carats must be 0: post a correction that cancels the residue.
+          await this.createInventoryMovement({
+              type: InventoryMovementType.INVENTORY_CORRECTION,
+              createdById: userId,
+              notes: `Reconciliation auto-repair (${issue.type}): ${issue.specLabel} @ ${issue.location} — normalized ${issue.currentPcs}pc/${issue.currentCt.toFixed(4)}ct to 0pc/0ct (stale carats after all pieces removed). Previous carat value preserved in ledger history.`,
+              lines: [{
+                  specId: issue.specId,
+                  pcs: 0,
+                  ct: roundCt(-issue.currentCt),
+                  averageWeightSnapshot: snapshot > 0 ? snapshot : undefined,
+              }],
+              location: issue.location,
+          });
+          await this.addSystemLog('INVENTORY_RECONCILE', `Auto-repaired ${issue.specLabel} @ ${issue.location}: ${issue.currentCt.toFixed(4)}ct stale carats normalized to 0 (0 pcs).`);
+      }
+
+      return result;
   }
 
   // --- Config & Gold ---
 
-  getSpecs() { 
-      return [...this.specs].sort((a, b) => a.sizeMm - b.sizeMm); 
+  getSpecs() {
+      return [...this.specs].sort((a, b) => a.sizeMm - b.sizeMm);
   }
   async addSpec(spec: DiamondSpec) { 
       const safeSpec = deepCopySafe(spec);
