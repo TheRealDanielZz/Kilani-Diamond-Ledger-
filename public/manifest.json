@@ -1,0 +1,22 @@
+
+{
+  "name": "KILANI Diamond Reporter",
+  "short_name": "KILANI Reporter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#16171D",
+  "theme_color": "#16171D",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/brand-logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/brand-logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kilani Diamond Reporter — Product Walkthrough</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Fraunces:opsz,wght@9..144,300;9..144,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./demo_player.css">
+</head>
+<body>
+
+    <!-- ── INTRO ─────────────────────────────────────────────────── -->
+    <div id="intro" class="intro">
+        <div class="intro-glows">
+            <div class="glow glow-gold"></div>
+            <div class="glow glow-blue"></div>
+        </div>
+        <div class="intro-body">
+            <p class="intro-eyebrow">Product Walkthrough · 2026</p>
+            <div class="intro-lockup">
+                <svg class="intro-gem" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="#F5C249"/><path d="M13 24L24 13L35 24L24 35Z" fill="#0B0A09"/></svg>
+                <span class="intro-wordmark">Kilani <strong>Ledger</strong></span>
+            </div>
+            <h1 class="intro-headline">Diamond operations,<br>perfectly tracked.</h1>
+            <p class="intro-sub">One walkthrough. One project. Every feature — from creation to final report.</p>
+            <button id="play-btn" class="play-btn">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 3.5l10 4.5-10 4.5V3.5z"/></svg>
+                Play Walkthrough
+            </button>
+            <p class="intro-hint">9 chapters &nbsp;·&nbsp; ~4 minutes &nbsp;·&nbsp; Space to pause</p>
+        </div>
+    </div>
+
+    <!-- ── PLAYER ─────────────────────────────────────────────────── -->
+    <div id="player" class="player is-hidden">
+
+        <!-- Stage: screenshots live here -->
+        <div id="stage" class="stage">
+            <div id="slides" class="slides"></div>
+            <!-- Highlight overlay -->
+            <div id="hl-layer" class="hl-layer"></div>
+            <!-- Cursor -->
+            <div id="cursor" class="cursor"></div>
+            <!-- Top vignette (logo + chapter) -->
+            <div class="stage-hud">
+                <div class="hud-brand">
+                    <svg width="22" height="22" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#F5C249"/><path d="M13 24L24 13L35 24L24 35Z" fill="#0B0A09"/></svg>
+                    <span>Kilani Ledger</span>
+                </div>
+                <div id="hud-chapter" class="hud-chapter">Chapter 1 of 9</div>
+            </div>
+            <!-- Bottom gradient -->
+            <div class="stage-vignette"></div>
+        </div>
+
+        <!-- Caption strip -->
+        <div id="caption-bar" class="caption-bar">
+            <div class="caption-inner">
+                <span id="caption-tag" class="caption-tag">Overview</span>
+                <span id="caption-text" class="caption-text">Loading…</span>
+            </div>
+            <div class="caption-controls">
+                <button id="btn-restart" class="ctrl" title="Restart">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 8a6 6 0 1 0 1.2-3.6"/><path d="M2 3.5V8H6.5"/></svg>
+                </button>
+                <button id="btn-prev" class="ctrl">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 4L6 8l4 4"/></svg>
+                </button>
+                <button id="btn-playpause" class="ctrl ctrl-main">
+                    <svg id="icon-play" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 3.5l10 4.5-10 4.5V3.5z"/></svg>
+                    <svg id="icon-pause" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="display:none"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>
+                </button>
+                <button id="btn-next" class="ctrl">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4l4 4-4 4"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chapter dots -->
+        <div id="dots" class="dots"></div>
+
+        <!-- Audio progress bar -->
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+
+    </div>
+
+    <script src="./demo_player.js"></script>
+</body>
+</html>

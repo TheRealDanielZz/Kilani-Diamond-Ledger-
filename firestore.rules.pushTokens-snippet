@@ -1,0 +1,38 @@
+// NOT deployed. This is a reference draft, kept for whenever pushTokens
+// protection is wanted — deliberately left undeployed per a decision made
+// during push notification implementation (see docs/PUSH_NOTIFICATIONS_DESIGN.md).
+//
+// Current live rule (confirmed from Firebase Console, 2026-07-02):
+//   match /{document=**} { allow read, write: if request.auth != null; }
+// i.e. any signed-in user can already read/write anything, including every
+// user's pushTokens. This has NOT been changed.
+//
+// IMPORTANT — a naive "just add a stricter match block for pushTokens" does
+// NOT work here. Firestore evaluates all matching rules for a path with OR
+// semantics: if ANY matching rule allows the request, it's allowed. Since
+// `match /{document=**}` already matches every path including pushTokens,
+// simply adding a narrower rule alongside it changes nothing — the wide-open
+// rule still grants access. To actually restrict pushTokens, the catch-all
+// itself must explicitly exclude that subtree, as below:
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/pushTokens/{token} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if request.auth != null
+        && !(document.size() >= 3 && document[0] == 'users' && document[2] == 'pushTokens');
+    }
+  }
+}
+
+// To apply later:
+//   1. Save the block above as "firestore.rules" at the project root.
+//   2. Add `"firestore": { "rules": "firestore.rules" }` to firebase.json.
+//   3. Run `firebase deploy --only firestore:rules` and confirm the rest of
+//      the app (which relies on the current wide-open access) still works,
+//      since this changes real enforced behavior for the first time.

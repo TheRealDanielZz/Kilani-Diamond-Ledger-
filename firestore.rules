@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------------------
+    // Helper functions
+    // ----------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isManager() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MANAGER';
+    }
+
+    // ----------------------------------------------------------------
+    // evidence collection
+    //   - Any authenticated user may read.
+    //   - Only MANAGER-role users may create, update, or delete.
+    // ----------------------------------------------------------------
+    match /evidence/{evidenceId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isManager();
+    }
+
+    // ----------------------------------------------------------------
+    // pushTokens sub-collection (users/{userId}/pushTokens/{token})
+    //   - Users may only read/write their own tokens.
+    // ----------------------------------------------------------------
+    match /users/{userId}/pushTokens/{token} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ----------------------------------------------------------------
+    // All other collections used by the app.
+    // Any signed-in user may read/write.
+    // Listed explicitly to avoid a wide-open catch-all accidentally
+    // granting writes to the evidence collection (Firestore OR semantics).
+    // ----------------------------------------------------------------
+    match /users/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /projects/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /bags/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /requests/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /movements/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /specs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /bands/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /weekly_reports/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /transactions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /notifications/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /system_logs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /diamond_transactions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /diamonds/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /settings/{docId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

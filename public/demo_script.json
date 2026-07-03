@@ -1,0 +1,89 @@
+{
+  "project": {
+    "code": "CUST-001",
+    "clientName": "Mock Training",
+    "clientPhone": "(416) 555-0100",
+    "pieceName": "Engagement Ring",
+    "gold": "14k White Gold",
+    "priority": "High",
+    "dueDate": "Apr 15, 2026",
+    "workDetails": "Set client center stone. Add halo and shoulder melee. Ensure high polish finish.",
+    "bagNumber": "3042",
+    "issuedCounts": {
+      "RD 1.2mm": 50
+    },
+    "returnedCounts": {
+      "RD 1.2mm": 2
+    },
+    "usedCounts": {
+      "RD 1.2mm": 48
+    },
+    "weights": {
+      "castingReceived": "14.20g",
+      "prePolish": "14.12g",
+      "complete": "13.85g"
+    },
+    "costs": {
+      "goldCost": "$1,240.00",
+      "diamondCost": "$480.00",
+      "labourCost": "$350.00",
+      "setterCost": "$150.00",
+      "totalCost": "$2,220.00"
+    },
+    "team": [
+      { "name": "Elena Park", "role": "Sales", "initials": "EP", "color": "#a855f7" },
+      { "name": "Harout", "role": "Setter", "initials": "H", "color": "#f59e0b" },
+      { "name": "Daniel Kilani", "role": "Manager", "initials": "DK", "color": "#38bdf8" }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "creation",
+      "step": "Step 1",
+      "title": "Creation & Dashboard",
+      "caption": "A new custom project CUST-001 is received.",
+      "audio": "scene1.mp3",
+      "narration": "Welcome to the Kilani Diamond Reporter. Let's walk through how a real piece moves through production. We start here at the dashboard, where we've just received a new piece: a custom engagement ring, project CUST-001."
+    },
+    {
+      "id": "assignment",
+      "step": "Step 2",
+      "title": "Team Assignment",
+      "caption": "Assigning the project to the setter.",
+      "audio": "scene2.mp3",
+      "narration": "First, as the manager, I need to assign this piece. I'll open the team assignment window and hand it off to our setter, Harout. He's now accountable for this item."
+    },
+    {
+      "id": "issuing",
+      "step": "Step 3",
+      "title": "Issuing Diamonds",
+      "caption": "Preparing a bag for the specific project requirements.",
+      "audio": "scene3.mp3",
+      "narration": "Before Harout can begin, he needs diamonds. From the Issuing terminal, I prepare a Bag for this specific project. I'll issue 50 pieces of 1.2 millimeter round diamonds. The system instantly docks this from central inventory and assigns it to Harout's active desk."
+    },
+    {
+      "id": "progress",
+      "step": "Step 4",
+      "title": "Production Progress",
+      "caption": "Setter updates status in real-time.",
+      "audio": "scene4.mp3",
+      "narration": "As Harout works, he updates his status directly on his tablet. Moving the progress bar from polishing to setting gives managers real-time visibility without needing to interrupt the workstation."
+    },
+    {
+      "id": "return",
+      "step": "Step 5",
+      "title": "Diamond Return",
+      "caption": "Logging used gems and leftovers after setting.",
+      "audio": "scene5.mp3",
+      "narration": "Once setting is complete, Harout returns the piece and his leftover diamonds. He logs his usage—say, 48 stones set and 2 returned. He submits his report, moving the project into the Manager Review queue."
+    },
+    {
+      "id": "verification",
+      "step": "Step 6",
+      "title": "Verification & Costing",
+      "caption": "A perfect, closed loop calculation of total costs.",
+      "audio": "scene6.mp3",
+      "narration": "The manager verifies the 2 leftover stones and closes the project out. The system automatically calculates the total cost—factoring in today's gold price, the setter's labour, and the exact weight of the diamonds used. It is a perfect, closed loop."
+    }
+  ]
+}

@@ -1,0 +1,2192 @@
+
+import React, { useState, useEffect } from 'react';
+import { store } from '../services/store';
+import { InventoryMovementType, DiamondSpec, InventoryMovement, Project, Diamond, InventorySummaryItem, InventoryNote, NoteAuditEntry } from '../types';
+import { Card, Button, StatusPill, Input } from '../components/UI';
+import { FastEntryGrid } from '../components/FastEntryGrid';
+import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown } from 'lucide-react';
+import { useToast } from '../App';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { InventoryNotesSection } from '../components/InventoryNotesSection';
+import { jsPDF } from 'jspdf';
+
+const InventoryPage: React.FC = () => {
+  const showToast = useToast();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'stock' | 'add_stock' | 'broken'>('stock');
+  
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [summary, setSummary] = useState<InventorySummaryItem[]>([]);
+  const [specs, setSpecs] = useState<DiamondSpec[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [diamonds, setDiamonds] = useState<Diamond[]>([]);
+
+  const currentUser = store.getCurrentUser();
+  const settings = store.getSettings();
+  const rawLocations = settings.inventoryLocations && settings.inventoryLocations.length > 0
+    ? settings.inventoryLocations
+    : ['Toronto', 'Miami'];
+
+  const locations = rawLocations.filter(loc => store.hasLocationAccess(currentUser, loc));
+
+  // Selected Location / Inventory Type Filter
+  const [selectedLocation, setSelectedLocation] = useState<string>(() => {
+    const raw = store.getSettings().inventoryLocations || ['Toronto', 'Miami'];
+    const allowed = raw.filter(loc => store.hasLocationAccess(store.getCurrentUser(), loc));
+    return allowed[0] || 'Toronto';
+  });
+
+  // Ensure selectedLocation is valid if locations change
+  useEffect(() => {
+    const validLocations = [...locations, 'Melee'];
+    if (!validLocations.includes(selectedLocation)) {
+      setSelectedLocation(locations[0] || 'Toronto');
+    }
+  }, [locations, selectedLocation]);
+
+  // Check search params for notification navigation
+  const locationObj = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(locationObj.search);
+    const openNoteId = params.get('openNote');
+    const loc = params.get('loc');
+    
+    if (openNoteId) {
+      if (loc) {
+        setSelectedLocation(loc);
+      }
+      
+      // Allow selectedLocation state to apply, then expand the row
+      setTimeout(() => {
+        if (openNoteId.startsWith('spec-')) {
+          setExpandedMeleeSpecId(openNoteId);
+        } else {
+          setExpandedDiamondId(openNoteId);
+        }
+        
+        // Scroll the expanded row into view
+        const element = document.getElementById(`row-${openNoteId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [locationObj.search]);
+
+  // Sorting & Filtering State
+  const [sortField, setSortField] = useState<string>('size');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [filterText, setFilterText] = useState('');
+
+  // World-Class UI/UX States
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [selectedShapeFilter, setSelectedShapeFilter] = useState<string | null>(null);
+  const [expandedDiamondId, setExpandedDiamondId] = useState<string | null>(null);
+  const [expandedMeleeSpecId, setExpandedMeleeSpecId] = useState<string | null>(null);
+  const [inlinePlaceValues, setInlinePlaceValues] = useState<{ [key: string]: string }>({});
+  const [inlineCodeValues, setInlineCodeValues] = useState<{ [key: string]: string }>({});
+  const [inlineNotesValues, setInlineNotesValues] = useState<{ [key: string]: string }>({});
+  const [actionHistory, setActionHistory] = useState<{ id: string; prevData: Partial<Diamond> }[]>([]);
+  const [meleeActionHistory, setMeleeActionHistory] = useState<{ specId: string; prevPcs: number }[]>([]);
+  const [inlineMeleePcsValues, setInlineMeleePcsValues] = useState<{ [key: string]: string }>({});
+
+  // Inline Operations
+  const toggleSoldStatus = async (diamondId: string, currentStatus: string) => {
+    const oldDia = diamonds.find(d => d.id === diamondId);
+    if (oldDia) {
+      setActionHistory(prev => [...prev, { id: diamondId, prevData: { sold: oldDia.sold || '' } }]);
+    }
+    const newStatus = currentStatus === 'SOLD' ? '' : 'SOLD';
+    await store.updateDiamond(diamondId, { sold: newStatus });
+    showToast(`Diamond marked as ${newStatus === 'SOLD' ? 'Sold' : 'Available'}`);
+  };
+
+  const toggleMountState = async (diamondId: string, currentState: string) => {
+    const oldDia = diamonds.find(d => d.id === diamondId);
+    if (oldDia) {
+      setActionHistory(prev => [...prev, { id: diamondId, prevData: { mountLoose: oldDia.mountLoose || '' } }]);
+    }
+    const newState = currentState === 'MOUNTED' ? 'LOOSE' : 'MOUNTED';
+    await store.updateDiamond(diamondId, { mountLoose: newState });
+    showToast(`Diamond marked as ${newState}`);
+  };
+
+  const updatePlaceInline = async (diamondId: string, val: string) => {
+    const oldDia = diamonds.find(d => d.id === diamondId);
+    if (oldDia && (oldDia.place || '') !== val) {
+      setActionHistory(prev => [...prev, { id: diamondId, prevData: { place: oldDia.place || '' } }]);
+    }
+    await store.updateDiamond(diamondId, { place: val });
+    showToast(`Cabinet location updated to: ${val}`);
+  };
+
+  const updateCodeInline = async (diamondId: string, val: string) => {
+    const oldDia = diamonds.find(d => d.id === diamondId);
+    if (oldDia && (oldDia.code || '') !== val) {
+      setActionHistory(prev => [...prev, { id: diamondId, prevData: { code: oldDia.code || '' } }]);
+    }
+    await store.updateDiamond(diamondId, { code: val });
+    showToast(`Item code updated to: ${val}`);
+  };
+
+  const updateNotesInline = async (diamondId: string, val: string) => {
+    const oldDia = diamonds.find(d => d.id === diamondId);
+    if (oldDia && (oldDia.notes || '') !== val) {
+      setActionHistory(prev => [...prev, { id: diamondId, prevData: { notes: oldDia.notes || '' } }]);
+    }
+    await store.updateDiamond(diamondId, { notes: val });
+    showToast('Note saved');
+  };
+
+  const handleToggleExpand = (diamondId: string, currentPlace: string, currentCode: string, currentNotes?: string) => {
+    if (expandedDiamondId === diamondId) {
+      setExpandedDiamondId(null);
+    } else {
+      setExpandedDiamondId(diamondId);
+      setInlinePlaceValues(prev => ({ ...prev, [diamondId]: currentPlace || '' }));
+      setInlineCodeValues(prev => ({ ...prev, [diamondId]: currentCode || '' }));
+      setInlineNotesValues(prev => ({ ...prev, [diamondId]: currentNotes || '' }));
+    }
+  };
+
+  // 'Melee' behaves as aggregate spec view
+  const isMeleeView = selectedLocation === 'Melee';
+  // Specs filtered to the current melee-style location
+  const currentSpecs = specs.filter(s => !s.location || s.location === 'Melee');
+
+  // Analytics Calculation (Toronto/Miami)
+  const analyticsData = React.useMemo(() => {
+    if (isMeleeView) return null;
+    
+    const locationDiamonds = diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase());
+    const totalCount = locationDiamonds.length;
+    
+    if (totalCount === 0) return null;
+    
+    const totalCarats = locationDiamonds.reduce((sum, d) => sum + (d.size || 0), 0);
+    const avgCarats = totalCarats / totalCount;
+    
+    // Status breakdown
+    const soldCount = locationDiamonds.filter(d => d.sold?.toUpperCase() === 'SOLD').length;
+    const availableCount = totalCount - soldCount;
+    
+    // Shape distribution
+    const shapesMap: { [key: string]: number } = {};
+    locationDiamonds.forEach(d => {
+      const s = (d.shape || 'UNKNOWN').toUpperCase();
+      shapesMap[s] = (shapesMap[s] || 0) + 1;
+    });
+    
+    const shapesList = Object.entries(shapesMap)
+      .map(([shape, count]) => ({ shape, count, percentage: (count / totalCount) * 100 }))
+      .sort((a, b) => b.count - a.count);
+      
+    return {
+      totalCount,
+      totalCarats,
+      avgCarats,
+      soldCount,
+      availableCount,
+      shapesList
+    };
+  }, [diamonds, selectedLocation]);
+
+  // Analytics Calculation (Melee)
+  const meleeAnalyticsData = React.useMemo(() => {
+    if (!isMeleeView) return null;
+    if (summary.length === 0) return null;
+
+    const totalSpecs = summary.length;
+    const totalPcs = summary.reduce((sum, item) => sum + (item.pcs || 0), 0);
+    const totalCt = summary.reduce((sum, item) => sum + (item.ct || 0), 0);
+    const avgCtPerStone = totalPcs > 0 ? totalCt / totalPcs : 0;
+
+    // Stock level breakdown
+    const wellStocked = summary.filter(item => item.pcs > 50).length;
+    const moderate = summary.filter(item => item.pcs > 10 && item.pcs <= 50).length;
+    const low = summary.filter(item => item.pcs > 0 && item.pcs <= 10).length;
+    const empty = summary.filter(item => item.pcs === 0).length;
+
+    // Shape distribution by pcs count
+    const shapesMap: { [key: string]: number } = {};
+    summary.forEach(item => {
+      const s = (item.spec?.shape || 'ROUND').toUpperCase();
+      shapesMap[s] = (shapesMap[s] || 0) + (item.pcs || 0);
+    });
+    const totalForPercentage = Object.values(shapesMap).reduce((a, b) => a + b, 0);
+    const shapesList = Object.entries(shapesMap)
+      .map(([shape, count]) => ({ shape, count, percentage: totalForPercentage > 0 ? (count / totalForPercentage) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      totalSpecs,
+      totalPcs,
+      totalCt,
+      avgCtPerStone,
+      wellStocked,
+      moderate,
+      low,
+      empty,
+      shapesList
+    };
+  }, [summary, isMeleeView]);
+
+  // Filter and sort current stock (Melee)
+  const filteredAndSortedSummary = React.useMemo(() => {
+    if (!isMeleeView) return [];
+    let result = [...summary];
+
+    // Shape Filter from analytics donut click
+    if (selectedShapeFilter) {
+      result = result.filter(item => (item.spec?.shape || 'ROUND').toUpperCase() === selectedShapeFilter.toUpperCase());
+    }
+
+    // Filter
+    if (filterText.trim()) {
+      const q = filterText.toLowerCase().trim();
+      result = result.filter(item => 
+        (item.spec?.label || '').toLowerCase().includes(q) ||
+        (item.spec?.shape || '').toLowerCase().includes(q) ||
+        (item.spec?.inventoryNote?.text || '').toLowerCase().includes(q) ||
+        (item.spec?.inventoryNote?.authorName || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let valA: any;
+      let valB: any;
+
+      if (sortField === 'spec') {
+        // Mixed / Unsorted spec should always be sorted to the top in asc, bottom in desc
+        if (a.spec?.id === 'MIXED-UNSORTED' && b.spec?.id !== 'MIXED-UNSORTED') {
+          return sortDirection === 'asc' ? -1 : 1;
+        }
+        if (b.spec?.id === 'MIXED-UNSORTED' && a.spec?.id !== 'MIXED-UNSORTED') {
+          return sortDirection === 'asc' ? 1 : -1;
+        }
+        
+        valA = a.spec?.sizeMm ?? 0;
+        valB = b.spec?.sizeMm ?? 0;
+        
+        if (valA === valB) {
+          const labelA = a.spec?.label || '';
+          const labelB = b.spec?.label || '';
+          return sortDirection === 'asc' ? labelA.localeCompare(labelB) : labelB.localeCompare(labelA);
+        }
+      } else if (sortField === 'pcs') {
+        valA = a.pcs || 0;
+        valB = b.pcs || 0;
+      } else { // 'ct'
+        valA = a.ct || 0;
+        valB = b.ct || 0;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [summary, filterText, sortField, sortDirection, isMeleeView, selectedShapeFilter]);
+
+  // Filter and sort current stock (Certified Center Diamonds)
+  const filteredAndSortedDiamonds = React.useMemo(() => {
+    if (isMeleeView) return [];
+    
+    let result = diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase());
+
+    // Shape Filter from Donut Slice click
+    if (selectedShapeFilter) {
+      result = result.filter(d => (d.shape || '').toUpperCase() === selectedShapeFilter.toUpperCase());
+    }
+
+    // Search Filter
+    if (filterText.trim()) {
+      const q = filterText.toLowerCase().trim();
+      result = result.filter(d => 
+        (d.shape || '').toLowerCase().includes(q) ||
+        (d.color || '').toLowerCase().includes(q) ||
+        (d.clarity || '').toLowerCase().includes(q) ||
+        (d.certNumber || '').toLowerCase().includes(q) ||
+        (d.code || '').toLowerCase().includes(q) ||
+        (d.place || '').toLowerCase().includes(q) ||
+        (d.mountLoose || '').toLowerCase().includes(q) ||
+        (d.inventoryNote?.text || '').toLowerCase().includes(q) ||
+        (d.inventoryNote?.authorName || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let valA: any = (a as any)[sortField] ?? '';
+      let valB: any = (b as any)[sortField] ?? '';
+
+      if (sortField === 'size') {
+        valA = a.size || 0;
+        valB = b.size || 0;
+      } else {
+        valA = String(valA).toLowerCase();
+        valB = String(valB).toLowerCase();
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [diamonds, selectedLocation, filterText, sortField, sortDirection, selectedShapeFilter]);
+
+  // Automatically reset sort when switching view modes
+  useEffect(() => {
+    setSelectedShapeFilter(null);
+    setExpandedDiamondId(null);
+    setExpandedMeleeSpecId(null);
+    if (isMeleeView) {
+      setSortField('spec');
+      setSortDirection('asc');
+    } else {
+      setSortField('size');
+      setSortDirection('desc');
+    }
+  }, [selectedLocation]);
+
+  // Melee inline quick edit
+  const handleMeleeQuickAdjust = (specId: string, currentPcs: number, delta: number) => {
+    const newPcs = Math.max(0, currentPcs + delta);
+    setMeleeActionHistory(prev => [...prev, { specId, prevPcs: currentPcs }]);
+    setInlineMeleePcsValues(prev => ({ ...prev, [specId]: newPcs.toString() }));
+    store.editStock(specId, newPcs, store.getCurrentUser()?.id || 'unknown', `Quick adjust: ${delta > 0 ? '+' : ''}${delta} pcs`);
+    showToast(`Stock ${delta > 0 ? 'increased' : 'decreased'} by ${Math.abs(delta)} pcs`);
+  };
+
+  const handleMeleeSetPcs = (specId: string, currentPcs: number, newPcsStr: string) => {
+    const newPcs = parseInt(newPcsStr);
+    if (isNaN(newPcs) || newPcs < 0 || newPcs === currentPcs) return;
+    setMeleeActionHistory(prev => [...prev, { specId, prevPcs: currentPcs }]);
+    store.editStock(specId, newPcs, store.getCurrentUser()?.id || 'unknown', `Inline set: ${currentPcs} → ${newPcs} pcs`);
+    showToast(`Stock updated: ${currentPcs} → ${newPcs} pcs`);
+  };
+
+  // Global Keyboard listener for Command+Z / Ctrl+Z undo action
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCmdZ = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z';
+      if (isCmdZ) {
+        // Only trigger custom undo if NOT typing inside an active input element
+        const activeEl = document.activeElement;
+        const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.getAttribute('contenteditable') === 'true');
+        
+        if (isInput) return; // Allow default text field undo behavior
+        
+        // Try diamond undo first, then melee undo
+        if (actionHistory.length > 0) {
+          e.preventDefault();
+          const lastAction = actionHistory[actionHistory.length - 1];
+          setActionHistory(prev => prev.slice(0, -1));
+          store.updateDiamond(lastAction.id, lastAction.prevData);
+          showToast("Undone last diamond adjustment");
+        } else if (meleeActionHistory.length > 0) {
+          e.preventDefault();
+          const lastMelee = meleeActionHistory[meleeActionHistory.length - 1];
+          setMeleeActionHistory(prev => prev.slice(0, -1));
+          store.editStock(lastMelee.specId, lastMelee.prevPcs, store.getCurrentUser()?.id || 'unknown', 'Undo: reverted to previous count');
+          showToast("Undone last melee stock adjustment");
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [actionHistory, meleeActionHistory]);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortField !== field) return <span className="opacity-30 ml-1">↕</span>;
+    return sortDirection === 'asc' ? <span className="text-lux-gold ml-1">↑</span> : <span className="text-lux-gold ml-1">↓</span>;
+  };
+
+  // Entry Mode Toggle
+  const [entryMode, setEntryMode] = useState<'PCS' | 'WEIGHT'>('PCS');
+
+  // Shipment Form State
+  const [shipmentLines, setShipmentLines] = useState<any[]>([]);
+  const [supplier, setSupplier] = useState('');
+  const [invoice, setInvoice] = useState('');
+
+  // Breakage Form State (New Weight Based Logic)
+  const [brokenProject, setBrokenProject] = useState('');
+  const [brokenNote, setBrokenNote] = useState('');
+  const [brokenCt, setBrokenCt] = useState('');
+  const [brokenPcs, setBrokenPcs] = useState('');
+  const [brokenSpec, setBrokenSpec] = useState('');
+  
+  // Stock Edit Modal
+  const [editingStock, setEditingStock] = useState<string | null>(null); 
+  const [editPcs, setEditPcs] = useState<string>('');
+  const [editReason, setEditReason] = useState('');
+
+  // Diamond Edit Modal State
+  const [editingDiamond, setEditingDiamond] = useState<Diamond | null>(null);
+  const [editMountLoose, setEditMountLoose] = useState('');
+  const [editCode, setEditCode] = useState('');
+  const [editPlace, setEditPlace] = useState('');
+  const [editSold, setEditSold] = useState('');
+
+  // Quick Add Spec Modal
+  const [isCreatingSpec, setIsCreatingSpec] = useState(false);
+  const [newSpecData, setNewSpecData] = useState({ size: '', shape: 'Round', weight: '', cost: '' });
+
+  // Quick Add Diamond Modal
+  const [isCreatingDiamond, setIsCreatingDiamond] = useState(false);
+  const [newDiamondData, setNewDiamondData] = useState({
+    shape: 'ROUND', size: '', color: '', clarity: '', cut: '', certNumber: '', measurements: '', mountLoose: 'LOOSE', place: '', code: '', sold: ''
+  });
+
+  useEffect(() => {
+    const sync = () => {
+        refreshData();
+        setSpecs(store.getSpecs());
+        setProjects(store.getProjects());
+        setDiamonds(store.getDiamonds());
+    };
+    sync();
+    return store.subscribe(sync);
+  }, []);
+
+  useEffect(() => {
+    if (editingDiamond) {
+      setEditMountLoose(editingDiamond.mountLoose || '');
+      setEditCode(editingDiamond.code || '');
+      setEditPlace(editingDiamond.place || '');
+      setEditSold(editingDiamond.sold || '');
+    }
+  }, [editingDiamond]);
+
+  const refreshData = () => {
+    setMovements([...store.getInventoryMovements()]);
+    setSummary(store.getInventorySummary('Melee'));
+  };
+
+  const handleDiamondEdit = async () => {
+    if (editingDiamond) {
+      await store.updateDiamond(editingDiamond.id, {
+        mountLoose: editMountLoose,
+        code: editCode,
+        place: editPlace,
+        sold: editSold
+      });
+      showToast("Diamond updated successfully");
+      setEditingDiamond(null);
+    }
+  };
+
+  const handleCreateDiamond = async () => {
+    const sizeVal = parseFloat(newDiamondData.size);
+    if (!newDiamondData.shape) return alert("Shape is required");
+    if (isNaN(sizeVal) || sizeVal <= 0) return alert("Valid size (carat) is required");
+    
+    const displayLocation = selectedLocation === 'Melee' ? (locations[0] || 'Toronto') : selectedLocation;
+    const locPrefix = displayLocation.slice(0, 3).toLowerCase();
+    
+    const newDia: Diamond = {
+      id: 'dia-' + locPrefix + '-' + Math.random().toString(36).substr(2, 8),
+      location: displayLocation,
+      shape: newDiamondData.shape.toUpperCase(),
+      size: sizeVal,
+      color: newDiamondData.color.toUpperCase(),
+      clarity: newDiamondData.clarity.toUpperCase(),
+      cut: newDiamondData.cut.toUpperCase(),
+      certNumber: newDiamondData.certNumber,
+      measurements: newDiamondData.measurements,
+      mountLoose: newDiamondData.mountLoose,
+      place: newDiamondData.place,
+      code: newDiamondData.code,
+      sold: newDiamondData.sold,
+      stocktake: ""
+    };
+    
+    await store.addDiamond(newDia);
+    showToast("Diamond added successfully");
+    setIsCreatingDiamond(false);
+    setNewDiamondData({ shape: 'ROUND', size: '', color: '', clarity: '', cut: '', certNumber: '', measurements: '', mountLoose: 'LOOSE', place: '', code: '', sold: '' });
+  };
+
+  const getCurrentUserId = () => store.getCurrentUser()?.id || 'unknown';
+
+  const handleSubmitShipment = () => {
+    const validLines = shipmentLines.filter(l => l.ct > 0); 
+    if (validLines.length === 0) return;
+    
+    const isQuickAdd = !supplier && !invoice;
+
+    store.createInventoryMovement({
+      type: InventoryMovementType.SHIPMENT_IN,
+      createdById: getCurrentUserId(),
+      supplier: supplier || 'Internal',
+      invoiceNo: invoice || 'Quick Add',
+      notes: isQuickAdd 
+        ? `Manual Stock Add (${entryMode === 'WEIGHT' ? 'Weight' : 'Pcs'})`
+        : `Shipment from ${supplier} (${entryMode === 'WEIGHT' ? 'By Weight' : 'By Pieces'})`,
+      lines: validLines.map(l => ({
+        specId: l.specId,
+        pcs: l.pcs > 0 ? l.pcs : undefined,
+        ct: l.ct,
+        costPerCtUsd: l.cost
+      })),
+      location: selectedLocation
+    });
+
+    showToast("Stock Added Successfully");
+    setShipmentLines([]);
+    setSupplier('');
+    setInvoice('');
+    setActiveTab('stock');
+  };
+
+  const handleSubmitBreakage = () => {
+     const ctVal = parseFloat(brokenCt);
+     const pcsVal = parseInt(brokenPcs) || 0;
+
+     if (!brokenCt || isNaN(ctVal) || ctVal <= 0) return alert("Valid carat weight required.");
+     if (!brokenNote) return alert("Reason is required.");
+
+     store.createInventoryMovement({
+        type: InventoryMovementType.BROKEN_OUT,
+        createdById: getCurrentUserId(),
+        referenceProjectId: brokenProject || undefined,
+        notes: brokenNote,
+        lines: [{
+           specId: brokenSpec || undefined,
+           pcs: pcsVal > 0 ? pcsVal : undefined,
+           ct: ctVal
+        }],
+        location: selectedLocation
+     });
+
+     showToast("Breakage Recorded");
+     setBrokenCt('');
+     setBrokenPcs('');
+     setBrokenSpec('');
+     setBrokenProject('');
+     setBrokenNote('');
+     setActiveTab('stock');
+  };
+
+  const handleStockEdit = () => {
+    if (editingStock) {
+       const qty = parseInt(editPcs);
+       if (isNaN(qty)) {
+          showToast("Please enter a valid quantity");
+          return;
+       }
+
+       store.editStock(editingStock, qty, getCurrentUserId(), editReason);
+       showToast("Stock Adjusted Successfully");
+       setEditingStock(null);
+    }
+  };
+
+  const handleCreateSpec = async () => {
+      const size = parseFloat(newSpecData.size);
+      const weight = parseFloat(newSpecData.weight);
+      
+      if (!newSpecData.size || isNaN(size)) return alert("Size is required");
+      if (!newSpecData.weight || isNaN(weight)) return alert("Avg Weight is required");
+
+      // Default shape to Round since selector was removed
+      const shape = 'Round'; 
+      const label = `${newSpecData.size}mm ${shape}`;
+      
+      const newSpec: DiamondSpec = {
+          id: 'sp-' + Math.random().toString(36).substr(2, 9),
+          label: label,
+          sizeMm: size,
+          shape: shape,
+          ctPerStone: weight,
+          defaultCostPerCtUsd: parseFloat(newSpecData.cost) || 0,
+          isOverride: !!newSpecData.cost
+      };
+
+      await store.addSpec(newSpec);
+      setIsCreatingSpec(false);
+      setNewSpecData({ size: '', shape: 'Round', weight: '', cost: '' });
+      showToast(`Created: ${label}`);
+  };
+
+
+
+  const exportCurrentStockCSV = () => {
+    let headers: string[] = [];
+    let rows: string[][] = [];
+
+    if (isMeleeView) {
+      headers = [
+        'Spec Label',
+        'Shape',
+        'Size (mm)',
+        'Avg Weight (ct)',
+        'Cost per Ct (USD)',
+        'Quantity (pcs)',
+        'Weight (ct)',
+        'Est Value (USD)',
+        'Note Text',
+        'Note Author',
+        'Note Created At',
+        'Note Last Edited At',
+        'Location'
+      ];
+      
+      rows = filteredAndSortedSummary.map(item => {
+        const estValue = (item.ct * (item.spec.defaultCostPerCtUsd || 0)).toFixed(2);
+        return [
+          item.spec.label,
+          item.spec.shape || 'Round',
+          String(item.spec.sizeMm),
+          String(item.spec.ctPerStone),
+          String(item.spec.defaultCostPerCtUsd || 0),
+          String(item.pcs),
+          item.ct.toFixed(3),
+          estValue,
+          item.spec.inventoryNote?.text || '',
+          item.spec.inventoryNote?.authorName || '',
+          item.spec.inventoryNote?.createdAt || '',
+          item.spec.inventoryNote?.lastEditedAt || '',
+          'Melee'
+        ];
+      });
+    } else {
+      headers = [
+        'Stone ID',
+        'Shape',
+        'Size (ct)',
+        'Color',
+        'Clarity',
+        'Cut',
+        'Certificate #',
+        'Mounting',
+        'Item Code',
+        'Cabinet/Place',
+        'Status',
+        'Note Text',
+        'Note Author',
+        'Note Created At',
+        'Note Last Edited At',
+        'Location'
+      ];
+      
+      rows = filteredAndSortedDiamonds.map(d => [
+        d.id,
+        d.shape,
+        d.size.toFixed(2),
+        d.color || '',
+        d.clarity || '',
+        d.cut || '',
+        d.certNumber || '',
+        d.mountLoose || '',
+        d.code || '',
+        d.place || '',
+        d.sold ? 'SOLD' : 'AVAILABLE',
+        d.inventoryNote?.text || d.notes || '',
+        d.inventoryNote?.authorName || (d.notes ? 'Legacy Note' : ''),
+        d.inventoryNote?.createdAt || '',
+        d.inventoryNote?.lastEditedAt || '',
+        d.location
+      ]);
+    }
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => 
+        row.map(val => {
+          const s = String(val ?? '').replace(/"/g, '""');
+          return s.includes(',') || s.includes('\n') || s.includes('"') ? `"${s}"` : s;
+        }).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_${selectedLocation.toLowerCase()}_stock_${new Date().toISOString().slice(0,10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('CSV exported successfully');
+  };
+
+  const exportCurrentStockPDF = () => {
+    const doc = new jsPDF();
+    let y = 20;
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(22, 23, 29);
+    doc.text("KILANI DIAMOND REPORTER", 20, y);
+    y += 8;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(184, 134, 11);
+    doc.text(`Inventory Stock Report — ${selectedLocation.toUpperCase()} Location`, 20, y);
+    y += 12;
+
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 20, y);
+    y += 8;
+
+    // Draw Line
+    doc.setDrawColor(184, 134, 11);
+    doc.setLineWidth(0.5);
+    doc.line(20, y, 190, y);
+    y += 10;
+
+    // Render Table
+    if (isMeleeView) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(22, 23, 29);
+      doc.text("Spec Label", 20, y);
+      doc.text("Shape", 50, y);
+      doc.text("Qty", 75, y);
+      doc.text("Weight", 90, y);
+      doc.text("Cost/Ct", 110, y);
+      doc.text("Notes", 130, y);
+      y += 6;
+
+      doc.line(20, y - 2, 190, y - 2);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      filteredAndSortedSummary.forEach(item => {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(item.spec.label, 20, y);
+        doc.text(item.spec.shape || 'Round', 50, y);
+        doc.text(String(item.pcs), 75, y);
+        doc.text(`${item.ct.toFixed(3)} ct`, 90, y);
+        doc.text(`$${item.spec.defaultCostPerCtUsd || 0}`, 110, y);
+        
+        // Note snippet
+        const noteText = item.spec.inventoryNote?.text || '';
+        const noteSnippet = noteText.length > 30 ? noteText.slice(0, 27) + '...' : noteText;
+        doc.text(noteSnippet, 130, y);
+        y += 7;
+      });
+    } else {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(22, 23, 29);
+      doc.text("Shape", 20, y);
+      doc.text("Weight", 40, y);
+      doc.text("Color", 60, y);
+      doc.text("Clarity", 75, y);
+      doc.text("Code", 95, y);
+      doc.text("Cabinet", 120, y);
+      doc.text("Notes", 140, y);
+      y += 6;
+
+      doc.line(20, y - 2, 190, y - 2);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      filteredAndSortedDiamonds.forEach(d => {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(d.shape, 20, y);
+        doc.text(`${d.size.toFixed(2)} ct`, 40, y);
+        doc.text(d.color || '-', 60, y);
+        doc.text(d.clarity || '-', 75, y);
+        doc.text(d.code || '-', 95, y);
+        doc.text(d.place || '-', 120, y);
+        
+        const noteText = d.inventoryNote?.text || d.notes || '';
+        const noteSnippet = noteText.length > 30 ? noteText.slice(0, 27) + '...' : noteText;
+        doc.text(noteSnippet, 140, y);
+        y += 7;
+      });
+    }
+
+    doc.save(`inventory_${selectedLocation.toLowerCase()}_stock_${new Date().toISOString().slice(0,10)}.pdf`);
+    showToast('PDF exported successfully');
+  };
+
+  return (
+    <div className="max-w-[1600px] mx-auto px-4 safe-pt pb-24">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+        <div data-tour="inventory-header">
+          <h1 className="text-3xl font-bold text-lux-cream tracking-tight flex items-center gap-3">
+             <div className="w-10 h-10 bg-lux-gold/10 rounded-2xl flex items-center justify-center border border-lux-gold/20">
+                <LayoutGrid className="text-lux-gold" size={24} />
+             </div>
+             Inventory Ledger
+          </h1>
+          <p className="text-sm text-zinc-500 mt-1.5 ml-1">Precision aggregate tracking and stock management.</p>
+        </div>
+        
+        <div className="flex flex-wrap gap-1.5 bg-zinc-900/40 backdrop-blur-xl p-1.5 rounded-[2rem] border border-white/5 w-full md:w-auto shadow-inner">
+           <button 
+             onClick={() => setActiveTab('stock')} 
+             className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'stock' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+           >
+             Current Stock
+           </button>
+           <button 
+             onClick={() => setActiveTab('add_stock')} 
+             className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'add_stock' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+           >
+             Add Stock
+           </button>
+           <button 
+             onClick={() => setActiveTab('broken')} 
+             className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'broken' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+           >
+             Log Breakage
+           </button>
+        </div>
+      </div>
+
+      {activeTab === 'stock' && (
+        <div className="flex flex-col gap-8 animate-in fade-in duration-300">
+          {/* Main Stock Table */}
+          <Card className="w-full overflow-hidden border-white/5 shadow-glass flex flex-col h-[650px] liquid-glass">
+             <div className="p-4 border-b border-white/5 flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
+                <div className="flex items-center gap-4 flex-wrap">
+                   <div className="relative group">
+                      <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-zinc-500 group-focus-within:text-lux-gold transition-colors" />
+                      <input 
+                        type="text" 
+                        placeholder={isMeleeView ? "Filter specs..." : "Filter diamonds..."}
+                        value={filterText}
+                        onChange={e => setFilterText(e.target.value)}
+                        className="pl-10 text-sm bg-black/40 border border-white/5 text-lux-cream rounded-2xl py-2 w-48 focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none transition-all placeholder:text-zinc-600" 
+                      />
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Location:</span>
+                     <select 
+                       value={selectedLocation}
+                       onChange={e => setSelectedLocation(e.target.value)}
+                       className="bg-[#16171D] border border-white/5 text-lux-cream rounded-xl px-3 py-1.5 text-xs font-bold focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none cursor-pointer"
+                     >
+                       {locations.filter(l => l !== 'Melee').map(loc => (
+                         <option key={loc} value={loc}>{loc}</option>
+                       ))}
+                       <option value="Melee">Melee</option>
+                     </select>
+                   </div>
+                   <button
+                      onClick={() => setShowAnalytics(!showAnalytics)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${showAnalytics ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/30' : 'bg-[#16171D] text-zinc-400 border-white/5 hover:text-white'}`}
+                    >
+                      <BarChart3 size={12} className={showAnalytics ? 'text-lux-gold' : 'text-zinc-500'} />
+                      <span>Analytics</span>
+                    </button>
+                    <button
+                      onClick={exportCurrentStockCSV}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                      title="Export current stock to CSV"
+                    >
+                      <Download size={12} className="text-zinc-500" />
+                      <span>Export CSV</span>
+                    </button>
+                    <button
+                      onClick={exportCurrentStockPDF}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                      title="Export current stock to PDF"
+                    >
+                      <FileDown size={12} className="text-zinc-500" />
+                      <span>Export PDF</span>
+                    </button>
+                   {selectedShapeFilter && (
+                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lux-gold/5 border border-lux-gold/10 rounded-xl">
+                        <Tag size={12} className="text-lux-gold" />
+                        <span className="text-[10px] font-bold text-lux-gold uppercase tracking-wider">{selectedShapeFilter}</span>
+                        <button onClick={() => setSelectedShapeFilter(null)} className="ml-1 text-zinc-500 hover:text-white text-[10px] font-bold">✕</button>
+                     </div>
+                   )}
+                </div>
+                <div className="flex items-center gap-3">
+                   <div className="flex flex-col items-end mr-3">
+                      <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">
+                        {isMeleeView ? 'Total Specs' : 'Total Diamonds'}
+                      </span>
+                      <span className="text-sm font-mono font-bold text-lux-cream">
+                         {isMeleeView
+                           ? (filteredAndSortedSummary.length !== summary.length ? `${filteredAndSortedSummary.length}/${summary.length}` : summary.length)
+                           : (filteredAndSortedDiamonds.length !== diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length
+                               ? `${filteredAndSortedDiamonds.length}/${diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length}`
+                               : diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length)}
+                      </span>
+                   </div>
+                   {isMeleeView ? (
+                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setActiveTab('add_stock')}>
+                        <Plus size={14} className="mr-1" /> Add
+                     </Button>
+                   ) : (
+                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setIsCreatingDiamond(true)}>
+                        <Plus size={14} className="mr-1" /> Add Stone
+                     </Button>
+                   )}
+                </div>
+             </div>
+
+             <style>{`
+               @keyframes subtle-pulse {
+                 0%, 100% { opacity: 1; transform: scale(1); }
+                 50% { opacity: 0.85; transform: scale(0.98); }
+               }
+               .animate-pulse-subtle {
+                 animation: subtle-pulse 3s infinite ease-in-out;
+               }
+               .legend-bar-hover:hover {
+                 background-color: rgba(255, 255, 255, 0.05);
+               }
+             `}</style>
+
+             {/* Collapsible Analytics Panel */}
+             {!isMeleeView && showAnalytics && analyticsData && (
+               <div className="p-6 border-b border-white/5 bg-black/30 grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
+                  {/* Donut Chart */}
+                  <div className="flex flex-col items-center justify-center bg-white/[0.01] border border-white/5 p-4 rounded-2xl relative overflow-hidden group">
+                     <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">Shape Distribution</div>
+                     
+                     <div className="flex items-center gap-6 w-full max-w-xs">
+                        <div className="relative w-24 h-24 flex items-center justify-center">
+                           <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="rgba(255,255,255,0.03)" strokeWidth="3" />
+                              {(() => {
+                                 let accumPercent = 0;
+                                 const colors = ['#F5C249', '#60A5FA', '#34D399', '#F472B6', '#A78BFA', '#F59E0B', '#3B82F6', '#10B981'];
+                                 return analyticsData.shapesList.slice(0, 6).map((item, idx) => {
+                                    const strokeDasharray = `${item.percentage} ${100 - item.percentage}`;
+                                    const strokeDashoffset = 100 - accumPercent;
+                                    accumPercent += item.percentage;
+                                    return (
+                                       <circle 
+                                          key={item.shape}
+                                          cx="18"
+                                          cy="18"
+                                          r="15.915"
+                                          fill="transparent"
+                                          stroke={colors[idx % colors.length]}
+                                          strokeWidth="3.2"
+                                          strokeDasharray={strokeDasharray}
+                                          strokeDashoffset={strokeDashoffset}
+                                          className="cursor-pointer hover:stroke-[4] transition-all duration-300"
+                                          onClick={() => setSelectedShapeFilter(selectedShapeFilter === item.shape ? null : item.shape)}
+                                       >
+                                          <title>{`${item.shape}: ${item.count} pcs (${item.percentage.toFixed(1)}%)`}</title>
+                                       </circle>
+                                    );
+                                 });
+                              })()}
+                           </svg>
+                           <div className="absolute flex flex-col items-center justify-center pointer-events-none">
+                              <span className="text-xl font-bold font-mono text-white">{analyticsData.totalCount}</span>
+                              <span className="text-[8px] text-zinc-500 uppercase tracking-widest">Stones</span>
+                           </div>
+                        </div>
+                        
+                        <div className="flex-1 space-y-1.5 max-h-24 overflow-y-auto no-scrollbar pr-1">
+                           {analyticsData.shapesList.slice(0, 5).map((item, idx) => {
+                              const colors = ['#F5C249', '#60A5FA', '#34D399', '#F472B6', '#A78BFA'];
+                              const isSelected = selectedShapeFilter === item.shape;
+                              return (
+                                 <div 
+                                    key={item.shape} 
+                                    onClick={() => setSelectedShapeFilter(isSelected ? null : item.shape)}
+                                    className={`flex items-center justify-between text-[10px] font-medium cursor-pointer py-0.5 px-1.5 rounded transition-colors ${isSelected ? 'bg-lux-gold/10 text-lux-gold' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}
+                                 >
+                                    <div className="flex items-center gap-1.5 truncate">
+                                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length] }} />
+                                       <span className="font-bold truncate">{item.shape}</span>
+                                    </div>
+                                    <span className="font-mono text-zinc-500">{item.count}</span>
+                                 </div>
+                              );
+                           })}
+                        </div>
+                     </div>
+                  </div>
+                  
+                  {/* Status Breakdown */}
+                  <div className="flex flex-col bg-white/[0.01] border border-white/5 p-4 rounded-2xl justify-between">
+                     <div>
+                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Status Breakdown</div>
+                        <div className="space-y-4">
+                           <div>
+                              <div className="flex justify-between text-xs mb-1">
+                                 <span className="text-zinc-400 font-medium">Available</span>
+                                 <span className="font-mono text-emerald-400 font-bold">{analyticsData.availableCount} stones</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                 <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(analyticsData.availableCount / analyticsData.totalCount) * 100}%` }}></div>
+                              </div>
+                           </div>
+                           <div>
+                              <div className="flex justify-between text-xs mb-1">
+                                 <span className="text-zinc-400 font-medium">Sold</span>
+                                 <span className="font-mono text-red-400 font-bold">{analyticsData.soldCount} stones</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                 <div className="h-full bg-red-500 rounded-full" style={{ width: `${(analyticsData.soldCount / analyticsData.totalCount) * 100}%` }}></div>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                     {selectedShapeFilter && (
+                        <div className="mt-3 flex items-center justify-between bg-lux-gold/5 border border-lux-gold/10 p-2 rounded-xl">
+                           <span className="text-[10px] text-lux-gold font-bold">Filter Active: {selectedShapeFilter}</span>
+                           <button onClick={() => setSelectedShapeFilter(null)} className="text-[10px] text-zinc-400 hover:text-white uppercase font-bold tracking-wider">Clear</button>
+                        </div>
+                     )}
+                  </div>
+
+                  {/* Summary KPI Metrics */}
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center">
+                        <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Total Carat Weight</span>
+                        <span className="text-xl font-bold font-mono text-lux-cream mt-1 leading-none">
+                           {analyticsData.totalCarats.toFixed(2)} <span className="text-xs text-zinc-500 font-sans">ct</span>
+                        </span>
+                        <span className="text-[8px] text-zinc-600 mt-1 uppercase">Avg Weight: {analyticsData.avgCarats.toFixed(2)}ct</span>
+                     </div>
+                     <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center">
+                        <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Est Inventory Value</span>
+                        <span className="text-xl font-bold font-mono text-emerald-400 mt-1 leading-none">
+                           ${(analyticsData.totalCarats * 2400).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[8px] text-zinc-600 mt-1 uppercase">Est Avg: $2.4k/ct</span>
+                     </div>
+                  </div>
+               </div>
+             )}
+
+              {/* Melee Analytics Panel */}
+              {isMeleeView && showAnalytics && meleeAnalyticsData && (
+                <div className="p-6 border-b border-white/5 bg-black/30 grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
+                   {/* Shape Distribution Donut */}
+                   <div className="flex flex-col items-center justify-center bg-white/[0.01] border border-white/5 p-4 rounded-2xl relative overflow-hidden group">
+                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">Shape Distribution (by Pcs)</div>
+                      
+                      <div className="flex items-center gap-6 w-full max-w-xs">
+                         <div className="relative w-24 h-24 flex items-center justify-center">
+                            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                               <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="rgba(255,255,255,0.03)" strokeWidth="3" />
+                               {(() => {
+                                  let accumPercent = 0;
+                                  const colors = ['#F5C249', '#60A5FA', '#34D399', '#F472B6', '#A78BFA', '#F59E0B', '#3B82F6', '#10B981'];
+                                  return meleeAnalyticsData.shapesList.slice(0, 6).map((item, idx) => {
+                                     const strokeDasharray = `${item.percentage} ${100 - item.percentage}`;
+                                     const strokeDashoffset = 100 - accumPercent;
+                                     accumPercent += item.percentage;
+                                     return (
+                                        <circle 
+                                           key={item.shape}
+                                           cx="18"
+                                           cy="18"
+                                           r="15.915"
+                                           fill="transparent"
+                                           stroke={colors[idx % colors.length]}
+                                           strokeWidth="3.2"
+                                           strokeDasharray={strokeDasharray}
+                                           strokeDashoffset={strokeDashoffset}
+                                           className="cursor-pointer hover:stroke-[4] transition-all duration-300"
+                                           onClick={() => setSelectedShapeFilter(selectedShapeFilter === item.shape ? null : item.shape)}
+                                        >
+                                           <title>{`${item.shape}: ${item.count.toLocaleString()} pcs (${item.percentage.toFixed(1)}%)`}</title>
+                                        </circle>
+                                     );
+                                  });
+                               })()}
+                            </svg>
+                            <div className="absolute flex flex-col items-center justify-center pointer-events-none">
+                               <span className="text-xl font-bold font-mono text-white">{meleeAnalyticsData.totalPcs.toLocaleString()}</span>
+                               <span className="text-[8px] text-zinc-500 uppercase tracking-widest">Total Pcs</span>
+                            </div>
+                         </div>
+                         
+                         <div className="flex-1 space-y-1.5 max-h-24 overflow-y-auto no-scrollbar pr-1">
+                            {meleeAnalyticsData.shapesList.slice(0, 5).map((item, idx) => {
+                               const colors = ['#F5C249', '#60A5FA', '#34D399', '#F472B6', '#A78BFA'];
+                               const isSelected = selectedShapeFilter === item.shape;
+                               return (
+                                  <div 
+                                     key={item.shape} 
+                                     onClick={() => setSelectedShapeFilter(isSelected ? null : item.shape)}
+                                     className={`flex items-center justify-between text-[10px] font-medium cursor-pointer py-0.5 px-1.5 rounded transition-colors ${isSelected ? 'bg-lux-gold/10 text-lux-gold' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}
+                                  >
+                                     <div className="flex items-center gap-1.5 truncate">
+                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length] }} />
+                                        <span className="font-bold truncate">{item.shape}</span>
+                                     </div>
+                                     <span className="font-mono text-zinc-500">{item.count.toLocaleString()}</span>
+                                  </div>
+                               );
+                            })}
+                         </div>
+                      </div>
+                   </div>
+                   
+                   {/* Stock Level Breakdown */}
+                   <div className="flex flex-col bg-white/[0.01] border border-white/5 p-4 rounded-2xl justify-between">
+                      <div>
+                         <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Stock Level Breakdown</div>
+                         <div className="space-y-3">
+                            {[
+                              { label: 'Well Stocked', count: meleeAnalyticsData.wellStocked, color: 'emerald', desc: '> 50 pcs' },
+                              { label: 'Moderate', count: meleeAnalyticsData.moderate, color: 'amber', desc: '10-50 pcs' },
+                              { label: 'Low Stock', count: meleeAnalyticsData.low, color: 'orange', desc: '1-10 pcs' },
+                              { label: 'Empty', count: meleeAnalyticsData.empty, color: 'red', desc: '0 pcs' },
+                            ].map(level => (
+                              <div key={level.label}>
+                                 <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-zinc-400 font-medium">{level.label} <span className="text-zinc-600 text-[9px]">({level.desc})</span></span>
+                                    <span className={`font-mono font-bold text-${level.color}-400`}>{level.count} specs</span>
+                                 </div>
+                                 <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                    <div className={`h-full bg-${level.color}-500 rounded-full transition-all duration-500`} style={{ width: `${meleeAnalyticsData.totalSpecs > 0 ? (level.count / meleeAnalyticsData.totalSpecs) * 100 : 0}%` }}></div>
+                                 </div>
+                              </div>
+                            ))}
+                         </div>
+                      </div>
+                   </div>
+
+                   {/* Melee KPI Metrics */}
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center">
+                         <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Total Specs</span>
+                         <span className="text-xl font-bold font-mono text-lux-cream mt-1 leading-none">
+                            {meleeAnalyticsData.totalSpecs}
+                         </span>
+                         <span className="text-[8px] text-zinc-600 mt-1 uppercase">Defined sizes</span>
+                      </div>
+                      <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center">
+                         <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Total Weight</span>
+                         <span className="text-xl font-bold font-mono text-lux-cream mt-1 leading-none">
+                            {meleeAnalyticsData.totalCt.toFixed(2)} <span className="text-xs text-zinc-500 font-sans">ct</span>
+                         </span>
+                         <span className="text-[8px] text-zinc-600 mt-1 uppercase">Avg: {meleeAnalyticsData.avgCtPerStone.toFixed(4)}ct/pc</span>
+                      </div>
+                      <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center col-span-2">
+                         <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Total Pieces in Stock</span>
+                         <span className="text-2xl font-bold font-mono text-emerald-400 mt-1 leading-none">
+                            {meleeAnalyticsData.totalPcs.toLocaleString()} <span className="text-xs text-zinc-500 font-sans">pcs</span>
+                         </span>
+                      </div>
+                   </div>
+                </div>
+              )}
+             
+             <div className="flex-1 overflow-auto no-scrollbar">
+               <table className="w-full text-sm text-left border-separate border-spacing-0">
+                 {isMeleeView ? (
+                   <>
+                     <thead className="bg-zinc-900/80 text-zinc-500 sticky top-0 z-10 text-[11px] uppercase tracking-[0.1em] font-black backdrop-blur-xl border-b border-white/5 select-none">
+                       <tr>
+                         <th 
+                           onClick={() => handleSort('spec')}
+                           className="px-6 py-4 border-b border-white/5 cursor-pointer hover:text-white transition-colors"
+                         >
+                           <div className="flex items-center gap-1">
+                             <span>Diamond Spec</span>
+                             {getSortIcon('spec')}
+                           </div>
+                         </th>
+                         <th 
+                           onClick={() => handleSort('pcs')}
+                           className="px-6 py-4 border-b border-white/5 text-right font-mono cursor-pointer hover:text-white transition-colors"
+                         >
+                           <div className="flex items-center justify-end gap-1">
+                             <span>Stock (Pcs)</span>
+                             {getSortIcon('pcs')}
+                           </div>
+                         </th>
+                         <th 
+                           onClick={() => handleSort('ct')}
+                           className="px-6 py-4 border-b border-white/5 text-right font-mono cursor-pointer hover:text-white transition-colors"
+                         >
+                           <div className="flex items-center justify-end gap-1">
+                             <span>Weight (Ct)</span>
+                             {getSortIcon('ct')}
+                           </div>
+                         </th>
+                         <th className="px-6 py-4 border-b border-white/5 text-right w-16"></th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-white/[0.03]">
+                        {filteredAndSortedSummary.length > 0 ? filteredAndSortedSummary.map((item, i) => (
+                          <React.Fragment key={i}>
+                            <tr 
+                              id={`row-${item.spec.id}`}
+                              onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
+                              className={`hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/[0.02]' : ''}`}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors border border-white/5 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black' : 'bg-zinc-800 text-zinc-400 group-hover:bg-lux-gold group-hover:text-black'}`}>
+                                      {item.spec.shape?.charAt(0) || 'R'}
+                                   </div>
+                                   <div>
+                                      <div className={`font-bold text-sm leading-tight transition-colors duration-200 flex items-center gap-1.5 ${expandedMeleeSpecId === item.spec.id ? 'text-lux-gold' : 'text-lux-cream'}`}>
+                                        {item.spec.label}
+                                        {item.spec.inventoryNote && <StickyNote size={11} className="text-lux-gold/70 shrink-0 animate-pulse-subtle" />}
+                                      </div>
+                                      <div className="text-[10px] text-zinc-500 font-mono mt-0.5 opacity-60 uppercase">{item.spec.shape}</div>
+                                   </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                 <span className={`font-mono text-sm tabular-nums font-bold ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                                    {item.pcs > 0 ? item.pcs.toLocaleString() : '0'}
+                                 </span>
+                              </td>
+                              <td className="px-6 py-4 text-right tabular-nums text-zinc-400 font-mono text-sm">
+                                 {item.ct.toFixed(3)} <span className="text-[10px] text-zinc-600 ml-0.5">ct</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                 <button 
+                                   onClick={(e) => { e.stopPropagation(); setEditingStock(item.spec.id); setEditPcs(item.pcs.toString()); setEditReason(''); }}
+                                   className="w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-lux-gold hover:bg-lux-gold/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all border border-transparent hover:border-lux-gold/20"
+                                 >
+                                   <Edit2 size={14} />
+                                 </button>
+                              </td>
+                            </tr>
+                            {expandedMeleeSpecId === item.spec.id && (
+                              <tr className="bg-black/30 animate-in fade-in duration-200">
+                                <td colSpan={4} className="p-4 border-b border-white/5">
+                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-4 rounded-2xl bg-white/[0.01] border border-white/5 relative overflow-hidden">
+                                    <div className="md:col-span-5 grid grid-cols-2 gap-y-4 gap-x-6 border-r border-white/5 pr-6" onClick={(e) => e.stopPropagation()}>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Size (mm)</span>
+                                        <span className="text-sm text-lux-cream font-mono mt-1 block font-bold">{item.spec.sizeMm}mm</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Shape</span>
+                                        <span className="text-sm text-lux-cream font-mono mt-1 block">{item.spec.shape || 'Round'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Avg Weight</span>
+                                        <span className="text-sm text-lux-cream font-mono mt-1 block">{item.spec.ctPerStone}ct/pc</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Cost (USD/ct)</span>
+                                        <span className="text-sm text-lux-cream font-mono mt-1 block">${item.spec.defaultCostPerCtUsd || 0}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Current Pcs</span>
+                                        <span className={`text-lg font-bold font-mono mt-1 block ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>{item.pcs.toLocaleString()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Est Value</span>
+                                        <span className="text-sm text-emerald-400 font-mono mt-1 block font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                      </div>
+                                    </div>
+                                    <div className="md:col-span-7 flex flex-col gap-4 pl-2" onClick={(e) => e.stopPropagation()}>
+                                      <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-white/5 pb-1">Quick Stock Adjustment</div>
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Remove:</span>
+                                        {[-1, -5, -10, -25].map(delta => (
+                                          <button key={delta} onClick={() => handleMeleeQuickAdjust(item.spec.id, item.pcs, delta)} disabled={item.pcs + delta < 0} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-red-500/5 text-red-400 border-red-500/20 hover:bg-red-500/15 disabled:opacity-20 disabled:cursor-not-allowed">{delta}</button>
+                                        ))}
+                                      </div>
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Add:</span>
+                                        {[1, 5, 10, 25, 50].map(delta => (
+                                          <button key={delta} onClick={() => handleMeleeQuickAdjust(item.spec.id, item.pcs, delta)} className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-emerald-500/5 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15">+{delta}</button>
+                                        ))}
+                                      </div>
+                                      <div className="flex items-center gap-3 mt-1">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-16">Set to:</span>
+                                        <input type="number" min="0" defaultValue={item.pcs} onKeyDown={e => { if (e.key === 'Enter') { handleMeleeSetPcs(item.spec.id, item.pcs, (e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }} className="w-24 bg-[#16171D] border border-white/5 rounded-xl px-3 py-1.5 text-sm text-white font-mono text-center focus:border-lux-gold/50 outline-none" placeholder="Qty" />
+                                        <span className="text-[9px] text-zinc-600 italic">Press Enter to apply</span>
+                                      </div>
+                                      <div className="text-[9px] text-zinc-600 mt-1 flex items-center gap-2">
+                                        <span className="text-zinc-700">💡</span> Press <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-[8px] font-mono text-zinc-400">⌘Z</kbd> to undo last change
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div onClick={e => e.stopPropagation()}>
+                                    <InventoryNotesSection
+                                      item={item.spec}
+                                      itemType="spec"
+                                      currentUser={currentUser}
+                                      onSave={async (text) => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        const oldNoteText = item.spec.inventoryNote?.text || '';
+                                        
+                                        const note: InventoryNote = {
+                                          text,
+                                          authorId,
+                                          authorName,
+                                          createdAt: item.spec.inventoryNote?.createdAt || nowStr,
+                                          lastEditedAt: nowStr,
+                                          edited: !!item.spec.inventoryNote
+                                        };
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: item.spec.inventoryNote ? 'edited' : 'created',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: text,
+                                          location: 'Melee'
+                                        };
+                                        
+                                        const noteAuditTrail = [...(item.spec.noteAuditTrail || []), auditEntry];
+                                        await store.updateSpec(item.spec.id, {
+                                          inventoryNote: note,
+                                          noteAuditTrail
+                                        });
+                                        
+                                        await store.dispatchNoteMentions(text, item.spec.id, 'Melee', `${item.spec.label} Melee Spec`);
+                                        showToast('Note updated successfully');
+                                      }}
+                                      onDelete={async () => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        const oldNoteText = item.spec.inventoryNote?.text || '';
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: 'deleted',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: '',
+                                          location: 'Melee'
+                                        };
+                                        const noteAuditTrail = [...(item.spec.noteAuditTrail || []), auditEntry];
+                                        await store.updateSpec(item.spec.id, {
+                                          inventoryNote: undefined,
+                                          noteAuditTrail
+                                        });
+                                        showToast('Note deleted successfully');
+                                      }}
+                                      onRestore={async (prevValue) => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        const oldNoteText = item.spec.inventoryNote?.text || '';
+                                        
+                                        const note: InventoryNote = {
+                                          text: prevValue,
+                                          authorId,
+                                          authorName,
+                                          createdAt: item.spec.inventoryNote?.createdAt || nowStr,
+                                          lastEditedAt: nowStr,
+                                          edited: true
+                                        };
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: 'restored',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: prevValue,
+                                          location: 'Melee'
+                                        };
+                                        const noteAuditTrail = [...(item.spec.noteAuditTrail || []), auditEntry];
+                                        await store.updateSpec(item.spec.id, {
+                                          inventoryNote: note,
+                                          noteAuditTrail
+                                        });
+                                        await store.dispatchNoteMentions(prevValue, item.spec.id, 'Melee', `${item.spec.label} Melee Spec`);
+                                        showToast('Note version restored');
+                                      }}
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )) : (
+                          <tr>
+                             <td colSpan={4} className="py-20 text-center">
+                                <div className="flex flex-col items-center gap-4 opacity-20">
+                                   <History size={48} />
+                                   <p className="text-xl font-serif">
+                                      {filterText ? "No matching stock found" : "No Stock Recorded"}
+                                   </p>
+                                </div>
+                             </td>
+                          </tr>
+                        )}
+                     </tbody>
+                   </>
+                 ) : (
+                    <>
+                      <thead className="bg-zinc-900/80 text-zinc-500 sticky top-0 z-10 text-[10px] uppercase tracking-[0.05em] font-black backdrop-blur-xl border-b border-white/5 select-none font-mono">
+                        <tr>
+                          {[
+                            { label: 'Shape', field: 'shape', className: '' },
+                            { label: 'Size', field: 'size', className: '' },
+                            { label: 'Color', field: 'color', className: '' },
+                            { label: 'Clarity', field: 'clarity', className: '' },
+                            { label: 'Cert #', field: 'certNumber', className: 'hidden lg:table-cell' },
+                            { label: 'Mount/Loose', field: 'mountLoose', className: 'hidden md:table-cell' },
+                            { label: 'Item Code', field: 'code', className: 'hidden xl:table-cell' },
+                            { label: 'Place', field: 'place', className: 'hidden xl:table-cell' },
+                            { label: 'Status', field: 'sold', className: '' }
+                          ].map(col => (
+                            <th 
+                              key={col.field}
+                              onClick={() => handleSort(col.field)}
+                              className={`px-3 py-3 border-b border-white/5 cursor-pointer hover:text-white transition-colors ${col.className} ${col.field === 'size' ? 'text-right' : ''}`}
+                            >
+                              <div className={`flex items-center gap-1 ${col.field === 'size' ? 'justify-end' : ''}`}>
+                                <span>{col.label}</span>
+                                {getSortIcon(col.field)}
+                              </div>
+                            </th>
+                          ))}
+                          <th className="px-3 py-3 border-b border-white/5 text-right w-12 font-sans"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.03]">
+                        {filteredAndSortedDiamonds.length > 0 ? filteredAndSortedDiamonds.map((d) => (
+                          <React.Fragment key={d.id}>
+                            <tr 
+                              id={`row-${d.id}`}
+                              onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
+                              className={`hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedDiamondId === d.id ? 'bg-lux-gold/[0.02]' : ''}`}
+                            >
+                              <td className={`px-3 py-3 font-bold text-xs transition-colors duration-200 ${expandedDiamondId === d.id ? 'text-lux-gold' : 'text-lux-cream'}`}>
+                                <div className="flex items-center gap-1.5">
+                                  {d.shape}
+                                  {(d.notes || d.inventoryNote) && <span title={d.inventoryNote?.text || d.notes}><StickyNote size={11} className="text-lux-gold/70 shrink-0 animate-pulse-subtle" /></span>}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-lux-cream text-xs">{d.size.toFixed(2)} ct</td>
+                              <td className="px-3 py-3 text-zinc-400 font-mono text-xs">{d.color || '-'}</td>
+                              <td className="px-3 py-3 text-zinc-400 font-mono text-xs">{d.clarity || '-'}</td>
+                              <td className="px-3 py-3 text-zinc-400 font-mono text-xs max-w-[120px] truncate hidden lg:table-cell" title={d.certNumber}>
+                                {d.certNumber || '-'}
+                              </td>
+                              <td className="px-3 py-3 text-xs hidden md:table-cell">
+                                {d.mountLoose ? (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${d.mountLoose.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/10 text-lux-gold' : 'bg-blue-500/10 text-blue-400'}`}>
+                                    {d.mountLoose}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-600 italic">-</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-zinc-400 font-mono text-xs hidden xl:table-cell">{d.code || '-'}</td>
+                              <td className="px-3 py-3 text-zinc-400 text-xs hidden xl:table-cell">{d.place || '-'}</td>
+                              <td className="px-3 py-3 text-xs">
+                                {d.sold ? (
+                                  <span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 w-fit">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                    {d.sold}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 w-fit animate-pulse-subtle">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                    Available
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setEditingDiamond(d); }}
+                                  className="w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-lux-gold hover:bg-lux-gold/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all border border-transparent hover:border-lux-gold/20"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                            {expandedDiamondId === d.id && (
+                              <tr className="bg-black/30 animate-in fade-in duration-200">
+                                <td colSpan={10} className="p-4 border-b border-white/5">
+                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-4 rounded-2xl bg-white/[0.01] border border-white/5 relative overflow-hidden">
+                                    <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-2 border-r border-white/5 pr-6">
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Report / Certificate</span>
+                                        {d.certNumber ? (
+                                          <a href={`https://www.gia.edu/report-check?reportno=${d.certNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-xs text-lux-gold hover:underline font-mono mt-1 flex items-center gap-1 w-fit" onClick={(e) => e.stopPropagation()}>
+                                            {d.certNumber}
+                                            <ExternalLink size={10} />
+                                          </a>
+                                        ) : (<span className="text-xs text-zinc-600 italic mt-1 block">N/A</span>)}
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Measurements</span>
+                                        <span className="text-xs text-lux-cream font-mono mt-1 block">{d.measurements || 'N/A'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Cut Grade</span>
+                                        <span className="text-xs text-lux-cream font-mono mt-1 block">{d.cut ? (<span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] font-bold text-zinc-400">{d.cut}</span>) : 'N/A'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Color Grade</span>
+                                        <span className="text-xs text-lux-cream font-mono mt-1 block">{d.color || 'N/A'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Clarity Grade</span>
+                                        <span className="text-xs text-lux-cream font-mono mt-1 block">{d.clarity || 'N/A'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">System Stone ID</span>
+                                        <span className="text-[9px] text-zinc-500 font-mono mt-1 block select-all truncate" title={d.id} onClick={(e) => e.stopPropagation()}>{d.id}</span>
+                                      </div>
+                                    </div>
+                                    <div className="md:col-span-5 flex flex-col gap-3.5 pl-2" onClick={(e) => e.stopPropagation()}>
+                                      <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest border-b border-white/5 pb-1">Quick Actions</div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Status</label>
+                                          <button onClick={() => toggleSoldStatus(d.id, d.sold)} className={`w-full text-center px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${d.sold ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'}`}>{d.sold ? 'SOLD' : 'AVAILABLE'}</button>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Mounting</label>
+                                          <button onClick={() => toggleMountState(d.id, d.mountLoose)} className={`w-full text-center px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/15 text-lux-gold border-lux-gold/30 hover:bg-lux-gold/25' : 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20'}`}>{d.mountLoose || 'LOOSE'}</button>
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Cabinet / Place</label>
+                                          <input type="text" value={inlinePlaceValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlinePlaceValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? '')} onKeyDown={e => { if (e.key === 'Enter') { updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? ''); (e.target as HTMLInputElement).blur(); } }} className="w-full bg-[#16171D] border border-white/5 rounded-xl px-3 py-1 text-xs text-white focus:border-lux-gold/50 outline-none animate-enter" placeholder="Cabinet location" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Mounted Item Code</label>
+                                          <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} onKeyDown={e => { if (e.key === 'Enter') { updateCodeInline(d.id, inlineCodeValues[d.id] ?? ''); (e.target as HTMLInputElement).blur(); } }} className="w-full bg-[#16171D] border border-white/5 rounded-xl px-3 py-1 text-xs text-white focus:border-lux-gold/50 outline-none animate-enter" placeholder="Item code" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div onClick={e => e.stopPropagation()}>
+                                    <InventoryNotesSection
+                                      item={{
+                                        ...d,
+                                        inventoryNote: d.inventoryNote || (d.notes ? {
+                                          text: d.notes,
+                                          authorId: 'legacy',
+                                          authorName: 'Legacy Note',
+                                          createdAt: new Date().toISOString(),
+                                          lastEditedAt: new Date().toISOString(),
+                                          edited: false
+                                        } : undefined)
+                                      }}
+                                      itemType="diamond"
+                                      currentUser={currentUser}
+                                      onSave={async (text) => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        
+                                        const oldNoteText = d.inventoryNote?.text || d.notes || '';
+                                        const note: InventoryNote = {
+                                          text,
+                                          authorId,
+                                          authorName,
+                                          createdAt: d.inventoryNote?.createdAt || nowStr,
+                                          lastEditedAt: nowStr,
+                                          edited: !!(d.inventoryNote || d.notes)
+                                        };
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: (d.inventoryNote || d.notes) ? 'edited' : 'created',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: text,
+                                          location: d.location
+                                        };
+                                        
+                                        const noteAuditTrail = [...(d.noteAuditTrail || []), auditEntry];
+                                        await store.updateDiamond(d.id, {
+                                          inventoryNote: note,
+                                          noteAuditTrail,
+                                          notes: text
+                                        });
+                                        
+                                        await store.dispatchNoteMentions(text, d.id, d.location, `${d.shape} (${d.size}ct${d.certNumber ? `, Report: ${d.certNumber}` : ''})`);
+                                        showToast('Note updated successfully');
+                                      }}
+                                      onDelete={async () => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        const oldNoteText = d.inventoryNote?.text || d.notes || '';
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: 'deleted',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: '',
+                                          location: d.location
+                                        };
+                                        const noteAuditTrail = [...(d.noteAuditTrail || []), auditEntry];
+                                        await store.updateDiamond(d.id, {
+                                          inventoryNote: undefined,
+                                          noteAuditTrail,
+                                          notes: ''
+                                        });
+                                        showToast('Note deleted successfully');
+                                      }}
+                                      onRestore={async (prevValue) => {
+                                        const nowStr = new Date().toISOString();
+                                        const authorId = currentUser?.id || 'unknown';
+                                        const authorName = currentUser?.name || 'Unknown';
+                                        const oldNoteText = d.inventoryNote?.text || d.notes || '';
+                                        
+                                        const note: InventoryNote = {
+                                          text: prevValue,
+                                          authorId,
+                                          authorName,
+                                          createdAt: d.inventoryNote?.createdAt || nowStr,
+                                          lastEditedAt: nowStr,
+                                          edited: true
+                                        };
+                                        
+                                        const auditEntry: NoteAuditEntry = {
+                                          id: 'audit-' + Math.random().toString(36).substr(2, 9),
+                                          action: 'restored',
+                                          timestamp: nowStr,
+                                          userId: authorId,
+                                          userName: authorName,
+                                          userRole: currentUser?.role || 'SYSTEM',
+                                          prevValue: oldNoteText,
+                                          newValue: prevValue,
+                                          location: d.location
+                                        };
+                                        const noteAuditTrail = [...(d.noteAuditTrail || []), auditEntry];
+                                        await store.updateDiamond(d.id, {
+                                          inventoryNote: note,
+                                          noteAuditTrail,
+                                          notes: prevValue
+                                        });
+                                        await store.dispatchNoteMentions(prevValue, d.id, d.location, `${d.shape} (${d.size}ct${d.certNumber ? `, Report: ${d.certNumber}` : ''})`);
+                                        showToast('Note version restored');
+                                      }}
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )) : (
+                          <tr>
+                             <td colSpan={10} className="py-20 text-center">
+                                <div className="flex flex-col items-center gap-4 opacity-20">
+                                   <History size={48} />
+                                   <p className="text-xl font-serif">
+                                      {filterText ? "No matching diamonds found" : "No Diamonds Recorded"}
+                                   </p>
+                                </div>
+                             </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </>
+                  )}
+               </table>
+             </div>
+          </Card>
+          
+          {/* Recent Movements Side Panel */}
+          <Card className="w-full flex flex-col h-[400px] p-0 overflow-hidden border-white/5 liquid-glass">
+             <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Global Activity</h3>
+                <div className="px-2 py-1 bg-zinc-800 rounded-lg text-[9px] font-bold text-zinc-500 border border-white/5">LIVE</div>
+             </div>
+             <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+                {movements.length > 0 ? movements.slice(0, 30).map(mv => {
+                  const isPositive = mv.type.includes('IN') || mv.type === 'RETURN' || mv.type === 'BULK_RETURN_INTAKE' || mv.type === 'DIAMOND_ADD';
+                  const isNegative = mv.type === 'ISSUE' || mv.type === 'BROKEN_OUT' || mv.type === 'DIAMOND_DELETE' || mv.type === 'MELEE_SPEC_DELETE';
+                  const isNeutral = mv.type === 'DIAMOND_UPDATE';
+                  
+                  return (
+                    <div key={mv.id} className="relative p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:border-lux-gold/20 transition-all group overflow-hidden">
+                       <div className="flex justify-between items-start mb-3">
+                          <div className="flex items-center gap-3">
+                             <div className={`w-8 h-8 flex items-center justify-center rounded-xl ${isPositive ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20' : isNegative ? 'bg-red-950/40 text-red-400 border border-red-500/20' : 'bg-blue-950/40 text-blue-400 border border-blue-500/20'}`}>
+                               {isPositive ? <ArrowDownLeft size={14} /> : isNegative ? <AlertOctagon size={14} /> : <ArrowUpRight size={14} />}
+                             </div>
+                             <div>
+                                <span className={`text-[10px] font-black uppercase tracking-tight ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-blue-400'}`}>
+                                   {mv.type.replace(/_/g, ' ')}
+                                </span>
+                                <div className="text-[9px] text-zinc-600 mt-0.5 font-mono uppercase tracking-widest">{new Date(mv.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                             </div>
+                          </div>
+                          <div className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : isNegative ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
+                             {isPositive ? '+' : isNegative ? '-' : ''}{mv.lines?.reduce((a,b)=>a+(b.ct||0),0).toFixed(2)} ct
+                          </div>
+                       </div>
+                       
+                       {mv.notes && (
+                         <div className="text-[11px] text-zinc-400 leading-normal pl-11 line-clamp-2 italic opacity-80 group-hover:opacity-100 transition-opacity">
+                            "{mv.notes}"
+                         </div>
+                       )}
+                       
+                       <div className="mt-3 pl-11 flex items-center justify-between">
+                          <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight flex items-center gap-1.5 overflow-hidden">
+                             <div className="w-1 h-1 rounded-full bg-zinc-700" />
+                             <span className="truncate">By {store.getUser(mv.createdById)?.name || 'System'}</span>
+                          </div>
+                          {mv.referenceBagNumber && (
+                             <div className="text-[9px] bg-lux-gold/10 text-lux-gold px-1.5 py-0.5 rounded border border-lux-gold/20 font-bold">BAG #{mv.referenceBagNumber}</div>
+                          )}
+                       </div>
+                    </div>
+                  );
+                }) : (
+                  <div className="h-full flex flex-col items-center justify-center opacity-10 gap-3">
+                     <History size={40} />
+                     <span className="text-xs uppercase font-black tracking-widest">No Activity</span>
+                  </div>
+                )}
+             </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'add_stock' && (
+        <Card className="max-w-3xl mx-auto p-4 md:p-10 border-white/10 shadow-glass liquid-glass-vibrant">
+           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10">
+             <div className="flex items-center gap-4">
+                <div className="bg-lux-gold text-lux-black p-3.5 rounded-[1.5rem] shadow-glow">
+                  <PackagePlus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-lux-cream tracking-tight">Record Shipment</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Populate aggregate stock from supplier invoices.</p>
+                </div>
+             </div>
+             
+             {/* Entry Mode Toggle */}
+             <div className="bg-black/40 p-1.5 rounded-2xl border border-white/5 flex text-[10px] uppercase font-black tracking-widest">
+                <button 
+                   onClick={() => setEntryMode('PCS')}
+                   className={`px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-2 ${entryMode === 'PCS' ? 'bg-lux-gold text-black shadow-lg shadow-lux-gold/20' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+                >
+                   <LayoutGrid size={12}/> Pieces
+                </button>
+                <button 
+                   onClick={() => setEntryMode('WEIGHT')}
+                   className={`px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-2 ${entryMode === 'WEIGHT' ? 'bg-lux-gold text-black shadow-lg shadow-lux-gold/20' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+                >
+                   <Scale size={12}/> Weight
+                </button>
+             </div>
+           </div>
+
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+              <Input label="Supplier (Optional)" value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="e.g. Stuller or Internal" />
+              <Input label="Invoice # (Optional)" value={invoice} onChange={e => setInvoice(e.target.value)} placeholder="e.g. INV-99283" />
+           </div>
+
+           <div className="mb-8">
+             <div className="flex justify-between items-end mb-2">
+               <label className="block text-xs font-medium text-zinc-500 ml-0.5">Line Items ({entryMode === 'WEIGHT' ? 'Weight Priority' : 'Piece Priority'})</label>
+               <button onClick={() => setIsCreatingSpec(true)} className="text-[10px] font-bold text-lux-gold hover:text-white bg-lux-gold/10 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-colors">
+                  <Plus size={10} /> New Spec
+               </button>
+             </div>
+             <FastEntryGrid
+               specs={currentSpecs}
+               onLinesChange={setShipmentLines}
+               showCost={true}
+               mode={entryMode}
+             />
+           </div>
+
+           <div className="flex justify-end pt-6 border-t border-zinc-800">
+             <Button onClick={handleSubmitShipment} size="lg" className="px-8">Add to Ledger</Button>
+           </div>
+        </Card>
+      )}
+
+      {activeTab === 'broken' && (
+         <Card className="max-w-xl mx-auto p-8 border-lux-border shadow-float">
+            <div className="flex items-center gap-3 mb-8">
+               <div className="bg-red-500/10 text-red-500 p-2.5 rounded-2xl shadow-glow border border-red-500/20">
+                  <AlertOctagon className="w-5 h-5" />
+               </div>
+               <div>
+                  <h2 className="text-lg font-bold text-lux-cream">Log Broken Stones</h2>
+                  <p className="text-xs text-zinc-500">Record breakage by weight (size optional).</p>
+               </div>
+            </div>
+
+            <div className="space-y-6 mb-8">
+               <Input 
+                 type="number" 
+                 step="0.001" 
+                 label="Total Weight (Carats) *" 
+                 value={brokenCt} 
+                 onChange={e => setBrokenCt(e.target.value)} 
+                 placeholder="0.000"
+                 className="text-lg font-mono"
+                 autoFocus
+               />
+               
+               <div className="grid grid-cols-2 gap-4">
+                  <Input 
+                    type="number" 
+                    label="Pieces (Optional)" 
+                    value={brokenPcs} 
+                    onChange={e => setBrokenPcs(e.target.value)} 
+                    placeholder="Qty"
+                  />
+                  <div>
+                     <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-tight">Spec (Optional)</label>
+                     <select 
+                       className="w-full bg-[#16171D] text-white rounded-2xl border border-white/5 p-3.5 text-sm focus:ring-lux-gold"
+                       value={brokenSpec}
+                       onChange={e => setBrokenSpec(e.target.value)}
+                     >
+                        <option value="">Mixed / Unknown</option>
+                        {specs.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                     </select>
+                  </div>
+               </div>
+
+               <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-tight">Project Link</label>
+                  <select 
+                    className="w-full bg-[#16171D] text-white rounded-2xl border border-white/5 p-3.5 text-sm focus:ring-lux-gold" 
+                    value={brokenProject} 
+                    onChange={e => setBrokenProject(e.target.value)}
+                  >
+                     <option value="">No Project</option>
+                     {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.code} - {p.pieceName}</option>
+                     ))}
+                  </select>
+               </div>
+               
+               <Input label="Reason / Note *" value={brokenNote} onChange={e => setBrokenNote(e.target.value)} placeholder="e.g. Chipped during setting" />
+            </div>
+
+            <div className="flex justify-end pt-6 border-t border-zinc-800">
+               <Button onClick={handleSubmitBreakage} size="lg" className="px-8 bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/20">Confirm Breakage</Button>
+            </div>
+         </Card>
+      )}
+
+      {/* Edit Stock Modal */}
+      {editingStock && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-sm p-6 animate-in zoom-in-95 border-lux-border shadow-2xl">
+             <h3 className="font-bold text-lg mb-6 text-lux-cream">Adjust Stock</h3>
+             <div className="space-y-6">
+                <div>
+                   <label className="block text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wide">New Total Count</label>
+                   <div className="relative">
+                     <input 
+                       type="number" 
+                       value={editPcs} 
+                       onChange={e => setEditPcs(e.target.value)} 
+                       className="w-full border border-lux-border bg-lux-input rounded-2xl p-4 font-mono text-2xl font-bold text-center text-lux-cream focus:ring-1 focus:ring-lux-gold focus:border-lux-gold outline-none" 
+                     />
+                     <span className="absolute right-4 top-5 text-sm text-zinc-600 font-medium">pcs</span>
+                   </div>
+                </div>
+                <Input label="Reason for Adjustment" value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="Required (e.g. Broken, Found)" />
+                <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                    <Button 
+                      variant="danger" 
+                      onClick={async () => {
+                        const spec = specs.find(s => s.id === editingStock);
+                        const label = spec ? spec.label : 'Unknown Spec';
+                        if (confirm(`Are you sure you want to delete the spec '${label}'? This will delete the specification and all its stock movements permanently.`)) {
+                          await store.deleteSpec(editingStock);
+                          showToast(`Deleted ${label}`);
+                          setEditingStock(null);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                   <div className="flex gap-3">
+                      <Button variant="secondary" onClick={() => setEditingStock(null)}>Cancel</Button>
+                      <Button onClick={handleStockEdit}>Confirm</Button>
+                   </div>
+                </div>
+             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Certified Diamond Modal */}
+      {editingDiamond && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-sm p-6 animate-in zoom-in-95 border-lux-border shadow-2xl">
+             <h3 className="font-bold text-lg mb-4 text-lux-cream">Update Diamond Status</h3>
+             <div className="space-y-4">
+                <div>
+                   <label className="block text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider">Mount / Loose</label>
+                   <select 
+                     value={editMountLoose} 
+                     onChange={e => setEditMountLoose(e.target.value)} 
+                     className="w-full bg-[#16171D] text-white rounded-xl border border-white/5 p-3 text-sm focus:ring-lux-gold"
+                   >
+                     <option value="LOOSE">LOOSE</option>
+                     <option value="MOUNTED">MOUNTED</option>
+                     <option value="">N/A</option>
+                   </select>
+                </div>
+
+                <Input 
+                   label="Mounted Item Code" 
+                   value={editCode} 
+                   onChange={e => setEditCode(e.target.value)} 
+                   placeholder="e.g. RIN-ENG-0237"
+                />
+
+                <Input 
+                   label="Place / Drawer / Cabinet" 
+                   value={editPlace} 
+                   onChange={e => setEditPlace(e.target.value)} 
+                   placeholder="e.g. SHOWROOM, SAFE"
+                />
+
+                <div>
+                   <label className="block text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider">Sales Status</label>
+                   <select 
+                     value={editSold} 
+                     onChange={e => setEditSold(e.target.value)} 
+                     className="w-full bg-[#16171D] text-white rounded-xl border border-white/5 p-3 text-sm focus:ring-lux-gold"
+                   >
+                     <option value="">AVAILABLE</option>
+                     <option value="SOLD">SOLD</option>
+                   </select>
+                </div>
+
+                <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                   <Button 
+                     variant="danger" 
+                     onClick={async () => {
+                       if (editingDiamond && confirm(`Are you sure you want to delete this diamond (${editingDiamond.shape} ${editingDiamond.size}ct)?`)) {
+                         const id = editingDiamond.id;
+                         setEditingDiamond(null);
+                         await store.deleteDiamond(id);
+                         showToast("Diamond deleted successfully");
+                       }
+                     }}
+                   >
+                     Delete
+                   </Button>
+                   <div className="flex gap-3">
+                      <Button variant="secondary" onClick={() => setEditingDiamond(null)}>Cancel</Button>
+                      <Button onClick={handleDiamondEdit}>Confirm</Button>
+                   </div>
+                </div>
+             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* CREATE SPEC MODAL */}
+      {isCreatingSpec && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+           <Card className="w-full max-w-sm p-6 animate-in zoom-in-95">
+              <h3 className="font-bold text-white text-lg mb-4">Add New Diamond Spec</h3>
+              <div className="space-y-4">
+                 <Input 
+                    label="Size (mm)" 
+                    type="number" 
+                    step="0.01" 
+                    value={newSpecData.size} 
+                    onChange={e => setNewSpecData({...newSpecData, size: e.target.value})} 
+                    placeholder="1.3"
+                    autoFocus
+                 />
+                 
+                 <Input 
+                    label="Avg Weight (ct/stone)" 
+                    type="number" 
+                    step="0.001" 
+                    value={newSpecData.weight} 
+                    onChange={e => setNewSpecData({...newSpecData, weight: e.target.value})} 
+                    placeholder="0.010"
+                 />
+
+                 <Input 
+                    label="Cost (USD/ct) - Optional" 
+                    type="number" 
+                    value={newSpecData.cost} 
+                    onChange={e => setNewSpecData({...newSpecData, cost: e.target.value})} 
+                    placeholder="Auto-calculated if empty"
+                 />
+                 
+                 {newSpecData.size && (
+                     <div className="text-center p-3 bg-zinc-900 rounded-2xl text-sm border border-zinc-800">
+                        <span className="text-zinc-500">Preview:</span> <span className="font-bold text-white">{newSpecData.size}mm</span>
+                     </div>
+                 )}
+
+                 <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="secondary" onClick={() => setIsCreatingSpec(false)}>Cancel</Button>
+                    <Button onClick={handleCreateSpec} disabled={!newSpecData.size || !newSpecData.weight}>Create</Button>
+                 </div>
+              </div>
+           </Card>
+        </div>
+      )}
+
+      {/* CREATE CERTIFIED DIAMOND MODAL */}
+      {isCreatingDiamond && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 overflow-y-auto font-sans">
+           <Card className="w-full max-w-md p-6 animate-in zoom-in-95 my-8">
+              <h3 className="font-bold text-white text-lg mb-4">Add Certified Center Diamond ({selectedLocation})</h3>
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 no-scrollbar">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-wider">Shape</label>
+                       <select 
+                         value={newDiamondData.shape} 
+                         onChange={e => setNewDiamondData({...newDiamondData, shape: e.target.value})} 
+                         className="w-full bg-[#16171D] text-white rounded-xl border border-white/5 p-3 text-xs focus:ring-lux-gold"
+                       >
+                         {['ROUND', 'PRINCESS', 'EMERALD', 'OVAL', 'CUSHION', 'MARQUISE', 'PEAR', 'RADIANT', 'HEART', 'ASSCHER'].map(s => (
+                           <option key={s} value={s}>{s}</option>
+                         ))}
+                       </select>
+                    </div>
+                    
+                    <Input 
+                       label="Size (Carats)" 
+                       type="number" 
+                       step="0.01" 
+                       value={newDiamondData.size} 
+                       onChange={e => setNewDiamondData({...newDiamondData, size: e.target.value})} 
+                       placeholder="e.g. 1.05"
+                    />
+                 </div>
+
+                 <div className="grid grid-cols-3 gap-4">
+                    <Input 
+                       label="Color" 
+                       value={newDiamondData.color} 
+                       onChange={e => setNewDiamondData({...newDiamondData, color: e.target.value})} 
+                       placeholder="e.g. F"
+                    />
+                    <Input 
+                       label="Clarity" 
+                       value={newDiamondData.clarity} 
+                       onChange={e => setNewDiamondData({...newDiamondData, clarity: e.target.value})} 
+                       placeholder="e.g. VS1"
+                    />
+                    <Input 
+                       label="Cut" 
+                       value={newDiamondData.cut} 
+                       onChange={e => setNewDiamondData({...newDiamondData, cut: e.target.value})} 
+                       placeholder="e.g. EX"
+                    />
+                 </div>
+
+                 <Input 
+                    label="Cert # / Report #" 
+                    value={newDiamondData.certNumber} 
+                    onChange={e => setNewDiamondData({...newDiamondData, certNumber: e.target.value})} 
+                    placeholder="e.g. GIA#12345678"
+                 />
+
+                 <Input 
+                    label="Measurements" 
+                    value={newDiamondData.measurements} 
+                    onChange={e => setNewDiamondData({...newDiamondData, measurements: e.target.value})} 
+                    placeholder="e.g. 6.5*6.5*4.0MM"
+                 />
+
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-wider">Mount / Loose</label>
+                       <select 
+                         value={newDiamondData.mountLoose} 
+                         onChange={e => setNewDiamondData({...newDiamondData, mountLoose: e.target.value})} 
+                         className="w-full bg-[#16171D] text-white rounded-xl border border-white/5 p-3 text-xs focus:ring-lux-gold"
+                       >
+                         <option value="LOOSE">LOOSE</option>
+                         <option value="MOUNTED">MOUNTED</option>
+                       </select>
+                    </div>
+
+                    <Input 
+                       label="Cabinet / Place" 
+                       value={newDiamondData.place} 
+                       onChange={e => setNewDiamondData({...newDiamondData, place: e.target.value})} 
+                       placeholder="e.g. SAFE A"
+                    />
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-4">
+                    <Input 
+                       label="Item Code" 
+                       value={newDiamondData.code} 
+                       onChange={e => setNewDiamondData({...newDiamondData, code: e.target.value})} 
+                       placeholder="e.g. RIN-ENG-0237"
+                    />
+
+                    <div>
+                       <label className="block text-[10px] font-bold text-zinc-500 mb-1 uppercase tracking-wider">Status</label>
+                       <select 
+                         value={newDiamondData.sold} 
+                         onChange={e => setNewDiamondData({...newDiamondData, sold: e.target.value})} 
+                         className="w-full bg-[#16171D] text-white rounded-xl border border-white/5 p-3 text-xs focus:ring-lux-gold"
+                       >
+                         <option value="">AVAILABLE</option>
+                         <option value="SOLD">SOLD</option>
+                       </select>
+                    </div>
+                 </div>
+
+                 <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                    <Button variant="secondary" onClick={() => setIsCreatingDiamond(false)}>Cancel</Button>
+                    <Button onClick={handleCreateDiamond} disabled={!newDiamondData.size || !newDiamondData.shape}>Add Diamond</Button>
+                 </div>
+              </div>
+           </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default InventoryPage;

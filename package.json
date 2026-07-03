@@ -1,0 +1,32 @@
+{
+  "name": "kilani-diamond-reporter-ver-5.1",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
+    "preview": "vite preview",
+    "deploy": "export PATH=\"/Users/mo/Documents/Anti Graviti Projects/Skill Master/.tools/node-js/bin:$PATH\" && npm run build && firebase deploy"
+  },
+  "dependencies": {
+    "firebase": "^12.9.0",
+    "jspdf": "2.5.1",
+    "lucide-react": "0.344.0",
+    "motion": "^12.38.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.22.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.2.1",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

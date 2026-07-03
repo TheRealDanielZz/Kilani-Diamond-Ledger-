@@ -1,0 +1,647 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   Dark mode is the default (:root).
+   Light mode overrides via [data-theme="light"] on <html>.
+   Uses a unified semantic naming system with legacy aliases.
+   No @media breakpoint restriction — themes work on all devices.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Unified Semantic Surfaces ── */
+  --color-surface-base:    #121318;  /* Page background */
+  --color-surface-raised:  #1F2128;  /* Cards, modals */
+  --color-surface-input:   rgba(255, 255, 255, 0.03); /* Form inputs */
+  --color-surface-overlay: #1F2128;  /* Table headers, tab bars */
+  --color-sidebar:         rgba(0, 0, 0, 0.4);
+
+  /* ── Unified Semantic Text ── */
+  --color-on-surface:           #FFFFFF;
+  --color-on-surface-secondary: #A1A1AA;
+  --color-on-surface-muted:     #71717A;
+
+  /* ── Unified Semantic Border ── */
+  --color-border: rgba(255, 255, 255, 0.08);
+
+  /* ── Unified Semantic Accent ── */
+  --color-accent:     #F5C249;
+  --color-accent-dim: rgba(245, 194, 73, 0.2);
+
+  /* ── Legacy aliases → unified tokens (backward compatible) ── */
+  --background-base:   var(--color-surface-base);
+  --text-primary:      var(--color-on-surface);
+  --text-secondary:    var(--color-on-surface-secondary);
+  --text-muted:        var(--color-on-surface-muted);
+  --border-color:      var(--color-border);
+  --input-bg:          var(--color-surface-input);
+  --input-bg-focus:    rgba(255, 255, 255, 0.05);
+  --sidebar-bg:        var(--color-sidebar);
+  --modal-bg:          var(--color-surface-base);
+  --table-header:      var(--color-surface-overlay);
+  --table-row-hover:   rgba(255, 255, 255, 0.05);
+
+  /* ── Brand tokens (also alias to unified) ── */
+  --lux-black:    #16171D;
+  --lux-surface:  var(--color-surface-raised);
+  --lux-border:   #2D313A;
+  --lux-gold:     var(--color-accent);
+  --lux-gold-dim: var(--color-accent-dim);
+  --lux-cream:    var(--color-on-surface);
+  --lux-input:    var(--color-surface-input);
+
+  /* ── Tailwind color remapping (bg-zinc-900 etc. follow theme) ── */
+  --zinc-800: #2D313A;
+  --zinc-900: #1F2128;
+  --zinc-950: #16171D;
+
+  /* ── Status colors ── */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger:  #EF4444;
+  --info:    #3B82F6;
+
+  /* ── Glassmorphism ── */
+  --glass-card-bg:            rgba(255, 255, 255, 0.05);
+  --liquid-glass-bg:          rgba(31, 33, 40, 0.4);
+  --liquid-glass-border:      rgba(255, 255, 255, 0.1);
+  --liquid-glass-shadow:      inset 0 1px 1px rgba(255,255,255,0.1), 0 8px 32px rgba(0,0,0,0.3);
+  --liquid-glass-glow-shadow: inset 0 1px 1px rgba(255,255,255,0.15), 0 0 20px rgba(245,194,73,0.06), 0 8px 32px rgba(0,0,0,0.45);
+  --inset-grouped-bg:         rgba(28, 30, 36, 0.6);
+  --inset-grouped-border:     rgba(255, 255, 255, 0.05);
+}
+
+/* ── Light Mode Token Overrides ── */
+[data-theme="light"] {
+  /* ── Surfaces (3-level hierarchy: page → card → input) ── */
+  --color-surface-base:    #F0F0F5;   /* Page bg: warm neutral off-white */
+  --color-surface-raised:  #FFFFFF;   /* Cards: pure white, creates lift */
+  --color-surface-input:   #FAFAFA;   /* Inputs: barely-off-white tint   */
+  --color-surface-overlay: #E8E8EF;   /* Tab bars, table headers: deeper  */
+  --color-sidebar:         #EAEAEF;   /* Sidebar: distinct from page bg   */
+
+  /* ── Text (WCAG AAA-level contrast) ── */
+  --color-on-surface:           #0A0A0F;   /* Near-black ≈ 20:1 on white */
+  --color-on-surface-secondary: #3A3A45;   /* Medium-dark ≈ 9:1          */
+  --color-on-surface-muted:     #6B6B78;   /* Subdued ≈ 4.7:1            */
+
+  /* ── Border ── */
+  --color-border: rgba(0, 0, 0, 0.10);
+
+  /* ── Accent (deeper, richer warm gold) ── */
+  --color-accent:     #B8922A;
+  --color-accent-dim: rgba(184, 146, 42, 0.15);
+
+  /* ── Status (darker for light background contrast) ── */
+  --success: #059669;
+  --warning: #D97706;
+  --danger:  #DC2626;
+  --info:    #1D4ED8;
+
+  /* ── Brand overrides ── */
+  --lux-black:  #FFFFFF;
+  --lux-border: rgba(0, 0, 0, 0.10);
+  --modal-bg:   #FFFFFF;
+
+  /* ── Tailwind remapping ── */
+  --zinc-800: rgba(0, 0, 0, 0.09);
+  --zinc-900: #FFFFFF;
+  --zinc-950: #F0F0F5;
+
+  /* ── Glassmorphism (warm neutral shadows, not black-tinted) ── */
+  --glass-card-bg:            rgba(255, 255, 255, 0.92);
+  --liquid-glass-bg:          rgba(255, 255, 255, 0.88);
+  --liquid-glass-border:      rgba(0, 0, 0, 0.08);
+  --liquid-glass-shadow:      0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.07);
+  --liquid-glass-glow-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(184,146,42,0.12), 0 0 0 1px rgba(184,146,42,0.08);
+  --inset-grouped-bg:         #F5F5FA;
+  --inset-grouped-border:     rgba(0, 0, 0, 0.07);
+
+  /* ── Tailwind shadow-glass override (warm, not dark) ── */
+  --shadow-glass: 0 2px 8px rgba(0,0,0,0.06), 0 16px 40px rgba(0,0,0,0.06);
+
+  /* ── Table ── */
+  --table-row-hover: rgba(0, 0, 0, 0.03);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TAILWIND v4 @theme — maps CSS vars → Tailwind color utilities
+   ═══════════════════════════════════════════════════════════════════ */
+@theme {
+  /* Brand */
+  --color-lux-black:    var(--lux-black);
+  --color-lux-surface:  var(--lux-surface);
+  --color-lux-border:   var(--lux-border);
+  --color-lux-gold:     var(--lux-gold);
+  --color-lux-gold-dim: var(--lux-gold-dim);
+  --color-lux-cream:    var(--lux-cream);
+  --color-lux-input:    var(--lux-input);
+
+  /* Tailwind zinc remapping */
+  --color-zinc-800: var(--zinc-800);
+  --color-zinc-900: var(--zinc-900);
+  --color-zinc-950: var(--zinc-950);
+
+  /* Theme semantic classes (bg-theme-*, text-theme-*, border-theme-*) */
+  --color-theme-bg:             var(--background-base);
+  --color-theme-text-primary:   var(--text-primary);
+  --color-theme-text-secondary: var(--text-secondary);
+  --color-theme-text-muted:     var(--text-muted);
+  --color-theme-border:         var(--border-color);
+  --color-theme-input-bg:       var(--input-bg);
+  --color-theme-row-hover:      var(--table-row-hover);
+  --color-theme-sidebar-bg:     var(--sidebar-bg);
+  --color-theme-modal-bg:       var(--modal-bg);
+  --color-theme-table-header:   var(--table-header);
+
+  /* New unified tokens (also usable as Tailwind classes) */
+  --color-surface-raised:            var(--color-surface-raised);
+  --color-surface-input-color:       var(--color-surface-input);
+  --color-surface-overlay:           var(--color-surface-overlay);
+  --color-on-surface:                var(--color-on-surface);
+  --color-on-surface-secondary:      var(--color-on-surface-secondary);
+  --color-on-surface-muted:          var(--color-on-surface-muted);
+  --color-accent:                    var(--color-accent);
+  --color-accent-dim:                var(--color-accent-dim);
+
+  /* Typography */
+  --font-sans:  'Poppins', -apple-system, sans-serif;
+  --font-serif: 'Playfair Display', serif;
+  --font-mono:  'JetBrains Mono', monospace;
+
+  /* Radii */
+  --radius-sm:    0.5rem;
+  --radius-md:    0.75rem;
+  --radius-lg:    1rem;
+  --radius-xl:    1.25rem;
+  --radius-2xl:   1.5rem;
+  --radius-3xl:   2.5rem;
+  --radius-apple: 3rem;
+
+  /* Shadows */
+  --shadow-glass:      0 16px 40px -12px rgba(0,0,0,0.35);
+  --shadow-glow:       0 0 15px rgba(245,194,73,0.1);
+  --shadow-glow-hover: 0 0 25px rgba(245,194,73,0.2);
+  --shadow-subtle:     0 4px 16px rgba(0,0,0,0.15);
+
+  /* Animations */
+  --animate-shimmer: shimmer 2s infinite linear;
+  --animate-float:   float 6s ease-in-out infinite;
+
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to   { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-10px); }
+  }
+}
+
+@layer base {
+  :root {
+    --safe-top:    env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+    --safe-left:   env(safe-area-inset-left);
+    --safe-right:  env(safe-area-inset-right);
+  }
+
+  body {
+    background:
+      radial-gradient(circle at top right, rgba(245,194,73,0.05), transparent 50%),
+      radial-gradient(circle at bottom left, rgba(59,130,246,0.03), transparent 40%),
+      var(--background-base);
+    @apply text-theme-text-primary antialiased selection:bg-lux-gold/30 selection:text-white;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  [data-theme="light"] body {
+    background:
+      radial-gradient(ellipse at top right, rgba(184,146,42,0.07), transparent 50%),
+      radial-gradient(ellipse at bottom left, rgba(100,100,160,0.05), transparent 45%),
+      var(--background-base);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(245,194,73,0.2) transparent;
+  }
+  
+  *:focus-visible {
+    outline: 2px solid var(--color-accent) !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px var(--color-accent-dim) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   THEME TRANSITION GUARD
+   Transitions only fire during the 350ms theme-switch window.
+   Prevents animating hover, focus, scroll, and page interactions.
+   ThemeContext adds [data-transition-active] on toggle, removes after 350ms.
+   ═══════════════════════════════════════════════════════════════════ */
+html[data-transition-active] *,
+html[data-transition-active] *::before,
+html[data-transition-active] *::after {
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 150ms ease,
+    box-shadow 220ms ease,
+    fill 150ms ease;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Glassmorphism utilities */
+  .glass-card {
+    background-color: var(--glass-card-bg);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-glass);
+    border-radius: 1.5rem;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .glass-card:hover {
+    border-color: rgba(245,194,73,0.25);
+    box-shadow: var(--shadow-glass), 0 0 25px rgba(245,194,73,0.05);
+  }
+
+  .glass-input {
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    outline: none;
+    transition: all 0.3s ease-in-out;
+    border-radius: 1rem;
+  }
+  .glass-input:focus {
+    border-color: var(--lux-gold);
+    background-color: var(--input-bg-focus);
+    box-shadow: 0 0 10px rgba(245,194,73,0.1);
+  }
+
+  .liquid-glass {
+    background-color: var(--liquid-glass-bg);
+    backdrop-filter: blur(40px) saturate(180%) contrast(95%);
+    border: 1px solid var(--liquid-glass-border);
+    box-shadow: var(--liquid-glass-shadow);
+    border-radius: 2.5rem;
+    overflow: hidden;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s ease, box-shadow 0.4s ease, background-color 0.4s ease;
+  }
+  .liquid-glass:hover {
+    border-color: rgba(245,194,73,0.2);
+    box-shadow: var(--liquid-glass-shadow), 0 0 30px rgba(245,194,73,0.04);
+  }
+
+  .liquid-glass-vibrant {
+    background-color: var(--lux-gold-dim);
+    backdrop-filter: blur(40px) saturate(200%) contrast(110%);
+    border: 1px solid rgba(245,194,73,0.2);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.2), 0 8px 32px rgba(245,194,73,0.15);
+    border-radius: 2.5rem;
+    overflow: hidden;
+  }
+
+  .liquid-glass-glow {
+    background-color: var(--liquid-glass-bg);
+    backdrop-filter: blur(40px) saturate(180%) contrast(95%);
+    border: 1px solid rgba(245,194,73,0.25);
+    box-shadow: var(--liquid-glass-glow-shadow);
+    border-radius: 2.5rem;
+    overflow: hidden;
+    transition: all 0.5s ease-in-out;
+  }
+
+  .inset-grouped {
+    background-color: var(--inset-grouped-bg);
+    backdrop-filter: blur(30px);
+    border-radius: 2rem;
+    overflow: hidden;
+    border: 1px solid var(--inset-grouped-border);
+  }
+
+  .modular-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  .text-title     { @apply font-serif tracking-tight leading-tight; }
+  .text-mono-caps { @apply font-mono uppercase tracking-[0.2em] text-[10px] font-bold; }
+
+  .safe-pt { padding-top: var(--safe-top); }
+  .safe-pb { padding-bottom: var(--safe-bottom); }
+  .safe-px { padding-left: var(--safe-left); padding-right: var(--safe-right); }
+
+  .skeleton {
+    @apply relative overflow-hidden bg-white/5;
+    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite linear;
+  }
+
+  [data-theme="light"] .skeleton {
+    background: linear-gradient(90deg, #EAEAEF 25%, #F5F5FA 50%, #EAEAEF 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite linear;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT MODE OVERRIDES
+   ─ Selector: [data-theme="light"]  (attribute on <html>)
+   ─ No @media wrapper — applies on ALL screen sizes
+   ─ No !important — CSS outside @layer naturally beats @layer utilities
+     and the compound selector [data-theme="light"] .class beats .class alone
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Headings ── */
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6 {
+  color: var(--text-primary);
+}
+
+/* ── General Text ── */
+[data-theme="light"] p,
+[data-theme="light"] span:not(.badge, .badge *, button *, .text-lux-gold, .text-emerald-400, .text-red-400, .text-blue-400, .text-orange-400, .text-indigo-400) {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .text-white:not(button *, .badge *, .keep-white, .liquid-glass-vibrant *, .bg-lux-gold *, .bg-blue-500 *, .bg-emerald-500 *, .bg-red-500 *) {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .text-zinc-400:not(button *, .badge *) { color: var(--text-secondary); }
+[data-theme="light"] .text-zinc-300                         { color: var(--text-secondary); }
+[data-theme="light"] .text-zinc-500:not(button *, .badge *, .font-mono) { color: var(--text-muted); }
+[data-theme="light"] .text-zinc-600                         { color: var(--text-muted); }
+[data-theme="light"] .text-zinc-700                         { color: var(--text-secondary); }
+[data-theme="light"] .text-lux-cream                        { color: var(--text-primary); }
+
+/* ── Forms ── */
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+[data-theme="light"] select option {
+  background-color: #FFFFFF;
+  color: var(--text-primary);
+}
+
+/* ── Tables ── */
+[data-theme="light"] table          { border-color: var(--border-color); }
+[data-theme="light"] thead          { background-color: var(--table-header); border-bottom: 1px solid var(--border-color); }
+[data-theme="light"] thead th       { color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+[data-theme="light"] tbody tr       { border-bottom: 1px solid var(--border-color); }
+[data-theme="light"] tbody tr:hover { background-color: var(--table-row-hover); }
+[data-theme="light"] tbody td       { color: var(--text-primary); border-bottom: 1px solid var(--border-color); }
+
+/* ── Scrollbar (light mode — muted gold tint) ── */
+[data-theme="light"] * {
+  scrollbar-color: rgba(184,146,42,0.25) transparent;
+}
+
+/* ── Text selection (light mode) ── */
+[data-theme="light"] ::selection {
+  background-color: rgba(184,146,42,0.2);
+  color: #0A0A0F;
+}
+
+/* ── Input ring on focus (light mode) ── */
+[data-theme="light"] .glass-input:focus {
+  border-color: #B8922A;
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(184,146,42,0.15), 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ── Card / glass borders get a subtle hairline lift in light mode ── */
+[data-theme="light"] .glass-card {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+}
+[data-theme="light"] .glass-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 12px 28px rgba(0,0,0,0.08);
+  border-color: rgba(184,146,42,0.22);
+}
+
+/* ── Semi-transparent dark overlays → near-invisible on light ── */
+[data-theme="light"] .bg-black\/20,
+[data-theme="light"] .bg-black\/10  { background-color: rgba(0, 0, 0, 0.02); }
+[data-theme="light"] .bg-black\/30,
+[data-theme="light"] .bg-black\/40  { background-color: rgba(0, 0, 0, 0.03); }
+
+/* ── Dark zinc/surface backgrounds ── */
+[data-theme="light"] .bg-zinc-900\/10,
+[data-theme="light"] .bg-zinc-900\/20,
+[data-theme="light"] .bg-zinc-900\/30 { background-color: rgba(0, 0, 0, 0.03); }
+[data-theme="light"] .bg-zinc-900\/50  { background-color: rgba(0, 0, 0, 0.04); }
+[data-theme="light"] .bg-zinc-900      { background-color: var(--lux-surface); color: var(--text-primary); }
+[data-theme="light"] .bg-zinc-800\/30  { background-color: rgba(0, 0, 0, 0.04); }
+
+/* ── Hardcoded hex dark backgrounds ── */
+[data-theme="light"] .bg-\[\#1A1C23\],
+[data-theme="light"] .bg-\[\#16171D\],
+[data-theme="light"] .bg-\[\#1C1E24\]\/60,
+[data-theme="light"] .bg-\[\#121318\]  { background-color: var(--lux-surface); color: var(--text-primary); }
+[data-theme="light"] .bg-\[\#23262F\]  { background-color: var(--color-surface-base); color: var(--text-primary); }
+
+/* ── bg-black standalone (image placeholders) ── */
+[data-theme="light"] .bg-black:not(.bg-black\/60):not(.bg-black\/80):not(.bg-black\/70) {
+  background-color: #E8E8ED;
+}
+
+/* ── Borders ── */
+[data-theme="light"] .border-zinc-800,
+[data-theme="light"] .border-zinc-800\/50,
+[data-theme="light"] .border-zinc-800\/70,
+[data-theme="light"] .border-zinc-700,
+[data-theme="light"] .border-white\/5,
+[data-theme="light"] .border-white\/10,
+[data-theme="light"] .border-\[\#2D313A\] { border-color: var(--border-color); }
+
+/* ── Hover states ── */
+[data-theme="light"] .hover\:bg-zinc-800:hover    { background-color: rgba(0, 0, 0, 0.06); }
+[data-theme="light"] .hover\:bg-zinc-800\/30:hover { background-color: rgba(0, 0, 0, 0.04); }
+
+/* ── Modal sticky headers ── */
+[data-theme="light"] [class*="bg-\[\#121318\]\/90"],
+[data-theme="light"] [class*="bg-\[\#121318\]\/80"] {
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+}
+
+/* ── Tab bars / pill selectors ── */
+[data-theme="light"] .bg-black\/20.border.border-\[\#2D313A\] {
+  background-color: rgba(0, 0, 0, 0.04);
+  border-color: var(--border-color);
+}
+
+/* ── Dashed empty-state borders ── */
+[data-theme="light"] .border-dashed.border-zinc-800 { border-color: rgba(0, 0, 0, 0.15); }
+
+/* ── Purity/service toggle buttons ── */
+[data-theme="light"] button.border-zinc-800:not(.bg-lux-gold):not(.bg-zinc-800) {
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+/* ── White opacity backgrounds ── */
+[data-theme="light"] .bg-white\/5  { background-color: rgba(0, 0, 0, 0.03); }
+[data-theme="light"] .bg-white\/10 { background-color: rgba(0, 0, 0, 0.05); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   COLORED TEXT CONTRAST — WCAG AA Compliant
+   Pastel 400/300-level → darker 700/800/900 for white backgrounds.
+   Compound selector beats @layer utilities without !important.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Red */
+[data-theme="light"] .text-red-400,
+[data-theme="light"] .text-red-300   { color: #B91C1C; } /* red-700    4.6:1 */
+[data-theme="light"] .text-red-500   { color: #991B1B; } /* red-800    6.1:1 */
+
+/* Amber / Yellow / Orange */
+[data-theme="light"] .text-amber-400,
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-yellow-400,
+[data-theme="light"] .text-yellow-300 { color: #92400E; } /* amber-800  7.2:1 */
+[data-theme="light"] .text-amber-500   { color: #78350F; } /* amber-900  9.1:1 */
+[data-theme="light"] .text-orange-400,
+[data-theme="light"] .text-orange-300  { color: #C2410C; } /* orange-700 5.1:1 */
+[data-theme="light"] .text-orange-500  { color: #9A3412; } /* orange-800 6.9:1 */
+
+/* Emerald / Green */
+[data-theme="light"] .text-emerald-400,
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-green-400,
+[data-theme="light"] .text-green-300   { color: #065F46; } /* emerald-800 8.3:1 */
+[data-theme="light"] .text-emerald-500,
+[data-theme="light"] .text-green-500   { color: #064E3B; } /* emerald-900 10.2:1 */
+
+/* Blue */
+[data-theme="light"] .text-blue-400,
+[data-theme="light"] .text-blue-300 { color: #1D4ED8; } /* blue-700 5.9:1 */
+[data-theme="light"] .text-blue-500  { color: #1E40AF; } /* blue-800 7.3:1 */
+
+/* Indigo */
+[data-theme="light"] .text-indigo-400,
+[data-theme="light"] .text-indigo-300 { color: #3730A3; } /* indigo-800 8.0:1 */
+[data-theme="light"] .text-indigo-500  { color: #312E81; } /* indigo-900 9.6:1 */
+
+/* Purple / Violet */
+[data-theme="light"] .text-purple-400,
+[data-theme="light"] .text-purple-300,
+[data-theme="light"] .text-violet-400,
+[data-theme="light"] .text-violet-300  { color: #6B21A8; } /* purple-800 7.1:1 */
+[data-theme="light"] .text-purple-500,
+[data-theme="light"] .text-violet-500  { color: #581C87; } /* purple-900 9.0:1 */
+
+/* Cyan / Teal */
+[data-theme="light"] .text-cyan-400,
+[data-theme="light"] .text-teal-400 { color: #0E7490; } /* cyan-700 5.0:1 */
+
+/* Rose / Pink */
+[data-theme="light"] .text-rose-400,
+[data-theme="light"] .text-pink-400 { color: #9F1239; } /* rose-800 7.5:1 */
+
+/* Gold (standalone label text) */
+[data-theme="light"] .text-lux-gold { color: #9A7520; } /* richer warm gold 5.1:1 */
+
+/* ═══════════════════════════════════════════════════════════════════
+   BADGE / PILL BACKGROUND FIXES
+   Muted tinted backgrounds with proper dark text via color overrides above.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme="light"] .bg-amber-500\/10,
+[data-theme="light"] .bg-amber-900\/10,
+[data-theme="light"] .bg-amber-900\/20     { background-color: rgba(146, 64, 14, 0.10); }
+[data-theme="light"] .border-amber-800,
+[data-theme="light"] .border-amber-800\/50,
+[data-theme="light"] .border-amber-900\/30 { border-color: rgba(146, 64, 14, 0.30); }
+
+[data-theme="light"] .bg-red-500\/10,
+[data-theme="light"] .bg-red-900\/10       { background-color: rgba(185, 28, 28, 0.08); }
+[data-theme="light"] .border-red-500\/20,
+[data-theme="light"] .border-red-500\/30   { border-color: rgba(185, 28, 28, 0.25); }
+
+[data-theme="light"] .bg-emerald-500\/10,
+[data-theme="light"] .bg-green-500\/10     { background-color: rgba(6, 95, 70, 0.08); }
+[data-theme="light"] .border-emerald-500\/20,
+[data-theme="light"] .border-green-500\/20 { border-color: rgba(6, 95, 70, 0.25); }
+
+[data-theme="light"] .bg-blue-500\/10,
+[data-theme="light"] .bg-indigo-500\/10    { background-color: rgba(29, 78, 216, 0.08); }
+[data-theme="light"] .border-blue-500\/20,
+[data-theme="light"] .border-indigo-500\/20 { border-color: rgba(29, 78, 216, 0.22); }
+
+[data-theme="light"] .bg-purple-500\/10,
+[data-theme="light"] .bg-violet-500\/10    { background-color: rgba(107, 33, 168, 0.08); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   NOTIFICATION CENTER ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes bell-ring {
+  0%   { transform: rotate(0deg); }
+  10%  { transform: rotate(14deg); }
+  20%  { transform: rotate(-10deg); }
+  30%  { transform: rotate(14deg); }
+  40%  { transform: rotate(-4deg); }
+  50%  { transform: rotate(10deg); }
+  60%  { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes notif-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notif-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes badge-pop {
+  0%   { transform: scale(0.5); opacity: 0; }
+  70%  { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.notif-bell-ring {
+  animation: bell-ring 0.6s ease forwards;
+}
+
+.notif-panel {
+  animation: notif-panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top right;
+}
+
+.notif-item {
+  animation: notif-item-in 0.25s ease forwards;
+}
+
+.notif-badge-pop {
+  animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
