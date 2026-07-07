@@ -14,7 +14,7 @@ service firebase.storage {
     match /evidence/{projectId}/{allPaths=**} {
       allow read: if request.auth != null;
       allow write, delete: if request.auth != null
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'MANAGER';
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'Manager';
     }
 
     // ----------------------------------------------------------------
