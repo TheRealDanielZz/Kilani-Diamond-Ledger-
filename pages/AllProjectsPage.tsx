@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, User, Role, Priority } from '../types';
 import { Card, StatusPill, SetterAvatar, Input, Badge, Button } from '../components/UI';
-import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Edit2, UserCheck, X } from 'lucide-react';
+import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Edit2, UserCheck, X, LayoutGrid, List } from 'lucide-react';
 import { useToast } from '../App';
 import ProjectDetail from './ProjectDetail';
 
@@ -63,6 +63,15 @@ const AllProjectsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProjectStatus>(ProjectStatus.ACTIVE);
   const [salesRepFilter, setSalesRepFilter] = useState<string>('ALL');
+  const [viewMode, setViewMode] = useState<'LIST' | 'GRID'>(() => {
+    if (window.innerWidth < 640) return 'GRID';
+    return (localStorage.getItem('kilani_all_projects_view_mode') as 'LIST' | 'GRID') || 'GRID';
+  });
+
+  const toggleViewMode = (mode: 'LIST' | 'GRID') => {
+    setViewMode(mode);
+    localStorage.setItem('kilani_all_projects_view_mode', mode);
+  };
 
   // Delete State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -259,6 +268,24 @@ const AllProjectsPage: React.FC = () => {
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-black/20 p-1 rounded-2xl border border-[#2D313A] shrink-0 h-10">
+               <button
+                  onClick={() => toggleViewMode('GRID')}
+                  title="Grid View"
+                  className={`p-1.5 rounded-xl transition-all ${viewMode === 'GRID' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
+               >
+                  <LayoutGrid size={16} />
+               </button>
+               <button
+                  onClick={() => toggleViewMode('LIST')}
+                  title="List View"
+                  className={`p-1.5 rounded-xl transition-all ${viewMode === 'LIST' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
+               >
+                  <List size={16} />
+               </button>
             </div>
         </div>
       </div>

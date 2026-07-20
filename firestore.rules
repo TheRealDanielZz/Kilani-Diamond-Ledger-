@@ -9,75 +9,175 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isManager() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Manager';
+      return isSignedIn() && getUserData().role == 'Manager';
+    }
+
+    function isDesigner() {
+      return isSignedIn() && getUserData().role == 'Designer';
+    }
+
+    function isManagerOrDesigner() {
+      return isManager() || isDesigner();
     }
 
     // ----------------------------------------------------------------
-    // evidence collection
-    //   - Any authenticated user may read.
-    //   - Only MANAGER-role users may create, update, or delete.
+    // users collection
     // ----------------------------------------------------------------
-    match /evidence/{evidenceId} {
-      allow read, write: if isSignedIn();
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Managers can register or edit any user.
+      // Users can only create their own profile with Setter role (or Manager if kilanimedia@gmail.com).
+      // Users can update their profile but are forbidden from modifying role or active status.
+      allow create: if isSignedIn() && request.auth.uid == userId
+         && (request.resource.data.role == 'Setter' || (request.resource.data.role == 'Manager' && request.auth.token.email == 'kilanimedia@gmail.com'));
+      allow update: if isManager() || (
+        request.auth.uid == userId &&
+        !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'active']))
+      );
+      allow delete: if isManager();
     }
 
     // ----------------------------------------------------------------
-    // pushTokens sub-collection (users/{userId}/pushTokens/{token})
-    //   - Users may only read/write their own tokens.
+    // pushTokens sub-collection
     // ----------------------------------------------------------------
     match /users/{userId}/pushTokens/{token} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
     // ----------------------------------------------------------------
-    // All other collections used by the app.
-    // Any signed-in user may read/write.
-    // Listed explicitly to avoid a wide-open catch-all accidentally
-    // granting writes to the evidence collection (Firestore OR semantics).
+    // evidence collection
     // ----------------------------------------------------------------
-    match /users/{docId} {
-      allow read, write: if isSignedIn();
+    match /evidence/{evidenceId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uploaderId == request.auth.uid;
+      allow update: if (isManager() || (isSignedIn() && resource.data.uploaderId == request.auth.uid && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['uploaderId']))))
+        && (!('transactionStatus' in resource.data) || resource.data.transactionStatus != 'CONFIRMED');
+      allow delete: if isManager();
     }
+
+    // ----------------------------------------------------------------
+    // projects collection
+    // ----------------------------------------------------------------
     match /projects/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isManagerOrDesigner();
+      allow update: if isManager() || (isDesigner() && request.auth.uid in resource.data.activeAssignees);
+      allow delete: if isManager();
     }
+
+    // ----------------------------------------------------------------
+    // bags collection
+    // ----------------------------------------------------------------
     match /bags/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isManagerOrDesigner();
+      // Managers may perform any update (count confirmation, status changes, etc.)
+      allow update: if isManager();
+      // Setters (the assigned issuedToId) may only initiate a return.
+      // The rule enforces: bag must be in ISSUED state, and the only
+      // permitted transition is to RETURNED_PENDING_COUNT.
+      // Setters are forbidden from modifying bag specifications, weights, or issue history.
+      allow update: if isSignedIn()
+        && request.auth.uid == resource.data.issuedToId
+        && resource.data.status == 'ISSUED'
+        && request.resource.data.status == 'RETURNED_PENDING_COUNT'
+        && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['items', 'bagNumber', 'projectId', 'issuedToId', 'issuedAt', 'issuedById', 'notes']));
+      allow delete: if isManager();
     }
+
+
+    // ----------------------------------------------------------------
+    // requests collection
+    // ----------------------------------------------------------------
     match /requests/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isManager() || (isSignedIn() && request.auth.uid == resource.data.requestedById);
+      allow delete: if isManager();
     }
+
+    // ----------------------------------------------------------------
+    // movements & transactions collections (Inventory Ledger)
+    // Setters must not see quantities, valuation, or ledger movements.
+    // ----------------------------------------------------------------
     match /movements/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /specs/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /bands/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /weekly_reports/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /transactions/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /notifications/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /system_logs/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isManagerOrDesigner();
+      allow create: if isManager();
+      allow update, delete: if false;
     }
     match /diamond_transactions/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isManagerOrDesigner();
+      allow create: if isManager();
+      allow update, delete: if false;
+    }
+    match /uniqueness_locks/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        (
+          (docId.matches('^corr_.*') && isManager()) ||
+          (docId.matches('^req_.*') && isSignedIn()) ||
+          (docId.matches('^bag_.*') && isManagerOrDesigner())
+        );
+      allow update: if false;
+      allow delete: if isManager();
+    }
+    // weekly_reports: Managers and Designers may read and create snapshots.
+    // Reports are append-only; update and delete are permanently disabled so
+    // the historical record can never be altered retroactively.
+    match /weekly_reports/{docId} {
+      allow read: if isManagerOrDesigner();
+      allow create: if isManagerOrDesigner();
+      allow update, delete: if false;
+    }
+    // system_logs: immutable audit trail. Only Managers/Designers may read.
+    // Create is allowed by any signed-in user (store methods write audit entries).
+    // Update and delete are disabled — no log line may be altered.
+    match /system_logs/{docId} {
+      allow read: if isManagerOrDesigner();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // ----------------------------------------------------------------
+    // specs, bands & diamonds collections
+    // ----------------------------------------------------------------
+    match /specs/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isManagerOrDesigner();
+    }
+    match /bands/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isManagerOrDesigner();
     }
     match /diamonds/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isManager();
     }
+
+    // ----------------------------------------------------------------
+    // settings collection
+    // ----------------------------------------------------------------
     match /settings/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // ----------------------------------------------------------------
+    // notifications collection
+    // ----------------------------------------------------------------
+    match /notifications/{docId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || resource.data.role == getUserData().role);
+      // Anyone signed in can create notifications (necessary since Setters/Designers/Managers send alerts to each other)
+      // but they must populate the createdById field correctly if it is present.
+      allow create: if isSignedIn() && (request.resource.data.createdById == request.auth.uid || !('createdById' in request.resource.data));
+      // Only the recipient or a Manager can update (e.g. mark read, archive). Deletion is not allowed (archiving only).
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || isManager());
+      allow delete: if isManager();
     }
   }
 }

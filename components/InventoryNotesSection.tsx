@@ -155,7 +155,7 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
         elements.push(text.substring(lastIndex, matchIndex));
       }
       elements.push(
-        <span key={matchIndex} className="text-lux-gold font-bold bg-lux-gold/10 px-1.5 py-0.5 rounded border border-lux-gold/25 text-[11px] inline-block font-mono">
+        <span key={matchIndex} className="text-lux-gold font-semibold bg-lux-gold/10 px-1.5 py-0.5 rounded-lg border border-lux-gold/20 text-[10px] inline-block font-mono tracking-normal">
           {matchText}
         </span>
       );
@@ -172,41 +172,41 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
   );
 
   return (
-    <div className="w-full bg-zinc-950/80 rounded-2xl border border-zinc-800 p-5 mt-4 relative z-10 transition-all duration-300 shadow-2xl">
-      <div className="flex items-center justify-between border-b border-white/[0.04] pb-3 mb-4">
-        <div className="flex items-center gap-2 text-lux-gold">
-          <MessageSquare size={16} />
-          <span className="font-serif font-bold text-sm tracking-wide">Inventory Ledger Notes</span>
+    <div className="w-full mt-2 relative z-10 transition-all duration-300">
+      <div className="flex items-center justify-between border-b border-white/[0.04] pb-1.5 mb-2">
+        <div className="flex items-center gap-1.5 text-zinc-400">
+          <MessageSquare size={12} className="text-lux-gold/70" />
+          <span className="font-sans font-bold text-[9px] uppercase tracking-widest text-zinc-400">Inventory Ledger Notes</span>
         </div>
         <div className="flex items-center gap-2">
           {item.inventoryNote && (
-            <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+            <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-bold">
               Author: {item.inventoryNote.authorName}
             </span>
           )}
           {item.inventoryNote && !isEditing && canEdit && (
             <button 
               onClick={() => setIsEditing(true)} 
-              className="text-zinc-400 hover:text-lux-gold transition-colors p-1"
+              className="text-zinc-400 hover:text-lux-gold transition-colors p-0.5 cursor-pointer"
               title="Edit Note"
             >
-              <Edit3 size={14} />
+              <Edit3 size={12} />
             </button>
           )}
           {item.inventoryNote && isManager && (
             <button 
               onClick={onDelete} 
-              className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+              className="text-zinc-500 hover:text-red-400 transition-colors p-0.5 cursor-pointer"
               title="Delete Note"
             >
-              <Trash2 size={14} />
+              <Trash2 size={12} />
             </button>
           )}
         </div>
       </div>
 
       {isEditing || !item.inventoryNote ? (
-        <div className="space-y-3 relative">
+        <div className="space-y-2 relative">
           <textarea
             ref={textareaRef}
             value={noteText}
@@ -214,8 +214,8 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
             onKeyDown={handleKeyDown}
             disabled={!canEdit}
             placeholder={canEdit ? "Type a note... Use @ name to mention Managers." : "You are not authorized to edit this note."}
-            rows={3}
-            className="w-full bg-black/60 border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-lux-gold/50 focus:ring-1 focus:ring-lux-gold/20 transition-all leading-relaxed resize-none"
+            rows={2}
+            className="w-full bg-[#16171D] border border-white/5 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:border-lux-gold/50 focus:outline-none transition-all leading-relaxed resize-none font-sans"
           />
 
           {mentionQuery !== null && filteredManagers.length > 0 && (
@@ -239,24 +239,24 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
           )}
 
           {canEdit && (
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-1.5">
               {item.inventoryNote && (
-                <Button size="sm" variant="secondary" onClick={handleCancel}>
+                <Button size="sm" variant="secondary" onClick={handleCancel} className="h-7 px-3 py-0.5 text-[10px] uppercase tracking-wider rounded-xl font-bold border border-white/5 hover:bg-white/5 text-zinc-300">
                   Cancel
                 </Button>
               )}
-              <Button size="sm" onClick={handleSave} className="flex items-center gap-1.5 bg-lux-gold hover:bg-lux-gold-dark text-black border-none font-bold">
-                <Send size={12} />
+              <Button size="sm" onClick={handleSave} className="flex items-center gap-1 bg-lux-gold hover:bg-[#ffd66e] text-black border-none font-bold h-7 px-3 py-0.5 text-[10px] uppercase tracking-wider rounded-xl">
+                <Send size={9} />
                 Save Note
               </Button>
             </div>
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="bg-black/40 border border-white/[0.03] rounded-xl p-4 leading-relaxed">
+        <div className="space-y-2">
+          <div className="bg-[#16171D]/40 border border-white/5 rounded-xl p-3 leading-relaxed">
             {renderNoteWithMentions(item.inventoryNote.text)}
-            <div className="flex justify-between items-center mt-3 pt-2 border-t border-white/[0.02] text-[10px] text-zinc-500 font-mono">
+            <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-white/[0.02] text-[9px] text-zinc-500 font-mono">
               <span>Created {new Date(item.inventoryNote.createdAt).toLocaleString()}</span>
               {item.inventoryNote.edited && (
                 <span>Last Edited {new Date(item.inventoryNote.lastEditedAt).toLocaleString()}</span>
@@ -267,17 +267,17 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
       )}
 
       {auditTrail.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-white/[0.03]">
+        <div className="mt-2.5 pt-2 border-t border-white/[0.03]">
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 font-bold transition-colors"
+            className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 font-bold transition-colors cursor-pointer"
           >
-            <History size={12} />
+            <History size={10} />
             {showHistory ? 'Hide History & Audit Trail' : `Show History & Audit Trail (${auditTrail.length})`}
           </button>
 
           {showHistory && (
-            <div className="mt-3 space-y-2 max-h-60 overflow-y-auto pr-1">
+            <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {auditTrail.map((entry) => {
                 const actionLabels: Record<string, string> = {
                   created: 'Created',
@@ -287,26 +287,26 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
                   transferred: 'Transferred',
                 };
                 const actionColors: Record<string, string> = {
-                  created: 'bg-emerald-950/20 text-emerald-400 border border-emerald-800/30',
-                  edited: 'bg-blue-950/20 text-blue-400 border border-blue-800/30',
-                  deleted: 'bg-red-950/20 text-red-400 border border-red-800/30',
-                  restored: 'bg-purple-950/20 text-purple-400 border border-purple-800/30',
-                  transferred: 'bg-amber-950/20 text-amber-400 border border-amber-800/30',
+                  created: 'bg-emerald-950/30 text-emerald-400 border border-emerald-800/20',
+                  edited: 'bg-blue-950/30 text-blue-400 border border-blue-800/20',
+                  deleted: 'bg-red-950/30 text-red-400 border border-red-800/20',
+                  restored: 'bg-purple-950/30 text-purple-400 border border-purple-800/20',
+                  transferred: 'bg-amber-950/30 text-amber-400 border border-amber-800/20',
                 };
 
                 return (
-                  <div key={entry.id} className="bg-black/30 border border-zinc-900 rounded-xl p-3 text-[11px] flex flex-col gap-2">
+                  <div key={entry.id} className="bg-black/20 border border-white/[0.03] rounded-xl p-2.5 text-[11px] flex flex-col gap-1.5">
                     <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${actionColors[entry.action] || 'bg-zinc-800'}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded leading-none ${actionColors[entry.action] || 'bg-zinc-800'}`}>
                           {actionLabels[entry.action]}
                         </span>
                         <span className="font-bold text-zinc-400">{entry.userName} ({entry.userRole})</span>
                       </div>
-                      <span className="text-[10px] text-zinc-500 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
+                      <span className="text-[9px] text-zinc-500 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
                     </div>
 
-                    <div className="text-zinc-300 font-mono text-[10px] leading-relaxed whitespace-pre-wrap">
+                    <div className="text-zinc-300 font-mono text-[9px] leading-relaxed whitespace-pre-wrap">
                       {entry.action === 'transferred' ? (
                         <span>Transferred stock location from <strong className="text-zinc-400">{entry.prevValue}</strong> to <strong className="text-lux-gold">{entry.newValue}</strong></span>
                       ) : entry.action === 'deleted' ? (
@@ -317,13 +317,13 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
                     </div>
 
                     {isManager && entry.action !== 'deleted' && entry.action !== 'transferred' && entry.newValue !== item.inventoryNote?.text && (
-                      <div className="flex justify-end pt-1">
+                      <div className="flex justify-end pt-0.5">
                         <button
                           onClick={() => onRestore(entry.newValue)}
-                          className="flex items-center gap-1 text-[10px] text-lux-gold hover:underline font-bold"
+                          className="flex items-center gap-0.5 text-[9px] text-lux-gold hover:underline font-bold cursor-pointer"
                         >
-                          <RotateCcw size={10} />
-                          Restore this note version
+                          <RotateCcw size={8} />
+                          Restore note
                         </button>
                       </div>
                     )}

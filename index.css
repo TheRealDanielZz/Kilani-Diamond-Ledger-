@@ -165,9 +165,9 @@
   --color-accent-dim:                var(--color-accent-dim);
 
   /* Typography */
-  --font-sans:  'Poppins', -apple-system, sans-serif;
-  --font-serif: 'Playfair Display', serif;
-  --font-mono:  'JetBrains Mono', monospace;
+  --font-sans:  'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono:  'SF Mono', 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
 
   /* Radii */
   --radius-sm:    0.5rem;
@@ -211,8 +211,13 @@
       radial-gradient(circle at top right, rgba(245,194,73,0.05), transparent 50%),
       radial-gradient(circle at bottom left, rgba(59,130,246,0.03), transparent 40%),
       var(--background-base);
-    @apply text-theme-text-primary antialiased selection:bg-lux-gold/30 selection:text-white;
+    @apply text-theme-text-primary antialiased selection:bg-lux-gold/30 selection:text-white font-sans tracking-tight;
     -webkit-tap-highlight-color: transparent;
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   [data-theme="light"] body {
@@ -220,6 +225,17 @@
       radial-gradient(ellipse at top right, rgba(184,146,42,0.07), transparent 50%),
       radial-gradient(ellipse at bottom left, rgba(100,100,160,0.05), transparent 45%),
       var(--background-base);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    @apply tracking-tight font-bold text-theme-text-primary;
+    line-height: 1.25;
+  }
+
+  p {
+    line-height: 1.6;
+    @apply text-theme-text-secondary;
   }
 
   * {

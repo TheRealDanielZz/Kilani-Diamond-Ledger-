@@ -121,8 +121,32 @@ export const GoldPriceCard: React.FC = () => {
     const trendBg = hasError ? 'bg-zinc-500/10 border-zinc-500/20' : isNeutral ? 'bg-zinc-500/10 border-zinc-500/20' : isPositive ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20';
     const TrendIcon = hasError ? AlertTriangle : isNeutral ? Minus : isPositive ? TrendingUp : TrendingDown;
 
+    // Let's compute SVG path for a premium, wider Area Chart
+    const svgWidth = 280;
+    const svgHeight = 110;
+    const paddingY = 12;
+    const minVal = Math.min(...sparklineData);
+    const maxVal = Math.max(...sparklineData);
+    const range = maxVal - minVal === 0 ? 1 : maxVal - minVal;
+    
+    const svgPoints = sparklineData.map((val, idx) => {
+        const x = (idx / (sparklineData.length - 1)) * svgWidth;
+        const y = svgHeight - paddingY - ((val - minVal) / range) * (svgHeight - 2 * paddingY);
+        return { x, y };
+    });
+    
+    const linePath = svgPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L ${svgWidth} ${svgHeight} L 0 ${svgHeight} Z`;
+    const lastPoint = svgPoints[svgPoints.length - 1];
+    
+    const strokeColor = isNeutral ? '#A1A1AA' : isPositive ? '#10B981' : '#EF4444';
+    const gradientId = `gold-chart-grad-${isPositive ? 'pos' : 'neg'}`;
+
     return (
-        <Card className={`p-6 md:p-5 lg:p-6 h-full flex flex-col justify-between relative overflow-hidden group ${hasError ? 'border-red-500/30' : 'border-lux-gold/20'}`}>
+        <Card className={`p-6 md:p-5 lg:p-6 h-full flex flex-col justify-between relative overflow-hidden group ${hasError ? 'border-red-500/30' : ''}`}>
+            {/* Glowing top line */}
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-lux-gold via-yellow-500 to-[#ffd66e] z-20"></div>
+
             {/* Background Glow */}
             <div className={`absolute -right-10 -top-10 w-32 h-32 rounded-full blur-3xl pointer-events-none transition-all duration-1000 ${hasError ? 'bg-red-500/10' : isLive ? (isPositive ? 'bg-emerald-500/10' : 'bg-red-500/10') : 'bg-blue-500/10'}`}></div>
 
@@ -146,24 +170,28 @@ export const GoldPriceCard: React.FC = () => {
                 </div>
                 
                 <div className="flex gap-1">
-                   <button onClick={handleRefresh} disabled={loading} className="p-2.5 hover:bg-white/5 rounded-2xl text-zinc-500 hover:text-white transition-all ring-1 ring-white/5" title="Refresh Live Price">
+                   <button onClick={handleRefresh} disabled={loading} className="p-2.5 hover:bg-white/5 rounded-2xl text-zinc-500 hover:text-white transition-all ring-1 ring-white/5 z-20" title="Refresh Live Price">
                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                    </button>
                 </div>
             </div>
 
-            <div className="relative z-10 my-2">
-                <div key={goldData.lastUpdated} className="animate-in fade-in zoom-in-95 duration-500">
-                    <div className="flex justify-between items-center gap-2">
-                        <div className={`text-3xl md:text-2xl lg:text-4xl font-bold font-mono tracking-tighter flex items-baseline gap-1 ${hasError ? 'text-zinc-300' : 'text-white'}`}>
-                            ${goldData.price.toFixed(2)}
-                            <span className="text-sm text-zinc-500 font-sans font-normal">CAD/g</span>
-                        </div>
-                        {!hasError && (
-                            <div className="opacity-80 select-none pointer-events-none hover:scale-105 transition-transform duration-500 pr-1">
-                                <Sparkline data={sparklineData} color={isNeutral ? '#A1A1AA' : isPositive ? '#34D399' : '#F87171'} width={100} height={32} />
+            <div className="relative z-10 flex-1 flex flex-col justify-between mt-3">
+                <div key={goldData.lastUpdated} className="animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col justify-between">
+                    <div>
+                        <div className="flex justify-between items-baseline">
+                            <div className={`text-3xl md:text-2xl lg:text-4xl font-bold font-mono tracking-tighter flex items-baseline gap-1 ${hasError ? 'text-zinc-300' : 'text-white'}`}>
+                                ${goldData.price.toFixed(2)}
+                                <span className="text-sm text-zinc-500 font-sans font-normal">CAD/g</span>
                             </div>
-                        )}
+                            
+                            {!hasError && (
+                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${trendBg} ${trendColor}`}>
+                                    <TrendIcon size={10} />
+                                    <span>{isPositive ? '+' : ''}{change.toFixed(2)} ({changePercent.toFixed(2)}%)</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
                     
                     {hasError ? (
@@ -176,7 +204,7 @@ export const GoldPriceCard: React.FC = () => {
                             <button 
                                 onClick={handleAutoDebug}
                                 disabled={loading}
-                                className="w-full py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_10px_rgba(239,68,68,0.2)]"
+                                className="w-full py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_10px_rgba(239,68,68,0.2)] z-20"
                             >
                                 {loading ? <Spinner size="sm" /> : <Zap size={12} fill="currentColor" />}
                                 Auto Debug
@@ -187,23 +215,31 @@ export const GoldPriceCard: React.FC = () => {
                             </p>
                         </div>
                     ) : (
-                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
-                            {isLive ? (
-                                <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${trendBg} ${trendColor} text-xs md:text-[10px] lg:text-xs font-bold`}>
-                                    <TrendIcon size={12} />
-                                    <span>{isPositive ? '+' : ''}{change.toFixed(2)} ({changePercent.toFixed(2)}%)</span>
-                                </div>
-                            ) : (
-                                <div className="px-2 py-1 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs md:text-[10px] lg:text-xs font-bold">
-                                    Fixed Rate
-                                </div>
-                            )}
+                        <div className="flex-1 flex flex-col justify-end">
+                            {/* Premium SVG Area Chart */}
+                            <svg width="100%" height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="overflow-visible select-none pointer-events-none my-3">
+                                <defs>
+                                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor={strokeColor} stopOpacity="0.25" />
+                                        <stop offset="100%" stopColor={strokeColor} stopOpacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                <path d={areaPath} fill={`url(#${gradientId})`} />
+                                <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                <circle cx={lastPoint.x} cy={lastPoint.y} r="4" fill={strokeColor} />
+                                <circle cx={lastPoint.x} cy={lastPoint.y} r="10" fill={strokeColor} className="animate-ping opacity-35" style={{ transformOrigin: `${lastPoint.x}px ${lastPoint.y}px` }} />
+                            </svg>
                             
-                            <p className="text-[10px] text-zinc-500 flex items-center gap-1.5 font-medium" title={new Date(goldData.lastUpdated).toLocaleString()}>
-                                <Clock size={12} className="text-zinc-600" />
-                                <span className="opacity-70 hidden md:inline lg:inline">Updated:</span>
-                                {formatTime(goldData.lastUpdated)}
-                            </p>
+                            <div className="flex items-center justify-between pt-3 border-t border-white/5 mt-1">
+                                <span className="text-[9px] text-zinc-500 font-medium uppercase tracking-wider">
+                                    {isLive ? 'XAU/CAD Market' : 'Fixed Rate'}
+                                </span>
+                                
+                                <p className="text-[10px] text-zinc-500 flex items-center gap-1.5 font-medium" title={new Date(goldData.lastUpdated).toLocaleString()}>
+                                    <Clock size={11} className="text-zinc-600" />
+                                    <span>{formatTime(goldData.lastUpdated)}</span>
+                                </p>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -214,8 +250,8 @@ export const GoldPriceCard: React.FC = () => {
                 <div className="flex gap-2 mt-2 pt-3 border-t border-white/5 relative z-10">
                      <button 
                         onClick={handleGoLive} 
-                        className="flex-1 py-3 rounded-[20px] bg-lux-gold/10 hover:bg-lux-gold/20 text-xs font-bold text-lux-gold border border-lux-gold/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                    >
+                        className="flex-1 py-3 rounded-[20px] bg-lux-gold/10 hover:bg-lux-gold/20 text-xs font-bold text-lux-gold border border-lux-gold/20 transition-all active:scale-95 flex items-center justify-center gap-2 z-20"
+                     >
                         <RotateCcw size={12} /> Reset to Live
                     </button>
                 </div>
@@ -223,3 +259,4 @@ export const GoldPriceCard: React.FC = () => {
         </Card>
     );
 };
+

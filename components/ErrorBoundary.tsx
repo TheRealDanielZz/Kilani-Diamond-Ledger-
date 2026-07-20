@@ -27,6 +27,24 @@ export class ErrorBoundary extends React.Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
     this.setState({ errorInfo });
+
+    // Check if it's a chunk loading/dynamic import error
+    const isChunkLoadError = 
+      error.message && 
+      (error.message.includes('Failed to fetch dynamically imported module') ||
+       error.message.includes('Loading chunk') ||
+       error.name === 'ChunkLoadError');
+
+    if (isChunkLoadError) {
+      const now = Date.now();
+      const lastReload = sessionStorage.getItem('chunk-load-error-reload-time');
+      
+      // Prevent infinite reload loops by limiting to once every 10 seconds
+      if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+        sessionStorage.setItem('chunk-load-error-reload-time', now.toString());
+        window.location.reload();
+      }
+    }
   }
 
   public render() {

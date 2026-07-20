@@ -4,23 +4,54 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // ----------------------------------------------------------------
-    // evidence/ prefix
-    //   Files at evidence/{projectId}/{bagId}/{filename}
-    //   - Any authenticated user may read (thumbnails / full images).
-    //   - Only MANAGER-role users (checked via Firestore) may write or delete.
-    //     Setters upload evidence through a store method that runs under the
-    //     manager's session context; raw Storage writes are still gated here.
+    // helper functions
     // ----------------------------------------------------------------
-    match /evidence/{projectId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+    function isSignedIn() {
+      return request.auth != null;
     }
 
     // ----------------------------------------------------------------
-    // Catch-all: any signed-in user may read/write all other paths
-    // (profile photos, project images, etc.)
+    // evidence/ prefix
+    //   Path: evidence/projects/{projectId}/{type}/{filename}
+    //   - Any authenticated user may READ (setters need to view thumbnails).
+    //   - Any authenticated user may WRITE (upload evidence during their
+    //     session). File size is capped to 10MB to prevent DoS.
+    // ----------------------------------------------------------------
+    match /evidence/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.size < 10 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
+    // ----------------------------------------------------------------
+    // profiles/ prefix — user avatar uploads
+    //   Any signed-in user may read any profile photo.
+    //   Writes are restricted to the authenticated user's own path.
+    //   Avatar size is capped to 5MB.
+    // ----------------------------------------------------------------
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // ----------------------------------------------------------------
+    // projects/ prefix — project images, attachments
+    //   Any signed-in user may read.
+    //   Writes allowed for authenticated users. Size capped to 15MB.
+    // ----------------------------------------------------------------
+    match /projects/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.resource.size < 15 * 1024 * 1024;
+      allow delete: if false;
+    }
+
+    // ----------------------------------------------------------------
+    // Catch-all: READ is open to all authenticated users.
+    // WRITE is explicitly denied for any path not matched above.
     // ----------------------------------------------------------------
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
   }

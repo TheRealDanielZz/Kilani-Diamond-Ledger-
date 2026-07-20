@@ -181,7 +181,7 @@ const ProfilePage: React.FC = () => {
             <LogOut size={20} /> Sign Out
         </Button>
         <p className="text-center text-xs text-zinc-600 mt-4 font-mono">
-            KILANI Ledger v5.0
+            KILANI Ledger v7.0
         </p>
       </div>
     </div>

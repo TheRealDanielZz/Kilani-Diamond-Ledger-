@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, Priority, Role, User } from '../types';
 import { Card, StatusPill, Badge, ProgressBar, Button, Input, SetterAvatar } from '../components/UI';
-import { Calendar, PenTool, Image as ImageIcon, Plus, X, ChevronRight } from 'lucide-react';
+import { Briefcase, Calendar, PenTool, Image as ImageIcon, Plus, X, ChevronRight } from 'lucide-react';
 import { useToast } from '../App';
 import { RepairProjectModal } from '../components/RepairProjectModal';
 
@@ -150,7 +150,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           </div>
         ) : (
           <div className="space-y-3">
-            {projects.map(p => {
+            {projects.slice(0, 6).map(p => {
               const isAssigned = p.assignments.some(a => a.userId === currentUser.id && a.active);
               return (
                 <div
@@ -187,6 +187,21 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                 </div>
               );
             })}
+
+            {projects.length > 6 && (
+              <div onClick={() => navigate('/projects')} className="group border-2 border-dashed border-zinc-800 hover:border-lux-gold/50 rounded-3xl p-5 flex items-center justify-between cursor-pointer transition-all hover:bg-black/40">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-lux-gold/10 border border-lux-gold/20 flex items-center justify-center text-lux-gold group-hover:scale-110 transition-transform">
+                    <Briefcase size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-theme-text-primary group-hover:text-lux-gold transition-colors">View All Projects</h3>
+                    <p className="text-xs text-zinc-500 font-medium">+{projects.length - 6} more active projects</p>
+                  </div>
+                </div>
+                <ChevronRight className="text-zinc-600 group-hover:text-lux-gold transition-colors group-hover:translate-x-1" size={18} />
+              </div>
+            )}
           </div>
         )}
       </div>

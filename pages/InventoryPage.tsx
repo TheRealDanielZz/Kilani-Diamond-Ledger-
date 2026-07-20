@@ -414,6 +414,13 @@ const InventoryPage: React.FC = () => {
   const [editCt, setEditCt] = useState<string>('');
   const [editReason, setEditReason] = useState('');
 
+  // Reconciliation Audit states
+  const [resolvingIssueIdx, setResolvingIssueIdx] = useState<number | null>(null);
+  const [resolvePcs, setResolvePcs] = useState<string>('');
+  const [resolveCt, setResolveCt] = useState<string>('');
+  const [resolveReason, setResolveReason] = useState<string>('');
+  const [resolveMode, setResolveMode] = useState<'PCS' | 'WEIGHT'>('PCS');
+
   // Diamond Edit Modal State
   const [editingDiamond, setEditingDiamond] = useState<Diamond | null>(null);
   const [editMountLoose, setEditMountLoose] = useState('');
@@ -507,6 +514,10 @@ const InventoryPage: React.FC = () => {
   const [breakageSubmitting, setBreakageSubmitting] = useState(false);
 
   const handleSubmitShipment = async () => {
+    if (!isManager) {
+      showToast("Only managers can record shipments or add stock");
+      return;
+    }
     const validLines = shipmentLines.filter(l => l.ct > 0);
     if (validLines.length === 0) return;
     if (shipmentSubmitting) return;
@@ -545,12 +556,17 @@ const InventoryPage: React.FC = () => {
   };
 
   const handleSubmitBreakage = async () => {
+     if (!isManager) {
+       showToast("Only managers can log standalone breakage");
+       return;
+     }
      const ctVal = parseFloat(brokenCt);
      const pcsVal = parseInt(brokenPcs) || 0;
 
      if (!brokenCt || isNaN(ctVal) || ctVal <= 0) return alert("Valid carat weight required.");
      if (!brokenNote) return alert("Reason is required.");
      if (breakageSubmitting) return;
+     if (!window.confirm("Please confirm that the entered breakage information is correct.")) return;
 
      setBreakageSubmitting(true);
      try {
@@ -575,35 +591,79 @@ const InventoryPage: React.FC = () => {
        setBrokenNote('');
        setActiveTab('stock');
      } finally {
-       setBreakageSubmitting(false);
-     }
-  };
+        setBreakageSubmitting(false);
+      }
+   };
 
-  // Guards against duplicate submits from double-clicks / rapid retries.
-  const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+   // Guards against duplicate submits from double-clicks / rapid retries.
+   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
 
-  // Manager-only reconciliation audit
-  const [showAudit, setShowAudit] = useState(false);
-  const [auditResult, setAuditResult] = useState<any>(null);
-  const [auditBusy, setAuditBusy] = useState(false);
+   // Manager-only reconciliation audit
+   const [showAudit, setShowAudit] = useState(false);
+   const [auditResult, setAuditResult] = useState<any>(null);
+   const [auditBusy, setAuditBusy] = useState(false);
 
-  const runAudit = () => {
-    setAuditResult(store.getInventoryAudit(['Melee']));
-    setShowAudit(true);
-  };
-  const runAutoRepair = async () => {
-    if (auditBusy) return;
-    setAuditBusy(true);
-    try {
-      const res = await store.reconcileInventory(getCurrentUserId(), { autoRepair: true, locations: ['Melee'] });
-      setAuditResult(store.getInventoryAudit(['Melee']));
-      showToast(`Reconciliation complete — ${res.autoRepaired.length} auto-repaired, ${res.needsManagerReview.length} need review`);
-    } catch (err: any) {
-      showToast(err?.message || 'Reconciliation failed');
-    } finally {
-      setAuditBusy(false);
-    }
-  };
+   const runAudit = async () => {
+      if (!isManager) {
+        showToast("Only managers can run reconciliation audits");
+        return;
+      }
+      setAuditBusy(true);
+      try {
+        const res = await store.getInventoryAuditFresh(['Melee']);
+        setAuditResult(res);
+        setShowAudit(true);
+      } catch (err: any) {
+        showToast(err?.message || 'Reconciliation audit failed');
+      } finally {
+        setAuditBusy(false);
+      }
+    };
+
+    const applyInlineCorrection = async (iss: any) => {
+      if (!isManager) {
+        showToast("Only managers can apply corrections");
+        return;
+      }
+      if (!resolveReason.trim()) {
+        showToast("A correction reason is required");
+        return;
+      }
+      const targetPcs = parseInt(resolvePcs);
+      const targetCt = parseFloat(resolveCt);
+      if (isNaN(targetPcs) || targetPcs < 0) {
+        showToast("Enter a valid piece count");
+        return;
+      }
+      if (isNaN(targetCt) || targetCt < 0) {
+        showToast("Enter a valid carat weight");
+        return;
+      }
+
+      setCorrectionSubmitting(true);
+      try {
+        await store.applyInventoryCorrection({
+          specId: iss.specId,
+          location: iss.location,
+          mode: resolveMode,
+          previousPcs: iss.currentPcs,
+          previousCt: iss.currentCt,
+          newPcs: targetPcs,
+          newCt: targetCt,
+          reason: resolveReason.trim(),
+          managerId: getCurrentUserId(),
+        });
+        showToast("Reconciliation correction applied");
+        const res = await store.getInventoryAuditFresh(['Melee']);
+        setAuditResult(res);
+        setResolvingIssueIdx(null);
+        setResolveReason('');
+      } catch (err: any) {
+        showToast(err?.message || "Correction failed");
+      } finally {
+        setCorrectionSubmitting(false);
+      }
+    };
 
   const handleStockEdit = async () => {
     if (!editingStock) return;
@@ -911,18 +971,22 @@ const InventoryPage: React.FC = () => {
            >
              Current Stock
            </button>
-           <button 
-             onClick={() => setActiveTab('add_stock')} 
-             className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'add_stock' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-           >
-             Add Stock
-           </button>
-           <button 
-             onClick={() => setActiveTab('broken')} 
-             className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'broken' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-           >
-             Log Breakage
-           </button>
+           {isManager && (
+             <button 
+               onClick={() => setActiveTab('add_stock')} 
+               className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'add_stock' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+             >
+               Add Stock
+             </button>
+           )}
+           {isManager && (
+             <button 
+               onClick={() => setActiveTab('broken')} 
+               className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'broken' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+             >
+               Log Breakage
+             </button>
+           )}
         </div>
       </div>
 
@@ -1401,10 +1465,8 @@ const InventoryPage: React.FC = () => {
                                           Manager approval required for corrections
                                         </div>
                                       )}
-                                    </div>
-                                  </div>
-
-                                  <div onClick={e => e.stopPropagation()}>
+                                      
+                                      <div className="mt-2 pt-4 border-t border-white/5">
                                     <InventoryNotesSection
                                       item={item.spec}
                                       itemType="spec"
@@ -1505,8 +1567,10 @@ const InventoryPage: React.FC = () => {
                                       }}
                                     />
                                   </div>
-                                </td>
-                              </tr>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                             )}
                           </React.Fragment>
                         )) : (
@@ -1662,11 +1726,9 @@ const InventoryPage: React.FC = () => {
                                           <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} onKeyDown={e => { if (e.key === 'Enter') { updateCodeInline(d.id, inlineCodeValues[d.id] ?? ''); (e.target as HTMLInputElement).blur(); } }} className="w-full bg-[#16171D] border border-white/5 rounded-xl px-3 py-1 text-xs text-white focus:border-lux-gold/50 outline-none animate-enter" placeholder="Item code" />
                                         </div>
                                       </div>
-                                    </div>
-                                  </div>
-
-                                  <div onClick={e => e.stopPropagation()}>
-                                    <InventoryNotesSection
+                                      
+                                      <div className="mt-2 pt-4 border-t border-white/5">
+                                        <InventoryNotesSection
                                       item={{
                                         ...d,
                                         inventoryNote: d.inventoryNote || (d.notes ? {
@@ -1779,8 +1841,10 @@ const InventoryPage: React.FC = () => {
                                       }}
                                     />
                                   </div>
-                                </td>
-                              </tr>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                             )}
                           </React.Fragment>
                         )) : (
@@ -2077,7 +2141,7 @@ const InventoryPage: React.FC = () => {
                         }
                       }}
                     >
-                      Delete Spec
+                      Delete
                     </Button>
                    <div className="flex gap-3">
                       <Button variant="secondary" onClick={() => setEditingStock(null)}>Cancel</Button>
@@ -2102,7 +2166,7 @@ const InventoryPage: React.FC = () => {
                    <h3 className="font-bold text-lg text-lux-cream">Inventory Reconciliation</h3>
                    <p className="text-xs text-zinc-500 mt-0.5">Balances recalculated from the full ledger and checked against data invariants.</p>
                 </div>
-                <button onClick={() => setShowAudit(false)} className="text-zinc-500 hover:text-white text-sm font-bold">✕</button>
+                <button onClick={() => { setShowAudit(false); setResolvingIssueIdx(null); }} className="text-zinc-500 hover:text-white text-sm font-bold">✕</button>
              </div>
 
              <div className="grid grid-cols-3 gap-3 mb-4">
@@ -2123,25 +2187,134 @@ const InventoryPage: React.FC = () => {
              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 mb-4">
                 {auditResult.issues.length === 0 ? (
                   <div className="py-10 text-center text-emerald-400 text-sm font-bold">✓ All balances are consistent. Nothing to repair.</div>
-                ) : auditResult.issues.map((iss: any, idx: number) => (
-                  <div key={idx} className={`p-3 rounded-xl border text-xs ${iss.autoRepairable ? 'bg-emerald-500/[0.03] border-emerald-500/15' : 'bg-orange-500/[0.03] border-orange-500/15'}`}>
-                     <div className="flex justify-between items-center">
-                        <span className="font-bold text-lux-cream">{iss.specLabel} <span className="text-zinc-600 font-normal">· {iss.location}</span></span>
-                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${iss.autoRepairable ? 'bg-emerald-500/15 text-emerald-400' : 'bg-orange-500/15 text-orange-400'}`}>{iss.autoRepairable ? 'Auto' : 'Review'}</span>
-                     </div>
-                     <div className="text-zinc-500 mt-1 font-mono">{iss.detail}</div>
-                     <div className="text-zinc-600 mt-0.5 font-mono">Raw {iss.currentPcs}pc / {iss.currentCt.toFixed(4)}ct → resolves to {iss.resolvedPcs}pc / {iss.resolvedCt.toFixed(3)}ct</div>
-                  </div>
-                ))}
+                ) : auditResult.issues.map((iss: any, idx: number) => {
+                  const spec = specs.find(s => s.id === iss.specId);
+                  const avg = spec?.ctPerStone || 0;
+                  return (
+                    <div key={idx} className={`p-3 rounded-xl border text-xs ${iss.autoRepairable ? 'bg-emerald-500/[0.03] border-emerald-500/15' : 'bg-orange-500/[0.03] border-orange-500/15'}`}>
+                       <div className="flex justify-between items-center">
+                          <span className="font-bold text-lux-cream">{iss.specLabel} <span className="text-zinc-600 font-normal">· {iss.location}</span></span>
+                          <div className="flex items-center gap-2">
+                             <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${iss.autoRepairable ? 'bg-emerald-500/15 text-emerald-400' : 'bg-orange-500/15 text-orange-400'}`}>{iss.autoRepairable ? 'Auto' : 'Review'}</span>
+                             {isManager && (
+                                <button 
+                                   onClick={() => {
+                                      if (resolvingIssueIdx === idx) {
+                                         setResolvingIssueIdx(null);
+                                      } else {
+                                         setResolvingIssueIdx(idx);
+                                         setResolvePcs(String(iss.resolvedPcs));
+                                         setResolveCt(String(iss.resolvedCt));
+                                         setResolveReason('');
+                                         setResolveMode('PCS');
+                                      }
+                                   }}
+                                   className="text-lux-gold hover:underline font-bold text-[10px] uppercase tracking-wider transition-all"
+                                >
+                                   {resolvingIssueIdx === idx ? 'Close' : 'Resolve'}
+                                </button>
+                             )}
+                          </div>
+                       </div>
+                       <div className="text-zinc-500 mt-1 font-mono">{iss.detail}</div>
+                       <div className="text-zinc-600 mt-0.5 font-mono">Raw {iss.currentPcs}pc / {iss.currentCt.toFixed(4)}ct → resolves to {iss.resolvedPcs}pc / {iss.resolvedCt.toFixed(3)}ct</div>
+                       
+                       {resolvingIssueIdx === idx && (
+                          <div className="mt-3 p-3 bg-black/40 rounded-xl border border-white/5 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                             <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                                <span>Inline Resolution Form</span>
+                                <div className="flex bg-black/40 rounded border border-white/5 text-[9px]">
+                                   <button 
+                                      onClick={() => setResolveMode('PCS')} 
+                                      className={`px-2 py-1 rounded transition-all ${resolveMode === 'PCS' ? 'bg-lux-gold text-black font-extrabold' : 'text-zinc-500 hover:text-white'}`}
+                                   >
+                                      By Pcs
+                                   </button>
+                                   <button 
+                                      onClick={() => setResolveMode('WEIGHT')} 
+                                      className={`px-2 py-1 rounded transition-all ${resolveMode === 'WEIGHT' ? 'bg-lux-gold text-black font-extrabold' : 'text-zinc-500 hover:text-white'}`}
+                                   >
+                                      By Weight
+                                   </button>
+                                </div>
+                             </div>
+
+                             <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                   <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Reconciled Pieces</label>
+                                   <input 
+                                      type="number" 
+                                      min="0" 
+                                      value={resolvePcs} 
+                                      disabled={resolveMode === 'WEIGHT'}
+                                      onChange={e => {
+                                         const val = e.target.value;
+                                         setResolvePcs(val);
+                                         const q = parseInt(val);
+                                         if (!isNaN(q) && q >= 0) {
+                                            setResolveCt(String(parseFloat((q * avg).toFixed(3))));
+                                         }
+                                      }}
+                                      className="w-full border border-lux-border bg-lux-input rounded-lg p-2 font-mono text-xs text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none" 
+                                   />
+                                </div>
+                                <div>
+                                   <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Reconciled Carats</label>
+                                   <input 
+                                      type="number" 
+                                      min="0" 
+                                      step="0.001" 
+                                      value={resolveCt} 
+                                      disabled={resolveMode === 'PCS'}
+                                      onChange={e => {
+                                         const val = e.target.value;
+                                         setResolveCt(val);
+                                         const ct = parseFloat(val);
+                                         if (!isNaN(ct) && ct >= 0) {
+                                            setResolvePcs(String(avg > 0 ? Math.round(ct / avg) : 0));
+                                         }
+                                      }}
+                                      className="w-full border border-lux-border bg-lux-input rounded-lg p-2 font-mono text-xs text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none" 
+                                   />
+                                </div>
+                             </div>
+
+                             <div>
+                                <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Reason (Required)</label>
+                                <textarea 
+                                   rows={2}
+                                   value={resolveReason}
+                                   onChange={e => setResolveReason(e.target.value)}
+                                   placeholder="Explain the discrepancy resolution context..."
+                                   className="w-full border border-lux-border bg-lux-input rounded-lg p-2 text-xs text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none resize-none"
+                                />
+                             </div>
+
+                             <div className="flex justify-end gap-2">
+                                <button 
+                                   onClick={() => setResolvingIssueIdx(null)}
+                                   className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded text-[10px] font-bold uppercase tracking-wider transition-all"
+                                >
+                                   Cancel
+                                </button>
+                                <button 
+                                   onClick={() => applyInlineCorrection(iss)}
+                                   disabled={correctionSubmitting || !resolveReason.trim()}
+                                   className="px-3 py-1 bg-lux-gold hover:bg-lux-gold/80 disabled:opacity-50 text-black rounded text-[10px] font-bold uppercase tracking-wider transition-all"
+                                >
+                                   {correctionSubmitting ? 'Applying...' : 'Apply Correction'}
+                                </button>
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                  );
+                })}
              </div>
 
-             <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                <span className="text-[10px] text-zinc-600">Only 0-piece stale-carat cases are auto-repaired. Ambiguous cases are never changed automatically.</span>
+             <div className="flex justify-end pt-4 border-t border-white/5">
                 <div className="flex gap-3">
-                   <Button variant="secondary" onClick={() => setShowAudit(false)}>Close</Button>
-                   <Button onClick={runAutoRepair} disabled={auditBusy || auditResult.autoRepaired.length === 0}>
-                     {auditBusy ? 'Repairing…' : `Auto-repair ${auditResult.autoRepaired.length}`}
-                   </Button>
+                   <Button variant="secondary" onClick={() => { setShowAudit(false); setResolvingIssueIdx(null); }}>Close</Button>
                 </div>
              </div>
           </Card>

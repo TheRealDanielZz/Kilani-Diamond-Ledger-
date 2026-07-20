@@ -343,7 +343,7 @@ const DemoPortal: React.FC = () => {
           This is a fully isolated demo — no real data is accessed or stored.
         </p>
         <p style={{ fontSize: 10, color: '#334155', fontFamily: 'monospace', letterSpacing: '0.1em' }}>
-          DANIELS DIAMOND REPORTER v6 · DEMO EDITION
+          DANIELS DIAMOND REPORTER v7.0 · DEMO EDITION
         </p>
       </div>
 

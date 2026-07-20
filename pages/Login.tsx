@@ -177,7 +177,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
       )}
       
       <div className="mt-8 flex flex-col items-center gap-2 opacity-50">
-        <div className="text-[10px] text-zinc-500 font-mono tracking-widest">VERSION 6 (CLOUD) • INTERNAL USE</div>
+        <div className="text-[10px] text-zinc-500 font-mono tracking-widest">VERSION 7.0 (CLOUD) • INTERNAL USE</div>
         <div className="text-[10px] text-zinc-600 font-sans tracking-wide">Designed by Daniel ZaeryZadeh</div>
       </div>
     </div>

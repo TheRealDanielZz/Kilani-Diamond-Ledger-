@@ -91,7 +91,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
             <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest px-4 mb-2 font-mono">Workspace</div>
             <NavItem to="/" icon={LayoutDashboard} label={isManager ? "Overview" : "My Work"} />
             {(isManager || isDesigner) && <NavItem to="/projects" icon={Briefcase} label="All Projects" />}
-            {isManager && <NavItem to="/inventory" icon={PackageOpen} label="Inventory" />}
+            {(isManager || isDesigner) && <NavItem to="/inventory" icon={PackageOpen} label="Inventory" />}
           </nav>
 
           {(isManager || isDesigner) && (

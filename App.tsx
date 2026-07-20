@@ -236,9 +236,9 @@ const App = () => {
                       <Route path="/project/:id" element={<ProtectedRoute user={user}><ProjectDetail currentUser={user} /></ProtectedRoute>} />
                       <Route path="/verify/:projectId" element={<ProtectedRoute user={user}><VerificationFlow currentUser={user} /></ProtectedRoute>} />
                       
-                      <Route path="/projects" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><AllProjectsPage /></ProtectedRoute>} />
+                      <Route path="/projects" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER, Role.SETTER, Role.JEWELLER, Role.SALES_REP]}><AllProjectsPage /></ProtectedRoute>} />
                       <Route path="/team" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><TeamManagement /></ProtectedRoute>} />
-                      <Route path="/inventory" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><InventoryPage /></ProtectedRoute>} />
+                      <Route path="/inventory" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><InventoryPage /></ProtectedRoute>} />
 
                       <Route path="/reports" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><ReportsPage /></ProtectedRoute>} />
                       <Route path="/settings" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><SettingsPage /></ProtectedRoute>} />

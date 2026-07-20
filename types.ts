@@ -83,6 +83,8 @@ export interface DiamondSpec {
   ctPerStone: number;
   defaultCostPerCtUsd: number;
   isOverride?: boolean;
+  pcs?: number;
+  ct?: number;
   color?: string; // New: "White", "Yellow", "Blue", etc.
   location?: string; // e.g. 'Active' — undefined/absent means Melee
   inventoryNote?: InventoryNote;
@@ -277,11 +279,11 @@ export interface Project {
   status: ProjectStatus;
   dueDate: string;
   createdAt: string;
-  
+
   isQuickRepair?: boolean;
   repairDetails?: RepairDetails;
   repair?: RepairDetailsV2;
-  
+
   // Lifecycle Dates
   date_completed?: string; // When moved to Review
   date_picked_up?: string; // When moved to Closed
@@ -291,6 +293,7 @@ export interface Project {
   salesRepId?: string;
   assignedSetterId?: string; // Legacy
   assignments: ProjectAssignment[];
+  activeAssignees?: string[];
   services: ProjectService[];
   currentStageName: string;
   currentPercentComplete: number;
@@ -301,23 +304,23 @@ export interface Project {
   designLogs?: ProjectNote[];
   progress: ProjectProgress[];
   workDetails?: string;
-  
+
   // -- Financials & Metals --
   goldComponents?: GoldComponent[]; // Auto-migrated list of gold parts
   goldType?: 'Yellow' | 'White' | 'Rose' | 'Platinum';
   goldPurity?: string; // '10k', '14k', etc.
   goldPurityRatioSnapshot?: number; // The specific ratio used (e.g. 0.585)
-  
+
   labourCostAmount?: number; // Represents Design/Jeweller cost
   labourCostNote?: string;
   labourCostLastUpdatedAt?: string;
-  
+
   // Snapshot at completion
   // Stores the PURE GOLD (24k) price per gram in CAD at the moment of closing
-  projectEndGoldPriceSnapshot?: number; 
+  projectEndGoldPriceSnapshot?: number;
   projectEndGoldPriceCapturedAt?: string;
   finalGoldCostCalculated?: number; // The final calculated cost (Price * Ratio * Weight)
-  
+
   usdToCadMultiplierSnapshot?: number;
   setterCostPerSetPieceCadSnapshot?: number;
   finalDiamondCostCalculated?: number;
@@ -339,7 +342,16 @@ export interface BagReturnLine {
   originalIssuedPcs: number;
   previouslyConfirmedPcs: number;
   availableBeforeReturn: number;
-  returnedPcs: number;
+  returnedPcs: number; // Initially Setter estimate, eventually Manager confirmed for backwards compatibility
+
+  // Setter original estimates
+  setterEstimatedPcs?: number;
+  setterEstimatedCt?: number;
+
+  // Manager final confirmed values
+  confirmedPcs?: number;
+  confirmedCt?: number;
+  confirmedBrokenPcs?: number;
 }
 
 export interface BagReturnTransaction {
@@ -357,7 +369,13 @@ export interface BagReturnTransaction {
   managerId?: string;
   confirmedAt?: string;
   evidenceId?: string;
+
+  // Correction / Confirmation metadata
+  correctionReason?: string;
+  correctionTimestamp?: string;
+  correctingManagerId?: string;
 }
+
 
 export interface BagItem {
   specId: string;
@@ -393,9 +411,34 @@ export interface IssueRequest {
   projectId: string;
   requestedById: string;
   requestedAt: string;
-  status: 'OPEN' | 'FULFILLED';
+  status: 'OPEN' | 'FULFILLED' | 'PARTIALLY_FULFILLED_CLOSED' | 'CANCELLED';
   lines: RequestLine[];
   jobNumberSnapshot?: string;
+  fulfillmentDetails?: {
+    fulfilledAt: string;
+    fulfilledById: string;
+    lines: {
+      specId: string;
+      requestedPcs: number;
+      issuedPcs: number;
+      explanation?: string;
+    }[];
+  };
+}
+
+export interface SetterAnalyticsEntry {
+  id: string;
+  setterId: string;
+  projectId: string;
+  assignedAt: string;
+  unassignedAt?: string;
+  completedAt?: string;
+  wasAssignedOnCompletion: boolean;
+  elapsedHours?: number;
+  heldBagsCount: number;
+  heldBagNumbers: string[];
+  estimatedBrokenPcs: number;
+  isBlockedTimeExcluded?: boolean;
 }
 
 export interface CostBreakdownItem {
@@ -423,19 +466,19 @@ export interface ProjectCostSummary {
   totalCaratsUsed: number;
   totalBrokenCarats: number;
   totalDiamondCostCad: number;
-  
+
   // New Financials
   labourCost: number; // Manual Design/Jeweller cost
   automatedSetterCost: number; // New: Auto-calculated
   goldCost: number;
   totalProjectCostCad: number;
-  
+
   initialWeightG: number;
   finalWeightG: number;
   goldLossG: number;
   breakdown: CostBreakdownItem[];
   goldBreakdown?: GoldCostBreakdownItem[]; // Granular gold cost breakdown
-  
+
   // Meta for UI display
   isLocked: boolean;
   usedPurePricePerGram: number;
@@ -483,6 +526,12 @@ export interface InventoryMovement {
   notes?: string;
   lines: InventoryLine[];
   location?: string;
+  // True when entered carat weights are intentionally authoritative for this
+  // movement (for example Weight-mode Add Stock or measured breakage).
+  weightAuthoritative?: boolean;
+  reversesCorrectionId?: string;
+  reversesTransactionId?: string;
+  replacementCorrectionId?: string;
 }
 
 export interface GlobalSettings {
@@ -540,22 +589,28 @@ export interface DiamondLedgerTransaction {
   totalValue: number; // carats * unitCost
   averageWeightSnapshot?: number; // ct/stone active when this tx was created
   notes?: string;
-  
+
   // Ledger Location Delta Tracking
   mainStockChange: number; // change to main stock (+/-)
   wipStockChange: number; // change to setter/factory stock (+/-)
-  
+
   // Audit Trail
   status: 'active' | 'edited' | 'deleted';
   originalTxId?: string; // Links to pre-edited transaction
   editedById?: string;
+  reversesCorrectionId?: string;
+  reversesTransactionId?: string;
+  replacementCorrectionId?: string;
   editedAt?: string;
 }
 
 export interface InventorySummaryItem {
   spec: DiamondSpec;
   pcs: number;
+  // Automatically calculated current weight. For normal specs this is
+  // pcs × spec.ctPerStone; mixed unsorted stock remains carat-authoritative.
   ct: number;
+  estimatedValueUsd: number;
   // Balance health flags surfaced by the reconciled calculation.
   negativePieces?: boolean;
   negativeCarats?: boolean;
@@ -572,6 +627,9 @@ export interface InventoryCorrectionInput {
   newCt: number;
   reason: string;
   managerId: string;
+  reversesCorrectionId?: string;
+  reversesTransactionId?: string;
+  replacementCorrectionId?: string;
 }
 
 // Result of a reconciliation audit comparing displayed balances to the ledger.
@@ -581,7 +639,9 @@ export type ReconcileIssueType =
   | 'POSITIVE_PCS_ZERO_CT'
   | 'NEGATIVE_PCS'
   | 'NEGATIVE_CT'
-  | 'STALE_ESTIMATED_VALUE';
+  | 'STALE_ESTIMATED_VALUE'
+  | 'UNABLE_TO_RECONCILE_SAFELY'
+  | 'CACHE_DRIFT';
 
 export interface ReconcileIssue {
   specId: string;
@@ -653,16 +713,27 @@ export type NotificationType = 'ASSIGNMENT' | 'REQUEST' | 'RETURN' | 'SYSTEM' | 
 
 export interface AppNotification {
   id: string;
-  userId?: string; // Recipient User ID (optional if role-based)
-  role?: Role;     // Recipient Role (optional if user-specific)
-  type: NotificationType;
+  userId: string;          // Mandatory recipient User ID
+  eventType: string;       // Standardized event type
+  projectId?: string;      // Related Project ID
+  requestId?: string;      // Related Request ID
+  bagId?: string;          // Related Bag ID
   title: string;
   message: string;
-  link?: string;
+  createdById: string;     // Creator User ID or 'SYSTEM'
+  createdAt: string;       // ISO string representation
+  isRead: boolean;
+  readAt: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+
+  // UI Backward Compatibility Fields
+  type: NotificationType;
   read: boolean;
-  createdAt: string;
-  relatedProjectId?: string; // Optional related project
-  metadata?: Record<string, any>; // Optional metadata
+  link?: string;
+  relatedProjectId?: string;
+  role?: Role;
+  metadata?: Record<string, any>;
 }
 
 export interface SystemLog {

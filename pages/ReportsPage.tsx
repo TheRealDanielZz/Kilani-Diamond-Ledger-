@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { store } from '../services/store';
 import { Card, Button, Badge, StatusPill, SetterAvatar, Input } from '../components/UI';
-import { FileBarChart, Download, X, Calendar, Search, Activity, Gem, Users, Clock, AlertOctagon, Filter, Image as ImageIcon, Box, Scale, ArrowRight, Coins, Save, Edit2, Ban, CheckCircle2, TrendingUp, Lock, FileDown, Wrench, AlertTriangle, Play, RefreshCw, Trash2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
-import { Project, ProjectCostSummary, InventoryMovement, InventoryMovementType, Role, CastingEvent, User, ProjectStatus, RepairStatus, RepairType, DiamondSpec, DiamondLedgerTransaction } from '../types';
+import { ExecutiveInsightsModule } from '../components/ExecutiveInsightsModule';
+import { FileBarChart, Download, X, Calendar, Search, Activity, Gem, Users, Clock, AlertOctagon, Filter, Image as ImageIcon, Box, Scale, ArrowRight, Coins, Save, Edit2, Ban, CheckCircle2, TrendingUp, Lock, FileDown, Wrench, AlertTriangle, Play, RefreshCw, Trash2, ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp, ZoomIn, Archive } from 'lucide-react';
+import { Project, ProjectCostSummary, InventoryMovement, InventoryMovementType, Role, CastingEvent, User, ProjectStatus, RepairStatus, RepairType, DiamondSpec, DiamondLedgerTransaction, EvidenceImage } from '../types';
 import { useToast } from '../App';
 import { runDiamondSituationalTests, TestScenarioResult } from '../services/testHarness';
 import { generateProjectPDF, generateEvidenceAppendixPDF } from '../utils/pdfGenerator';
@@ -81,6 +82,14 @@ const ReportsPage: React.FC = () => {
   const [weeklyFilterSalesRep, setWeeklyFilterSalesRep] = useState('ALL');
   const [weeklyFilterUser, setWeeklyFilterUser] = useState('ALL');
   
+  // Stock Snapshot State
+  const defaultSnapshotStart = () => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; };
+  const defaultSnapshotEnd   = () => new Date().toISOString().split('T')[0];
+  const [snapshotStart, setSnapshotStart] = useState(defaultSnapshotStart());
+  const [snapshotEnd,   setSnapshotEnd]   = useState(defaultSnapshotEnd());
+  const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false);
+  const [savedSnapshots, setSavedSnapshots] = useState(() => store.getWeeklyReports());
+
   // Test Harness state
   const [showTestHarness, setShowTestHarness] = useState(false);
   const [testResults, setTestResults] = useState<TestScenarioResult[]>([]);
@@ -88,6 +97,14 @@ const ReportsPage: React.FC = () => {
   
   // Inventory Report State
   const [movements, setMovements] = useState(store.getInventoryMovements());
+  const [expandedMovements, setExpandedMovements] = useState<Record<string, boolean>>({});
+  
+  const toggleMovement = (id: string) => {
+    setExpandedMovements(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
   
   // System Logs State
   const [systemLogs, setSystemLogs] = useState(store.getSystemLogs());
@@ -111,7 +128,17 @@ const ReportsPage: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projectStats, setProjectStats] = useState<ProjectCostSummary | null>(null);
   const [projectLogs, setProjectLogs] = useState<any[]>([]);
-  const [modalTab, setModalTab] = useState<'overview' | 'financial'>('overview');
+  const [modalTab, setModalTab] = useState<'overview' | 'financial' | 'evidence'>('overview');
+
+  // Evidence Gallery States
+  const [evidenceFilterType, setEvidenceFilterType] = useState<'ALL' | 'ISSUE' | 'RETURN'>('ALL');
+  const [evidenceFilterBag, setEvidenceFilterBag] = useState('');
+  const [evidenceFilterUploader, setEvidenceFilterUploader] = useState('ALL');
+  const [evidenceFilterDateFrom, setEvidenceFilterDateFrom] = useState('');
+  const [evidenceFilterDateTo, setEvidenceFilterDateTo] = useState('');
+  const [evidenceLimit, setEvidenceLimit] = useState(8);
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceImage | null>(null);
+  const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
 
   // Financial Editing State
   const [isEditingLabour, setIsEditingLabour] = useState(false);
@@ -129,33 +156,41 @@ const ReportsPage: React.FC = () => {
   const [editingDiamondUsage, setEditingDiamondUsage] = useState<string | null>(null);
   const [editUsedPcs, setEditUsedPcs] = useState<string>('');
   const [editBrokenPcs, setEditBrokenPcs] = useState<string>('');
+  const [editOverrideReason, setEditOverrideReason] = useState<string>('');
 
   const handleSaveDiamondUsage = async (specId: string) => {
-    if (!selectedProject) return;
+    if (!selectedProject || !currentUser) return;
+    if (!editOverrideReason.trim()) {
+      showToast('A reason is required for diamond usage overrides.');
+      return;
+    }
     try {
-      const overrides = selectedProject.diamondUsageOverrides || {};
       const newUsed = parseInt(editUsedPcs);
       const newBroken = parseInt(editBrokenPcs);
-      
-      const newOverrides = {
-        ...overrides,
-        [specId]: {
-          usedPcs: isNaN(newUsed) ? undefined : newUsed,
-          brokenPcs: isNaN(newBroken) ? undefined : newBroken
-        }
-      };
 
-      const updatedProject = { ...selectedProject, diamondUsageOverrides: newOverrides };
-      await store.updateProject(updatedProject);
-      
-      setSelectedProject(updatedProject);
-      setProjectStats(store.getProjectCostSummary(updatedProject.id));
+      await store.applyDiamondUsageOverride(
+        selectedProject.id,
+        specId,
+        isNaN(newUsed) ? undefined : newUsed,
+        isNaN(newBroken) ? undefined : newBroken,
+        currentUser.id,
+        editOverrideReason.trim()
+      );
+
+      // Refresh the local project reference so the cost summary re-computes
+      const refreshed = store.getProject(selectedProject.id);
+      if (refreshed) {
+        setSelectedProject(refreshed);
+        setProjectStats(store.getProjectCostSummary(refreshed.id));
+      }
       setEditingDiamondUsage(null);
+      setEditOverrideReason('');
       showToast('Diamond usage updated');
     } catch (e: any) {
-      showToast('Failed to update diamond usage');
+      showToast(e?.message || 'Failed to update diamond usage');
     }
   };
+
 
   const filterMovementsByLocationAccess = (allMovements: any[]) => {
     if (!currentUser) return allMovements;
@@ -577,16 +612,19 @@ const ReportsPage: React.FC = () => {
           row.valueCad += Math.abs(t.totalValue) * usdCad;
         });
 
-        // ── Warnings ──────────────────────────────────────────────────────
-        const warnings: string[] = [];
+        // ── Executive Insights ────────────────────────────────────────────────
+        const execNegativeBalances: any[] = [];
+        const execMissingCosts: any[] = [];
+        const execOtherWarnings: string[] = [];
+
         filtered.forEach(t => {
-          if (!t.unitCost || t.unitCost === 0) warnings.push(`Missing cost on tx ${t.id.slice(0,8)} (${t.movementType})`);
-          if (!t.specId || t.specId === 'MIXED-UNSORTED') warnings.push(`Missing exact diamond size on tx ${t.id.slice(0,8)}`);
-          if (!t.color) warnings.push(`Missing color/type on tx ${t.id.slice(0,8)}`);
-          if ((t.movementType === 'assigned' || t.movementType === 'returned' || t.movementType === 'used' || t.movementType === 'broken') && !t.referenceBagNumber) warnings.push(`Missing bag ID on tx ${t.id.slice(0,8)} (${t.movementType})`);
+          if (!t.unitCost || t.unitCost === 0) execMissingCosts.push(t);
+          if (!t.specId || t.specId === 'MIXED-UNSORTED') execOtherWarnings.push(`Missing exact diamond size on tx ${t.id.slice(0,8)}`);
+          if (!t.color) execOtherWarnings.push(`Missing color/type on tx ${t.id.slice(0,8)}`);
+          if ((t.movementType === 'assigned' || t.movementType === 'returned' || t.movementType === 'used' || t.movementType === 'broken') && !t.referenceBagNumber) execOtherWarnings.push(`Missing bag ID on tx ${t.id.slice(0,8)} (${t.movementType})`);
         });
         specMap.forEach((row, key) => {
-          if (row.closing < 0) warnings.push(`Negative closing balance: ${row.spec.label} (${row.color})`);
+          if (row.closing < 0) execNegativeBalances.push({ ...row, color: key.split('|')[1] });
         });
         const bagSpecMap = new Map<string, { assigned: number; returned: number; used: number; broken: number; returnEvents: number }>();
         ledgerTxs.filter(t => t.referenceBagNumber).forEach(t => {
@@ -601,12 +639,12 @@ const ReportsPage: React.FC = () => {
         bagSpecMap.forEach((row, key) => {
           const [, bagNo, specId] = key.split('|');
           const spec = allSpecs.find(s => s.id === specId);
-          if (row.assigned > 0 && row.returned + row.used + row.broken > row.assigned) warnings.push(`Bag #${bagNo} exceeds issued count for ${spec?.label || specId}`);
-          if (row.returnEvents > 1) warnings.push(`Bag #${bagNo} has multiple return count entries for ${spec?.label || specId}`);
+          if (row.assigned > 0 && row.returned + row.used + row.broken > row.assigned) execOtherWarnings.push(`Bag #${bagNo} exceeds issued count for ${spec?.label || specId}`);
+          if (row.returnEvents > 1) execOtherWarnings.push(`Bag #${bagNo} has multiple return count entries for ${spec?.label || specId}`);
         });
         projectMap.forEach(row => {
           if (row.project && (row.project.status === ProjectStatus.REVIEW || row.project.status === ProjectStatus.CLOSED) && row.project.finalDiamondCostCalculated === undefined) {
-            warnings.push(`Project ${row.project.code} has diamond activity but no locked Report Hub diamond summary`);
+            execOtherWarnings.push(`Project ${row.project.code} has diamond activity but no locked Report Hub diamond summary`);
           }
         });
 
@@ -790,17 +828,13 @@ const ReportsPage: React.FC = () => {
               </div>
             </Card>
 
-            {/* ── Warnings ───────────────────────────────────────────────── */}
-            {warnings.length > 0 && (
-              <div className="bg-amber-950/30 border border-amber-700/40 rounded-2xl p-4 flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-widest">
-                  <AlertTriangle size={14}/> {warnings.length} Inconsistenc{warnings.length > 1 ? 'ies' : 'y'} Detected
-                </div>
-                {warnings.map((w, i) => (
-                  <div key={i} className="text-xs text-amber-300/80 pl-5 font-mono">{w}</div>
-                ))}
-              </div>
-            )}
+            {/* ── Executive Insights ─────────────────────────────────────── */}
+            <ExecutiveInsightsModule 
+              negativeBalances={execNegativeBalances}
+              missingCosts={execMissingCosts}
+              otherWarnings={execOtherWarnings}
+              usdCadMultiplier={usdCad}
+            />
 
             {/* ── KPI Summary Cards ──────────────────────────────────────── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -1074,11 +1108,111 @@ const ReportsPage: React.FC = () => {
                 </table>
               </div>
             </Card>
+
+          {/* ── Stock Snapshot Generator ─────────────────────────────────── */}
+          <Card className="border-zinc-800 mt-6">
+            <div className="p-5 border-b border-zinc-800 flex items-center gap-2">
+              <Archive size={16} className="text-lux-gold" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-widest">Stock Snapshot</h3>
+              <span className="text-xs text-zinc-500 ml-2">Generate and persist a point-in-time inventory snapshot to Firestore.</span>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Date range picker */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Period Start</label>
+                  <input
+                    type="date"
+                    value={snapshotStart}
+                    onChange={e => setSnapshotStart(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-white focus:border-lux-gold focus:ring-0"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Period End</label>
+                  <input
+                    type="date"
+                    value={snapshotEnd}
+                    onChange={e => setSnapshotEnd(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-white focus:border-lux-gold focus:ring-0"
+                  />
+                </div>
+                <button
+                  disabled={isGeneratingSnapshot || !currentUser}
+                  onClick={async () => {
+                    if (!currentUser) return;
+                    setIsGeneratingSnapshot(true);
+                    try {
+                      await store.generateWeeklyReport(
+                        new Date(snapshotStart + 'T00:00:00'),
+                        new Date(snapshotEnd   + 'T23:59:59'),
+                        currentUser.id
+                      );
+                      setSavedSnapshots([...store.getWeeklyReports()]);
+                      showToast('Snapshot saved to Firestore.');
+                    } catch (e: any) {
+                      showToast(e?.message || 'Failed to generate snapshot.');
+                    } finally {
+                      setIsGeneratingSnapshot(false);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-lux-gold text-black text-sm font-bold hover:bg-yellow-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGeneratingSnapshot ? (
+                    <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full" />Generating…</>
+                  ) : (
+                    <><Archive size={13} />Generate Snapshot</>
+                  )}
+                </button>
+              </div>
+
+              {/* Saved snapshots table */}
+              {savedSnapshots.length > 0 && (
+                <div className="overflow-x-auto rounded-xl border border-zinc-800">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-zinc-900/80 border-b border-zinc-800">
+                        <th className="px-4 py-2.5 text-left text-zinc-500 font-bold uppercase tracking-wider">Period</th>
+                        <th className="px-4 py-2.5 text-left text-zinc-500 font-bold uppercase tracking-wider">Generated By</th>
+                        <th className="px-4 py-2.5 text-left text-zinc-500 font-bold uppercase tracking-wider">Generated At</th>
+                        <th className="px-4 py-2.5 text-right text-zinc-500 font-bold uppercase tracking-wider">Specs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...savedSnapshots]
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map(snap => (
+                          <tr key={snap.id} className="border-b border-zinc-800/50 last:border-0 hover:bg-white/[0.02]">
+                            <td className="px-4 py-2.5 text-zinc-300 font-mono">
+                              {snap.weekStartDate?.split('T')[0]} → {snap.weekEndDate?.split('T')[0]}
+                            </td>
+                            <td className="px-4 py-2.5 text-zinc-400">
+                              {store.getUser(snap.createdById)?.name || snap.createdById}
+                            </td>
+                            <td className="px-4 py-2.5 text-zinc-500">
+                              {new Date(snap.createdAt).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-zinc-300 font-mono">
+                              {snap.lines?.length ?? '—'}
+                            </td>
+                          </tr>
+                        ))
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {savedSnapshots.length === 0 && (
+                <p className="text-xs text-zinc-600 italic">No snapshots generated yet. Use the form above to create the first one.</p>
+              )}
+            </div>
+          </Card>
           </div>
         );
       })()}
 
       {activeTab === 'inventory' && (
+
 
         <Card className="overflow-hidden">
            <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex justify-between">
@@ -1112,36 +1246,47 @@ const ReportsPage: React.FC = () => {
                  </tr>
                </thead>
                <tbody className="divide-y divide-zinc-800/50">
-                 {movements.slice(0, 50).map(m => (
-                   <tr key={m.id} className="hover:bg-zinc-900/30">
-                     <td className="p-4 text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</td>
-                     <td className="p-4 text-white font-bold">{m.type}</td>
-                     <td className="p-4 text-zinc-500">{m.referenceBagNumber ? `Bag #${m.referenceBagNumber}` : '-'}</td>
-                     <td className="p-4 text-zinc-400 truncate max-w-xs">{m.notes}</td>
-                     <td className="p-4 text-right">
-                        <div className="flex flex-col items-end gap-1">
-                           <div className="font-mono text-lux-gold font-bold text-xs">
-                              {m.lines[0]?.specId === 'MIXED-UNSORTED' ? `${m.lines[0].ct} ct` : `${m.lines.reduce((a,b)=>a+(b.pcs||0),0)} pcs`}
-                           </div>
-                           {(m.type === InventoryMovementType.RETURN || m.type === InventoryMovementType.BULK_RETURN_INTAKE) && m.lines.length > 0 && m.lines[0].specId !== 'MIXED-UNSORTED' && (
-                              <div className="flex flex-col items-end gap-0.5 mt-1 border-t border-zinc-800/50 pt-1">
-                                 {m.lines.map((l, i) => {
-                                    const spec = store.getSpecs().find(s => s.id === l.specId);
-                                    return (
-                                       <div key={i} className="text-[10px] text-zinc-500 flex items-center gap-1.5 whitespace-nowrap">
-                                          <span className="text-zinc-400 font-medium">{spec?.sizeMm}mm</span>
-                                          <span className="text-lux-gold/80">{l.pcs}pcs</span>
-                                          <span className="text-blue-400/60">({l.ct.toFixed(3)}ct)</span>
-                                       </div>
-                                    );
-                                 })}
-                              </div>
-                           )}
-                        </div>
-                     </td>
-                   </tr>
-                 ))}
-               </tbody>
+                  {movements.slice(0, 50).map(m => {
+                    const isExpanded = !!expandedMovements[m.id];
+                    const safeLines = m.lines || [];
+                    return (
+                      <React.Fragment key={m.id}>
+                        <tr 
+                          onClick={() => toggleMovement(m.id)} 
+                          className="hover:bg-zinc-900/30 cursor-pointer transition-colors"
+                        >
+                          <td className="p-4 text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</td>
+                          <td className="p-4 text-white font-bold">{m.type}</td>
+                          <td className="p-4 text-zinc-500">{m.referenceBagNumber ? `Bag #${m.referenceBagNumber}` : '-'}</td>
+                          <td className="p-4 text-zinc-400 truncate max-w-xs">{m.notes}</td>
+                          <td className="p-4 text-right align-top">
+                             <div className="flex flex-col items-end gap-1">
+                                <div className="font-mono text-lux-gold font-bold text-xs flex items-center gap-1 justify-end hover:text-white transition-colors">
+                                   {safeLines[0]?.specId === 'MIXED-UNSORTED' ? `${safeLines[0].ct || 0} ct` : `${safeLines.reduce((a,b)=>a+(b.pcs||0),0)} pcs`}
+                                   {isExpanded ? <ChevronUp size={12} className="text-lux-gold shrink-0" /> : <ChevronDown size={12} className="text-zinc-500 shrink-0" />}
+                                </div>
+                                {isExpanded && safeLines.length > 0 && (
+                                   <div className="flex flex-col items-end gap-0.5 mt-1.5 border-t border-zinc-800/50 pt-1.5 w-full animate-in fade-in duration-200">
+                                      {safeLines.map((l, i) => {
+                                         const spec = store.getSpecs().find(s => s.id === l.specId);
+                                         const sizeLabel = l.specId === 'MIXED-UNSORTED' ? 'Mixed' : (spec?.sizeMm ? `${spec.sizeMm}mm` : (spec?.label || l.specId || 'Unknown'));
+                                         return (
+                                            <div key={i} className="text-[10px] text-zinc-500 flex items-center gap-1.5 whitespace-nowrap justify-end">
+                                               <span className="text-zinc-400 font-medium">{sizeLabel}</span>
+                                               {l.pcs !== undefined && l.pcs !== null && <span className="text-lux-gold/80">{l.pcs}pcs</span>}
+                                               <span className="text-blue-400/60">({l.ct.toFixed(3)}ct)</span>
+                                            </div>
+                                         );
+                                      })}
+                                   </div>
+                                )}
+                             </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
              </table>
            </div>
         </Card>
@@ -1444,6 +1589,14 @@ const ReportsPage: React.FC = () => {
                     >
                        Financial Summary
                     </button>
+                    {currentUser?.role && (currentUser.role === Role.MANAGER || currentUser.role === Role.DESIGNER) && (
+                       <button 
+                          onClick={() => setModalTab('evidence')}
+                          className={`pb-4 text-sm font-bold uppercase tracking-widest transition-all ${modalTab === 'evidence' ? 'text-lux-gold border-b-2 border-lux-gold' : 'text-zinc-500 hover:text-zinc-300'}`}
+                       >
+                          Evidence Gallery
+                       </button>
+                    )}
                  </div>
               </div>
 
@@ -1585,6 +1738,13 @@ const ReportsPage: React.FC = () => {
                                                       className="w-16 bg-black border border-zinc-700 rounded-xl px-2 py-1 text-right text-xs text-white focus:border-lux-gold focus:ring-0"
                                                       value={editBrokenPcs}
                                                       onChange={e => setEditBrokenPcs(e.target.value)}
+                                                    />
+                                                    <input
+                                                      type="text"
+                                                      placeholder="Reason (required)"
+                                                      className="w-36 bg-black border border-zinc-700 rounded-xl px-2 py-1 text-xs text-white focus:border-lux-gold focus:ring-0"
+                                                      value={editOverrideReason}
+                                                      onChange={e => setEditOverrideReason(e.target.value)}
                                                     />
                                                     <button onClick={() => handleSaveDiamondUsage(item.spec.id)} className="p-1 text-emerald-400 hover:bg-emerald-400/10 rounded">
                                                       <CheckCircle2 size={14} />
@@ -1952,6 +2112,331 @@ const ReportsPage: React.FC = () => {
                        </div>
                     </div>
                  )}
+
+                 {modalTab === 'evidence' && (
+                    <div className="space-y-6 animate-in slide-in-from-right-2 fade-in duration-300">
+                       <div className="flex justify-between items-center">
+                          <h3 className="font-bold text-white text-lg">Diamond Evidence</h3>
+                       </div>
+                       
+                       {/* Filters Control Panel */}
+                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 bg-black/30 rounded-3xl border border-white/5">
+                          <div>
+                             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Evidence Type</label>
+                             <select 
+                                value={evidenceFilterType} 
+                                onChange={e => setEvidenceFilterType(e.target.value as any)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lux-gold"
+                             >
+                                <option value="ALL">All Types</option>
+                                <option value="ISSUE">Manager Bag Issue</option>
+                                <option value="RETURN">Setter Return</option>
+                             </select>
+                          </div>
+                          <div>
+                             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Bag Number</label>
+                             <input 
+                                type="text" 
+                                placeholder="Search bag..." 
+                                value={evidenceFilterBag} 
+                                onChange={e => setEvidenceFilterBag(e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lux-gold font-mono"
+                             />
+                          </div>
+                          <div>
+                             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Uploaded By</label>
+                             <select 
+                                value={evidenceFilterUploader} 
+                                onChange={e => setEvidenceFilterUploader(e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lux-gold"
+                             >
+                                <option value="ALL">All Uploaders</option>
+                                {store.getUsers().map(u => (
+                                   <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                             </select>
+                          </div>
+                          <div>
+                             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">From Date</label>
+                             <input 
+                                type="date" 
+                                value={evidenceFilterDateFrom} 
+                                onChange={e => setEvidenceFilterDateFrom(e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lux-gold"
+                             />
+                          </div>
+                          <div>
+                             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">To Date</label>
+                             <input 
+                                type="date" 
+                                value={evidenceFilterDateTo} 
+                                onChange={e => setEvidenceFilterDateTo(e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-lux-gold"
+                             />
+                          </div>
+                       </div>
+
+                       {/* Grid of Evidence Cards */}
+                       {(() => {
+                          const filtered = store.getEvidenceImages().filter(ev => {
+                             if (ev.projectId !== selectedProject?.id) return false;
+                             if (evidenceFilterType !== 'ALL' && ev.transactionType !== evidenceFilterType) return false;
+                             if (evidenceFilterBag.trim() && !ev.bagNumber.toLowerCase().includes(evidenceFilterBag.trim().toLowerCase())) return false;
+                             if (evidenceFilterUploader !== 'ALL' && ev.uploaderId !== evidenceFilterUploader) return false;
+                             if (evidenceFilterDateFrom && ev.uploadedAt.substring(0, 10) < evidenceFilterDateFrom) return false;
+                             if (evidenceFilterDateTo && ev.uploadedAt.substring(0, 10) > evidenceFilterDateTo) return false;
+                             return true;
+                          }).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+
+                          const pageItems = filtered.slice(0, evidenceLimit);
+
+                          if (filtered.length === 0) {
+                             return (
+                                <div className="py-12 text-center text-zinc-500 border-2 border-dashed border-zinc-800 rounded-3xl bg-transparent">
+                                   <ImageIcon size={32} className="mx-auto mb-2 opacity-50"/>
+                                   <p>No diamond evidence found matching the filters.</p>
+                                </div>
+                             );
+                          }
+
+                          return (
+                             <div className="space-y-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                   {pageItems.map((ev) => (
+                                      <div 
+                                         key={ev.id} 
+                                         className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-[2rem] border border-white/[0.05] p-4 relative overflow-hidden transition-all hover:bg-[#252830]/80 flex flex-col justify-between h-[320px] group cursor-pointer animate-enter"
+                                         onClick={() => { setSelectedEvidence(ev); setSelectedVersionIndex(null); }}
+                                      >
+                                         <div className="aspect-square w-full rounded-2xl overflow-hidden relative border border-zinc-800 bg-black shrink-0 h-[150px]">
+                                            <img 
+                                               src={ev.thumbnailUrl || ev.photoUrl} 
+                                               loading="lazy" 
+                                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                               alt={`Bag #${ev.bagNumber}`}
+                                            />
+                                            <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
+                                               {ev.transactionType === 'ISSUE' ? 'Issue' : 'Return'}
+                                            </div>
+                                            {ev.imageSource === 'Camera' && (
+                                               <div className="absolute top-2 right-2 bg-lux-gold text-black font-extrabold text-[8px] tracking-wider uppercase px-1.5 py-0.5 rounded-full backdrop-blur-sm shadow-md">
+                                                  Camera
+                                               </div>
+                                            )}
+                                         </div>
+                                         
+                                         <div className="mt-3 flex-1 flex flex-col justify-between">
+                                            <div>
+                                               <div className="flex justify-between items-start mb-1">
+                                                  <span className="text-[10px] text-zinc-500 font-mono">Bag #{ev.bagNumber}</span>
+                                                  <span className="text-[8px] bg-white/5 border border-white/5 text-zinc-400 px-1.5 py-0.5 rounded font-bold font-mono">
+                                                     v{ev.version}
+                                                  </span>
+                                               </div>
+                                               <div className="text-white text-xs font-bold truncate">Uploaded by {ev.uploaderName}</div>
+                                            </div>
+                                            
+                                            <div className="text-[9px] text-zinc-500 font-mono mt-2 pt-2 border-t border-white/[0.03]">
+                                               {new Date(ev.uploadedAt).toLocaleString()}
+                                            </div>
+                                         </div>
+                                      </div>
+                                   ))}
+                                </div>
+                                
+                                {filtered.length > evidenceLimit && (
+                                   <div className="text-center pt-2">
+                                      <Button 
+                                         variant="secondary" 
+                                         size="sm"
+                                         onClick={() => setEvidenceLimit(prev => prev + 8)}
+                                      >
+                                         Load More
+                                      </Button>
+                                   </div>
+                                )}
+                             </div>
+                          );
+                       })()}
+                    </div>
+                 )}
+               </div>
+            </Card>
+         </div>
+       )}
+
+       {selectedEvidence && (
+         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[110] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+            <Card className="w-full max-w-4xl p-6 max-h-[90vh] flex flex-col animate-in zoom-in-95 overflow-y-auto bg-[#1C1E24] border border-white/10 rounded-[2.5rem]">
+               <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                  <div>
+                     <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                        <span className="text-lux-gold font-extrabold uppercase tracking-wider text-sm">
+                           {selectedEvidence.transactionType === 'ISSUE' ? 'Manager Bag Issue' : 'Setter Return'}
+                        </span>
+                        <span>Evidence Detail (Bag #{selectedEvidence.bagNumber})</span>
+                     </h3>
+                     <p className="text-[11px] text-zinc-500 font-mono mt-1">Evidence ID: {selectedEvidence.id}</p>
+                  </div>
+                  <button 
+                      onClick={() => {
+                          setSelectedEvidence(null);
+                          setSelectedVersionIndex(null);
+                      }} 
+                      className="text-zinc-500 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors"
+                  >
+                      <X size={24}/>
+                  </button>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 overflow-y-auto pr-2">
+                  {/* Left Column: Image Viewer & History versions */}
+                  <div className="space-y-4">
+                     {(() => {
+                         const isViewingHistory = selectedVersionIndex !== null;
+                         const currentViewedVersion = isViewingHistory && selectedEvidence.replacementHistory ? selectedEvidence.replacementHistory[selectedVersionIndex] : null;
+
+                         const displayPhoto = currentViewedVersion ? currentViewedVersion.photoUrl : selectedEvidence.photoUrl;
+                         const displayVersion = currentViewedVersion ? (selectedVersionIndex! + 1) : selectedEvidence.version;
+
+                         return (
+                            <>
+                               <div className="aspect-square w-full rounded-3xl overflow-hidden relative border border-zinc-800 bg-black flex items-center justify-center h-[350px]">
+                                  {displayPhoto ? (
+                                     <img src={displayPhoto} className="w-full h-full object-contain animate-enter" alt={`Evidence version ${displayVersion}`} />
+                                  ) : (
+                                     <div className="text-zinc-600 text-sm">No Photo Captured</div>
+                                  )}
+                                  <div className="absolute top-4 left-4 bg-lux-gold text-black font-extrabold text-xs px-3 py-1 rounded-full shadow-lg border border-black/10">
+                                     Version {displayVersion} {isViewingHistory ? '(ARCHIVED)' : '(ACTIVE)'}
+                                  </div>
+                               </div>
+                               
+                               {/* Version History Selector */}
+                               {selectedEvidence.replacementHistory && selectedEvidence.replacementHistory.length > 0 && (
+                                  <div className="bg-black/30 border border-white/5 rounded-2xl p-4 space-y-2">
+                                     <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Version History (Audit)</div>
+                                     <div className="flex flex-wrap gap-2">
+                                        <button 
+                                           onClick={() => setSelectedVersionIndex(null)}
+                                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${selectedVersionIndex === null ? 'bg-lux-gold text-black border-lux-gold' : 'bg-zinc-850 hover:bg-zinc-800 text-white border-zinc-750'}`}
+                                        >
+                                           v{selectedEvidence.version} (Active)
+                                        </button>
+                                        {selectedEvidence.replacementHistory.map((h, hIdx) => (
+                                           <button
+                                              key={hIdx}
+                                              onClick={() => setSelectedVersionIndex(hIdx)}
+                                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${selectedVersionIndex === hIdx ? 'bg-lux-gold text-black border-lux-gold' : 'bg-zinc-850 hover:bg-zinc-800 text-white border-zinc-750'}`}
+                                           >
+                                              v{hIdx + 1}
+                                           </button>
+                                        ))}
+                                     </div>
+                                     {isViewingHistory && currentViewedVersion && (
+                                        <div className="mt-3 p-3 bg-red-950/20 border border-red-900/30 rounded-xl text-[11px] text-zinc-400 animate-enter">
+                                           <div className="font-bold text-red-400 uppercase tracking-wider text-[9px] mb-1">Archived Version Metadata</div>
+                                           <div><strong>Replaced At:</strong> {new Date(currentViewedVersion.replacedAt).toLocaleString()}</div>
+                                           <div><strong>Replaced By:</strong> {currentViewedVersion.replacedByName}</div>
+                                           <div className="mt-1 bg-black/20 p-2 rounded border border-white/5 italic">
+                                              "{currentViewedVersion.reason}"
+                                           </div>
+                                        </div>
+                                     )}
+                                  </div>
+                               )}
+                            </>
+                         );
+                     })()}
+                  </div>
+                  
+                  {/* Right Column: Metadata Details */}
+                  <div className="space-y-6 flex flex-col justify-between">
+                     <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Project Code</div>
+                              <div className="text-white font-bold text-sm mt-0.5">{selectedProject?.code}</div>
+                           </div>
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Client Name</div>
+                              <div className="text-white font-bold text-sm mt-0.5">{selectedProject?.clientName || '-'}</div>
+                           </div>
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Uploader</div>
+                              <div className="text-white font-bold text-sm mt-0.5">
+                                 {selectedVersionIndex !== null && selectedEvidence.replacementHistory 
+                                    ? selectedEvidence.replacementHistory[selectedVersionIndex].replacedByName 
+                                    : selectedEvidence.uploaderName}
+                              </div>
+                           </div>
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Upload Date</div>
+                              <div className="text-white font-bold text-xs mt-0.5">
+                                 {new Date(selectedVersionIndex !== null && selectedEvidence.replacementHistory 
+                                    ? selectedEvidence.replacementHistory[selectedVersionIndex].replacedAt 
+                                    : selectedEvidence.uploadedAt).toLocaleString()}
+                              </div>
+                           </div>
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Image Source</div>
+                              <div className="text-white font-bold text-sm mt-0.5">
+                                 {selectedVersionIndex !== null && selectedEvidence.replacementHistory 
+                                    ? selectedEvidence.replacementHistory[selectedVersionIndex].imageSource 
+                                    : selectedEvidence.imageSource}
+                              </div>
+                           </div>
+                           <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-3">
+                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Transaction Status</div>
+                              <div className="text-white font-bold text-sm mt-0.5">{selectedEvidence.transactionStatus}</div>
+                           </div>
+                        </div>
+
+                        {/* Relevant Diamond Values */}
+                        <div className="bg-[#1C1E24] border border-white/5 rounded-2xl p-4">
+                           <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2">Relevant Diamond Values</div>
+                           <div className="space-y-1">
+                              {(() => {
+                                  let itemsHtml: React.ReactNode[] = [];
+                                  if (selectedEvidence.transactionType === 'ISSUE') {
+                                      const bag = store.getBags().find(b => b.id === selectedEvidence.transactionId);
+                                      if (bag) {
+                                          itemsHtml = bag.items.map((item, idx) => {
+                                              const spec = store.getSpecs().find(s => s.id === item.specId);
+                                              return (
+                                                 <div key={idx} className="text-xs text-zinc-300 flex justify-between font-mono">
+                                                    <span>{spec?.shape || 'RD'} {spec?.sizeMm || '-'}mm</span>
+                                                    <span className="font-bold text-white">{item.issuedPcs} pcs ({(item.issuedPcs * (spec?.ctPerStone || 0)).toFixed(3)} ct)</span>
+                                                 </div>
+                                              );
+                                          });
+                                      }
+                                  } else {
+                                      const bag = store.getBags().find(b => b.id === selectedEvidence.bagId);
+                                      const retTx = bag?.returns?.find(r => r.id === selectedEvidence.transactionId);
+                                      if (retTx) {
+                                          itemsHtml = retTx.lines.map((l, idx) => {
+                                              const spec = store.getSpecs().find(s => s.id === l.specId);
+                                              return (
+                                                 <div key={idx} className="text-xs text-zinc-300 flex justify-between font-mono">
+                                                    <span>{spec?.shape || 'RD'} {spec?.sizeMm || '-'}mm</span>
+                                                    <span className="font-bold text-white">{l.returnedPcs} pcs ({(l.returnedPcs * (spec?.ctPerStone || 0)).toFixed(3)} ct)</span>
+                                                 </div>
+                                              );
+                                          });
+                                      }
+                                  }
+
+                                  if (itemsHtml.length === 0) {
+                                      return <div className="text-xs text-zinc-500 italic">No diamond values found for this transaction.</div>;
+                                  }
+
+                                  return itemsHtml;
+                              })()}
+                           </div>
+                        </div>
+                     </div>
+                  </div>
                </div>
             </Card>
          </div>

@@ -7,8 +7,8 @@
 // the store, the reconciliation script, and the test harness.
 //
 // Core invariants enforced here (see also REQUIRED DATA INVARIANTS in spec):
-//   • Carats for a piece-based movement are ALWAYS pieces × averageWeightSnapshot
-//     captured at write time — never recomputed from the live catalog.
+//   • Carats for a piece-based movement are ALWAYS pieces × average weight,
+//     never stale stored movement carats.
 //   • When a spec's piece balance resolves to 0, its carat balance resolves to
 //     exactly 0 (except the carat-only MIXED-UNSORTED bucket).
 //   • Harmless floating-point residue is normalised to 0 using a small epsilon.
@@ -72,6 +72,41 @@ export function resolveAvgWeight(line: InventoryLine, spec?: DiamondSpec): numbe
 }
 
 /**
+ * Some lines are truly carat/weight authoritative: mixed buckets, carat-only
+ * entries, measured weight-mode entries, and signed inventory corrections.
+ * Normal spec lines with pieces are piece-authoritative and derive carats from
+ * pieces × average weight instead of trusting stale stored carats.
+ */
+export function isWeightAuthoritativeLine(
+  movement: Pick<InventoryMovement, 'type' | 'weightAuthoritative'>,
+  line: InventoryLine
+): boolean {
+  const pcs = line.pcs || 0;
+  const hasExactCt = line.ct !== undefined && line.ct !== null && line.ct !== 0;
+  if (!hasExactCt) return false;
+
+  return (
+    line.specId === MIXED_UNSORTED_SPEC_ID ||
+    pcs === 0 ||
+    movement.weightAuthoritative === true ||
+    movement.type === InventoryMovementType.INVENTORY_CORRECTION
+  );
+}
+
+export function resolveLineCarats(
+  movement: Pick<InventoryMovement, 'type' | 'weightAuthoritative'>,
+  line: InventoryLine,
+  spec?: DiamondSpec
+): number {
+  if (isWeightAuthoritativeLine(movement, line)) {
+    return roundCt(line.ct || 0);
+  }
+
+  if (line.specId === MIXED_UNSORTED_SPEC_ID) return 0;
+  return roundCt((line.pcs || 0) * resolveAvgWeight(line, spec));
+}
+
+/**
  * Compute the signed piece and carat delta a single movement line contributes
  * to a spec's running balance.
  *
@@ -80,22 +115,12 @@ export function resolveAvgWeight(line: InventoryLine, spec?: DiamondSpec): numbe
  * never diverge. The sign is decided by the movement type.
  */
 export function computeLineDelta(
-  movement: Pick<InventoryMovement, 'type'>,
+  movement: Pick<InventoryMovement, 'type' | 'weightAuthoritative'>,
   line: InventoryLine,
   spec?: DiamondSpec
 ): { pieceDelta: number; caratDelta: number } {
-  const avgWeight = resolveAvgWeight(line, spec);
   const pcs = line.pcs || 0;
-
-  // Determine the line's absolute carat magnitude.
-  // Prefer an explicitly stored exact weight (weight-priority entry); otherwise
-  // derive from pieces × snapshot weight (piece-priority entry).
-  let ct: number;
-  if (line.ct !== undefined && line.ct !== null) {
-    ct = line.ct;
-  } else {
-    ct = line.specId === MIXED_UNSORTED_SPEC_ID ? 0 : pcs * avgWeight;
-  }
+  const ct = resolveLineCarats(movement, line, spec);
 
   const sign = isAdditiveMovement(movement.type) ? 1 : -1;
   return {
@@ -166,8 +191,16 @@ export function normalizeBalance(raw: RawBalance, specId?: string): NormalizedBa
   return { pcs, ct, negativePieces, negativeCarats, normalizedStaleCarats };
 }
 
+/** Current stock display weight is derived automatically from pieces and the
+ * current spec average. Mixed unsorted stock remains carat-authoritative. */
+export function calculateCurrentStockCarats(specId: string | undefined, pcs: number, ctPerStone: number, exactCt = 0): number {
+  if (specId === MIXED_UNSORTED_SPEC_ID) return roundCt(exactCt);
+  return roundCt(Math.max(0, Math.round(pcs || 0)) * (ctPerStone || 0));
+}
+
 /** Estimated value from a normalised carat balance. 0 carats ⇒ $0, always. */
 export function estimatedValue(ct: number, costPerCtUsd: number): number {
   if (ct <= CT_EPSILON) return 0;
   return roundCt(ct * (costPerCtUsd || 0));
 }
+

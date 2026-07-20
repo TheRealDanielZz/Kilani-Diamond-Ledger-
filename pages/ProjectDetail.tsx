@@ -165,10 +165,14 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   }, [id]);
 
   useEffect(() => {
-    // Auto-select tab and view for designers
-    if (isDesigner) {
-       if (activeTab === 'bags') setActiveTab(project && store.getRepairDetails(project) ? 'repair' : 'design');
-       setProgressView('DESIGN');
+    if (project) {
+       const isRep = store.getRepairDetails(project);
+       if (isRep) {
+          if (activeTab === 'bags') setActiveTab('repair');
+       } else if (isDesigner) {
+          if (activeTab === 'bags') setActiveTab('design');
+          setProgressView('DESIGN');
+       }
     }
   }, [isDesigner, project?.id]);
 
@@ -618,6 +622,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
     if (!brokenCt || isNaN(ctVal) || ctVal <= 0) return alert("Valid carat weight required.");
     if (!brokenReason) return alert("Note/Reason required.");
+    if (!window.confirm("Please confirm that the entered breakage information is correct.")) return;
     
     setLoadingAction(true);
 
@@ -843,9 +848,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const repairCost = store.getRepairCostSummary(project.id);
   const canEditRepairFinancials = isManager || isDesigner;
   // Locked if not ready OR if already completed (Review/Closed)
-  const isLocked = (project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
+  const isLocked = (!repair && project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
   const lastWeight = project.progress?.filter(p => p.weightG).pop()?.weightG;
   const openRequests = requests.filter(r => r.status === 'OPEN');
+  const completedRequests = requests.filter(r => r.status === 'FULFILLED' || r.status === 'PARTIALLY_FULFILLED_CLOSED');
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 pb-48 md:pb-32 safe-pb">
@@ -1026,13 +1032,13 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             {isManager && (
                 <Button className="flex-1" variant="secondary" onClick={() => setIsAssigning(true)} icon={<UserPlus/>}>Assign</Button>
             )}
-            {isDesigner && (
+            {isDesigner && !repair && (
                 <Button className="flex-1 w-full" onClick={() => setIsAddingNote(true)} icon={<StickyNote/>}>Add Design Log</Button>
             )}
         </div>
       )}
 
-      {isManager && (
+      {isManager && !repair && (
          <div className="flex justify-center mb-8 relative z-20">
             <div className="bg-black/30 backdrop-blur-xl p-1 rounded-full flex gap-1 border border-white/10">
                <button 
@@ -1052,7 +1058,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       )}
 
       {/* DESIGN PROGRESS */}
-      {(isDesigner || (isManager && progressView === 'DESIGN')) && (
+      {!repair && (isDesigner || (isManager && progressView === 'DESIGN')) && (
          <Card className="mb-8 p-6 relative z-10">
             {/* ... (Existing Design Progress Code) ... */}
             <div className="flex justify-between items-center mb-4">
@@ -1069,7 +1075,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                     const currentStageIdx = visibleDesignStages.indexOf(project.designStage || 'Intake');
                     const isCompleted = idx <= currentStageIdx;
                     const isCurrent = idx === currentStageIdx;
-
+ 
                     return (
                         <div key={step} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => handleDesignStageUpdate(step)}>
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-xl backdrop-blur-md ${isCompleted ? 'bg-lux-gold border-lux-gold text-black shadow-glow' : 'bg-[#16171D] border-zinc-700 text-zinc-500 group-hover:border-lux-gold/50'}`}>
@@ -1081,7 +1087,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                 })}
                 </div>
             </div>
-
+ 
             {/* Casting Action Card */}
             {(project.designStage === 'Approved' || project.designStage === 'Casting Sent' || project.designStage === 'Casting Received (Issue)' || project.designStage === 'Recasting Sent') && (
                 <div className="mt-4 p-4 bg-[#16171D] border border-zinc-700 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1101,9 +1107,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             )}
          </Card>
       )}
-
+ 
       {/* PRODUCTION PROGRESS - ADAPTIVE */}
-      {(!isDesigner && (!isManager || progressView === 'PRODUCTION')) && (
+      {!repair && (!isDesigner && (!isManager || progressView === 'PRODUCTION')) && (
         <div data-tour="project-stage-control" className="mb-10 relative z-10">
             {isLocked && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center text-center rounded-3xl border border-zinc-800">
@@ -1677,6 +1683,68 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                  }
                  </div>
              </div>
+
+             <div className="mb-6">
+                <div className="flex justify-between items-end px-1 pt-2 mb-3">
+                   <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Request History</h3>
+                </div>
+                <div className="flex flex-col gap-3">
+                 {completedRequests.length === 0 ? <p className="text-zinc-500 italic p-4 text-center border border-dashed border-zinc-800 bg-transparent rounded-3xl">No completed requests.</p> : 
+                    completedRequests.map(r => (
+                       <div key={r.id} className="bg-[#1C1E24]/30 backdrop-blur-3xl rounded-[2rem] border border-white/[0.03] p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all">
+                          <div className="flex items-center gap-4">
+                             <div className="w-10 h-10 rounded-2xl bg-zinc-800/40 border border-zinc-700/20 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="text-emerald-400" size={20} />
+                             </div>
+                             <div>
+                                <div className="font-bold text-white text-sm mb-0.5">Request fulfilled</div>
+                                <div className="text-[10px] text-zinc-500 font-mono tracking-wider">{formatDateTime(r.requestedAt)}</div>
+                             </div>
+                          </div>
+                          
+                          <div className="flex flex-col gap-2 p-2.5 rounded-2xl bg-black/30 border border-white/5 md:max-w-md w-full">
+                             {r.fulfillmentDetails?.lines ? (
+                                 r.fulfillmentDetails.lines.map((l: any, i: number) => {
+                                     const spec = specs.find(s => s.id === l.specId);
+                                     const deviation = l.issuedPcs !== l.requestedPcs;
+                                     return (
+                                         <div key={i} className="text-xs px-2 py-1 flex flex-col gap-1 border-b border-white/5 last:border-b-0 pb-1.5 mb-1.5 last:pb-0 last:mb-0">
+                                             <div className="flex items-center justify-between">
+                                                 <span className="text-zinc-300 text-[10px] font-bold">{spec?.label || l.specId}</span>
+                                                 <span className="font-mono text-[10px] font-bold">
+                                                     Requested: {l.requestedPcs} | Issued: <span className={deviation ? "text-yellow-400 font-bold" : "text-green-400 font-bold"}>{l.issuedPcs}</span>
+                                                 </span>
+                                             </div>
+                                             {deviation && (
+                                                 <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-[10px] p-2 rounded-lg font-sans">
+                                                     {l.issuedPcs} pieces were issued. The remaining requested quantity was not fulfilled. Submit a new request if additional stones are still required.
+                                                     {l.explanation && <span className="block mt-1 text-zinc-400 italic font-medium">Manager note: "{l.explanation}"</span>}
+                                                 </div>
+                                             )}
+                                         </div>
+                                     );
+                                 })
+                             ) : (
+                                 r.lines.map((l, i) => {
+                                    const spec = specs.find(s => s.id === l.specId);
+                                    return (
+                                        <div key={i} className="text-[10px] bg-white/5 px-2 py-1 rounded-lg text-zinc-300 font-mono font-bold flex items-center gap-1.5 border border-white/5 whitespace-nowrap">
+                                            <span className="text-zinc-400">{l.requestedPcs}x</span> 
+                                            <span className="text-zinc-500 font-sans tracking-tight">{spec?.label}</span>
+                                        </div>
+                                    )
+                                 })
+                             )}
+                          </div>
+                          
+                          <div className="shrink-0 flex justify-end">
+                             <StatusPill status={r.status} />
+                          </div>
+                       </div>
+                    ))
+                 }
+                </div>
+             </div>
           </div>
       )}
 
@@ -2086,7 +2154,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
            <Card className="w-full max-w-lg md:max-w-3xl p-6 max-h-[85vh] flex flex-col mb-safe md:mb-0 animate-in slide-in-from-bottom-4 md:zoom-in-95">
               <h3 className="font-bold text-white text-lg mb-4">Request Diamonds for {project?.code}</h3>
               <div className="flex-1 overflow-y-auto mb-4">
-                 <FastEntryGrid specs={specs} onLinesChange={setRequestLines} mode="PCS" />
+                 <FastEntryGrid specs={specs.filter(s => !s.location || s.location === 'Melee')} onLinesChange={setRequestLines} mode="PCS" />
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
                  <Button variant="secondary" onClick={() => setIsRequesting(false)}>Cancel</Button>
