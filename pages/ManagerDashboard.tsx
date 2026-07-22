@@ -43,6 +43,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
    const [fulfillReq, setFulfillReq] = useState<IssueRequest | null>(null);
    const [editedLines, setEditedLines] = useState<{
+      sourceLineIndex: number;
       specId: string;
       requestedPcs: number;
       issuedPcs: number;
@@ -52,6 +53,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const [issuedPhoto, setIssuedPhoto] = useState<string | undefined>(undefined);
    const [issuedPhotoSource, setIssuedPhotoSource] = useState<'Camera' | 'Device Gallery' | undefined>(undefined);
    const submittingRef = React.useRef(false);
+   const [issueOperationId, setIssueOperationId] = useState('');
+   const [fulfillmentSpecs, setFulfillmentSpecs] = useState<Awaited<ReturnType<typeof store.getFulfillmentPreview>>['specs']>([]);
+   const [previewLoading, setPreviewLoading] = useState(false);
 
    const [countBag, setCountBag] = useState<DiamondBag | null>(null);
    const [countTx, setCountTx] = useState<BagReturnTransaction | null>(null);
@@ -60,6 +64,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const [brokenReason, setBrokenReason] = useState('');
    const [weighedCarats, setWeighedCarats] = useState<Record<number, string>>({});
    const [correctionReason, setCorrectionReason] = useState('');
+   const [returnOperationId, setReturnOperationId] = useState('');
 
    const [mixedMode, setMixedMode] = useState(false);
    const [mixedCt, setMixedCt] = useState('');
@@ -104,17 +109,37 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          const project = store.getProject(fulfillReq.projectId);
          const nextBag = store.getNextBagNumber(fulfillReq.projectId, project?.code || 'BAG');
          setBagNum(nextBag);
-         setEditedLines(fulfillReq.lines.map(l => ({
+         setIssueOperationId(crypto.randomUUID());
+         setEditedLines(fulfillReq.lines.map((l, sourceLineIndex) => ({
+            sourceLineIndex,
             specId: l.specId,
             requestedPcs: l.requestedPcs,
             issuedPcs: l.requestedPcs,
             explanation: ''
          })));
+         setPreviewLoading(true);
+         void store.getFulfillmentPreview(fulfillReq.id).then(preview => {
+            setFulfillmentSpecs(preview.specs);
+            setEditedLines(current => current.map(line => {
+               const stock = preview.specs.find(spec => spec.id === line.specId);
+               return { ...line, issuedPcs: Math.min(line.requestedPcs, stock?.availablePcs || 0) };
+            }));
+         }).catch(error => {
+            showToast(error?.message || 'Unable to load authoritative availability.');
+            setFulfillmentSpecs([]);
+         }).finally(() => setPreviewLoading(false));
       } else {
          setBagNum('');
          setEditedLines([]);
+         setFulfillmentSpecs([]);
+         setIssueOperationId('');
       }
-   }, [fulfillReq, activeProjects]);
+   }, [fulfillReq?.id]);
+
+   useEffect(() => {
+      if (countBag && countTx) setReturnOperationId(crypto.randomUUID());
+      else setReturnOperationId('');
+   }, [countBag, countTx]);
 
    const formatRelativeTime = (isoString: string) => {
       try {
@@ -199,7 +224,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
       const cleanBagNum = bagNum.replace(/#/g, '').trim();
       if (!cleanBagNum) return;
-      if (!issuedPhoto) return showToast("Photo is required to issue bag.");
+      if (editedLines.some(line => line.issuedPcs > 0) && !issuedPhoto) return showToast("Photo is required to issue bag.");
+      const stableOperationId = issueOperationId || crypto.randomUUID();
+      if (!issueOperationId) setIssueOperationId(stableOperationId);
 
       setLoading(true);
       submittingRef.current = true;
@@ -214,14 +241,15 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          await store.issueBag(
             fulfillReq.projectId,
             cleanBagNum,
-            editedLines.map(l => ({ specId: l.specId, issuedPcs: l.issuedPcs })),
+            editedLines.map(l => ({ sourceLineIndex: l.sourceLineIndex, specId: l.specId, issuedPcs: l.issuedPcs, explanation: l.explanation })),
             currentUser.id,
             fulfillReq.requestedById,
             fulfillReq.id,
             issuedPhoto,
             issuedPhotoSource,
             fulfillReq.jobNumberSnapshot,
-            explanations
+            explanations,
+            stableOperationId
          );
 
          setFulfillReq(null);
@@ -277,6 +305,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
       setLoading(true);
       try {
+         const stableOperationId = returnOperationId || crypto.randomUUID();
+         if (!returnOperationId) setReturnOperationId(stableOperationId);
          const countLines = itemsToProcess.map((item, idx) => ({
             specId: item.specId,
             pcs: counts[idx] ?? item.original
@@ -301,7 +331,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             brokenArray,
             weighedArray.length > 0 ? weighedArray : undefined,
             countTx?.id,
-            correctionReason.trim() || undefined
+            correctionReason.trim() || undefined,
+            brokenReason.trim() || undefined,
+            stableOperationId
          );
 
          setCountBag(null);
@@ -363,6 +395,13 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          }
       }
    };
+
+   const issueEvidence = countBag
+      ? store.getEvidenceImages().find(item => item.bagId === countBag.id && item.transactionType === 'ISSUE')
+      : undefined;
+   const returnEvidence = countTx
+      ? store.getEvidenceImages().find(item => item.transactionId === countTx.id && item.transactionType === 'RETURN')
+      : undefined;
 
    return (
       <div className="max-w-7xl mx-auto px-4 py-8 pb-32">
@@ -1057,14 +1096,14 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
                   <div className="flex-1 overflow-y-auto pr-1 mb-6 border border-white/5 rounded-xl bg-zinc-900/50 p-4 space-y-4">
                      {editedLines.map((l, i) => {
-                        const spec = store.getSpecs().find(s => s.id === l.specId);
-                        const available = spec?.pcs ?? 0;
+                        const spec = fulfillmentSpecs.find(s => s.id === l.specId);
+                        const available = spec?.availablePcs ?? 0;
 
                         const isLowStock = available > 0 && available < l.requestedPcs;
                         const isOutOfStock = available <= 0;
                         const recommended = Math.min(l.requestedPcs, available);
 
-                        const originalReqLine = fulfillReq.lines.find(ol => ol.specId === l.specId) || fulfillReq.lines[i];
+                        const originalReqLine = fulfillReq.lines[l.sourceLineIndex];
 
                         const isChanged = originalReqLine
                            ? (l.issuedPcs !== originalReqLine.requestedPcs || l.specId !== originalReqLine.specId)
@@ -1075,7 +1114,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                         return (
                            <div key={i} className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-3 relative">
                               <button
-                                 onClick={() => setEditedLines(prev => prev.filter((_, idx) => idx !== i))}
+                                 onClick={() => setEditedLines(prev => prev.map((item, idx) => idx === i ? { ...item, issuedPcs: 0 } : item))}
                                  className="absolute top-3 right-3 text-zinc-500 hover:text-white transition-colors"
                                  title="Remove line"
                               >
@@ -1090,8 +1129,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                     value={l.specId}
                                     onChange={e => {
                                        const newSpecId = e.target.value;
-                                       const newSpec = store.getSpecs().find(s => s.id === newSpecId);
-                                       const newAvailable = newSpec?.pcs ?? 0;
+                                       const newSpec = fulfillmentSpecs.find(s => s.id === newSpecId);
+                                       const newAvailable = newSpec?.availablePcs ?? 0;
                                        setEditedLines(prev => prev.map((item, idx) => idx === i ? {
                                           ...item,
                                           specId: newSpecId,
@@ -1099,7 +1138,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                        } : item));
                                     }}
                                  >
-                                    {store.getSpecs().filter(s => !s.location || s.location === 'Melee').map(s => (
+                                    {fulfillmentSpecs.map(s => (
                                        <option key={s.id} value={s.id}>{s.label}</option>
                                     ))}
                                  </select>
@@ -1185,16 +1224,16 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                         <Button
                            onClick={handleFulfill}
                            loading={loading}
-                           disabled={!bagNum.trim() || !issuedPhoto || (() => {
+                           disabled={previewLoading || !bagNum.trim() || (editedLines.some(line => line.issuedPcs > 0) && !issuedPhoto) || (() => {
                               if (editedLines.length === 0) return true;
                               for (let i = 0; i < editedLines.length; i++) {
                                  const el = editedLines[i];
-                                 const orig = fulfillReq.lines[i];
+                                 const orig = fulfillReq.lines[el.sourceLineIndex];
                                  const isChanged = orig ? (el.issuedPcs !== orig.requestedPcs || el.specId !== orig.specId) : true;
                                  if (isChanged && !el.explanation.trim()) return true;
 
-                                 const spec = store.getSpecs().find(s => s.id === el.specId);
-                                 const available = spec?.pcs ?? 0;
+                                 const spec = fulfillmentSpecs.find(s => s.id === el.specId);
+                                 const available = spec?.availablePcs ?? 0;
                                  if (el.issuedPcs > available || el.issuedPcs < 0) return true;
                               }
                               return false;
@@ -1213,12 +1252,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                <Card className={`w-full max-w-xl p-6 transition-colors duration-500 ${mixedMode ? 'border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : ''}`}>
                   <div className="flex justify-between items-start mb-4">
                      <h3 className="font-bold text-theme-text-primary text-lg">Verify Return Bag #{countBag.bagNumber}</h3>
-                     <div className="flex gap-2">
-                        {!mixedMode && (
-                           <button onClick={() => setIsManagerEdit(!isManagerEdit)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isManagerEdit ? 'bg-lux-gold text-black border-lux-gold' : 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}><Plus size={14} />{isManagerEdit ? 'Exit Edit Mode' : 'Manager Edit'}</button>
-                        )}
-                        <button onClick={() => setMixedMode(!mixedMode)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${mixedMode ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}><Layers size={14} />{mixedMode ? 'Mixed Mode' : 'Standard Mode'}</button>
-                     </div>
+                     <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Submitted counts are immutable</div>
                   </div>
 
                   <div className="bg-indigo-500/10 border border-indigo-500/30 p-4 rounded-xl mb-6 text-center">
@@ -1227,8 +1261,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   </div>
 
                   <div className="flex gap-4 mb-6">
-                     {countBag.issuedPhoto && (<div className="w-24 h-24 rounded-lg bg-black border border-zinc-800 overflow-hidden relative group"><img src={countBag.issuedPhoto} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" /><span className="absolute bottom-1 right-1 text-[10px] text-white bg-black/60 px-1 rounded">Issued</span></div>)}
-                     {(countTx?.photo || countBag.returnedPhoto) && (<div className="w-24 h-24 rounded-lg bg-black border border-zinc-800 overflow-hidden relative group"><img src={countTx?.photo || countBag.returnedPhoto} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" /><span className="absolute bottom-1 right-1 text-[10px] text-white bg-black/60 px-1 rounded">Returned</span></div>)}
+                     {(issueEvidence?.photoUrl || countBag.issuedPhoto) && (<div className="w-24 h-24 rounded-lg bg-black border border-zinc-800 overflow-hidden relative group"><img src={issueEvidence?.photoUrl || countBag.issuedPhoto} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" /><span className="absolute bottom-1 right-1 text-[10px] text-white bg-black/60 px-1 rounded">Issued</span></div>)}
+                     {(returnEvidence?.photoUrl || countTx?.photo || countBag.returnedPhoto) && (<div className="w-24 h-24 rounded-lg bg-black border border-zinc-800 overflow-hidden relative group"><img src={returnEvidence?.photoUrl || countTx?.photo || countBag.returnedPhoto} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" /><span className="absolute bottom-1 right-1 text-[10px] text-white bg-black/60 px-1 rounded">Returned</span></div>)}
                   </div>
 
                   {mixedMode ? (
@@ -1248,7 +1282,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                               {!!countTx && (
                                  <div className="flex items-start gap-2 mb-4 p-3 bg-amber-950/40 border border-amber-900/30 rounded-xl text-amber-400 text-xs">
                                     <AlertCircle size={16} className="shrink-0 mt-0.5 animate-pulse" />
-                                    <p>Review the Setter's declared count. If there is a discrepancy, edit the counts below and enter a correction reason.</p>
+                                    <p>Review the Setter's declared count. If the physical return does not match, cancel and have the pending return corrected before confirmation.</p>
                                  </div>
                               )}
                               <div className="grid grid-cols-13 gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wide mb-2 px-2 grid-flow-col" style={{ gridTemplateColumns: '5fr 2fr 2fr 3fr 3fr' }}><div>Spec</div><div className="text-center">Issued</div><div className="text-center">Return</div><div className="text-center text-red-400">Broken</div><div className="text-center text-blue-400">⚖ Scale (ct)</div></div>
@@ -1281,9 +1315,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                     <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '5fr 2fr 2fr 3fr 3fr' }}>
                                        <div><div className="text-sm font-bold text-white">{spec?.label}</div><div className="text-[10px] text-zinc-500">{spec?.sizeMm}mm · {(returnedVal * (spec?.ctPerStone || 0)).toFixed(4)}ct exp.</div></div>
                                        <div className="text-center text-sm text-white font-mono">{item.issuedPcs}</div>
-                                       <div><input type="number" value={returnedVal} onChange={e => setCounts({ ...counts, [idx]: parseInt(e.target.value) || 0 })} className={`w-full bg-black border rounded-lg p-1.5 text-center font-mono text-sm focus:ring-0 ${returnedVal !== (item as any).defaultReturned ? 'border-amber-500 text-amber-400 font-bold animate-pulse' : 'border-zinc-700 focus:border-lux-gold text-white'}`} /></div>
+                                       <div><input type="number" value={returnedVal} readOnly aria-label="Submitted return count" className="w-full bg-black border border-zinc-800 rounded-lg p-1.5 text-center font-mono text-sm text-white cursor-not-allowed" /></div>
                                        <div className="pl-1"><input type="number" value={brokenVal || ''} placeholder="0" onChange={e => setBrokenCounts({ ...brokenCounts, [idx]: parseInt(e.target.value) || 0 })} className={`w-full bg-black border rounded-lg p-1.5 text-center font-mono text-sm focus:ring-0 ${brokenVal > 0 ? 'border-red-500/50 text-red-400' : 'border-zinc-800 text-zinc-600'}`} /></div>
-                                       <div className="pl-1"><input type="number" step="0.0001" value={weighed || ''} placeholder="0.0000" onChange={e => setWeighedCarats({ ...weighedCarats, [idx]: e.target.value })} className={`w-full bg-black border rounded-lg p-1.5 text-center font-mono text-sm focus:ring-0 ${weighedCtNum !== null ? 'border-blue-500/50 text-blue-300' : 'border-zinc-800 text-zinc-500'}`} /></div>
+                                       <div className="pl-1"><input type="number" step="0.0001" value="" placeholder="Deferred" disabled aria-label="Return weight override disabled" className="w-full bg-black border border-zinc-900 rounded-lg p-1.5 text-center font-mono text-sm text-zinc-700 cursor-not-allowed" /></div>
                                     </div>
                                     {/* Footer: used pcs + weight tolerance indicator */}
                                     {(remaining !== 0 || toleranceDelta !== null) && (

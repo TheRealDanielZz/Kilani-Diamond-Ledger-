@@ -12,8 +12,9 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   useEffect(() => {
     const loadProjects = () => {
       // Use assignments[] array (not legacy assignedSetterId) to find projects
+      const acceptedProfileIds = new Set([currentUser.id, ...(currentUser.legacyProfileIds || [])]);
       const all = store.getProjects().filter(p =>
-        (p.assignments || []).some(a => a.userId === currentUser.id && a.active)
+        (p.assignments || []).some(a => acceptedProfileIds.has(a.userId) && a.active)
       );
       // Sort: Active/Rush first, then by date
       all.sort((a, b) => {

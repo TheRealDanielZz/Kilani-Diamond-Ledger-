@@ -1,9 +1,10 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { clearIndexedDbPersistence, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { initializeAuth, browserLocalPersistence } from 'firebase/auth';
 
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyA7p4Tdi5qOJtJ_lcyD2t_HS7GV5y1safM",
@@ -17,16 +18,17 @@ export const firebaseConfig = {
 
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// Inventory data must never remain in a Setter's persistent browser cache.
+// The app now uses memory-only Firestore caching for every role. Clear any
+// IndexedDB cache created by older builds before the first Firestore operation.
+export const db = initializeFirestore(app, { localCache: memoryLocalCache() });
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'northamerica-northeast1');
 
-// Enable Offline Persistence
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Persistence failed: multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-        console.warn('Persistence failed: browser does not support it');
-    }
+void clearIndexedDbPersistence(db).catch((error) => {
+  // A second open tab can temporarily hold the old cache. It is no longer used
+  // by this memory-only Firestore instance and will be retried on the next load.
+  console.warn('Legacy Firestore cache could not be cleared yet:', error?.code || error);
 });
 
 export const auth = initializeAuth(app, {

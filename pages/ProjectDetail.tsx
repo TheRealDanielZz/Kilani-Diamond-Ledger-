@@ -6,7 +6,7 @@ import { store } from '../services/store';
 import { Project, Role, DiamondBag, IssueRequest, DiamondSpec, ProjectCostSummary, ProgressStage, ProjectStatus, BagStatus, InventoryMovementType, ProjectNote, RepairDetailsV2, RepairStatus, EvidenceImage } from '../types';
 import { Card, Button, StatusPill, SetterAvatar, Badge, Input, Spinner, ProgressBar, SegmentedControl } from '../components/UI';
 import { ImageUpload, compressImage } from '../components/ImageUpload';
-import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck } from 'lucide-react';
+import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck, Edit2 } from 'lucide-react';
 import { useToast } from '../App';
 import { FastEntryGrid } from '../components/FastEntryGrid';
 
@@ -52,7 +52,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   // Modals
   const [isRequesting, setIsRequesting] = useState(false);
   const [requestLines, setRequestLines] = useState<any[]>([]);
+  const [requestOperationId, setRequestOperationId] = useState('');
   const [isReturning, setIsReturning] = useState(false);
+  const [returnOperationId, setReturnOperationId] = useState('');
   const [returnBagNum, setReturnBagNum] = useState('');
   const [returnPhoto, setReturnPhoto] = useState<string | undefined>(undefined);
   const [returnPhotoSource, setReturnPhotoSource] = useState<'Camera' | 'Device Gallery' | undefined>(undefined);
@@ -128,6 +130,13 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const [isSavingRepair, setIsSavingRepair] = useState(false);
 
   const [loadingAction, setLoadingAction] = useState(false);
+  const [revisionModal, setRevisionModal] = useState<'INSTRUCTIONS' | 'METAL' | null>(null);
+  const [revisionReason, setRevisionReason] = useState('');
+  const [instructionDraft, setInstructionDraft] = useState('');
+  const [metalDraft, setMetalDraft] = useState('Yellow');
+  const [purityDraft, setPurityDraft] = useState('14k');
+  const [revisionOperationId, setRevisionOperationId] = useState('');
+  const [isSavingRevision, setIsSavingRevision] = useState(false);
 
   // Computed Design Stages
   const getVisibleDesignStages = () => {
@@ -189,6 +198,14 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
     if (isReturning && returnInputRef.current) {
       setTimeout(() => returnInputRef.current?.focus(), 100);
     }
+  }, [isReturning]);
+
+  useEffect(() => {
+    setRequestOperationId(isRequesting ? crypto.randomUUID() : '');
+  }, [isRequesting]);
+
+  useEffect(() => {
+    setReturnOperationId(isReturning ? crypto.randomUUID() : '');
   }, [isReturning]);
 
   const refresh = () => {
@@ -420,7 +437,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleServiceStatusToggle = async (serviceName: string) => {
-     if (!project || !project.services) return;
+     if (!project || !project.services || !canModifyProject || project.status !== ProjectStatus.ACTIVE) return;
      const current = (project.services as any[]).map(s => typeof s === 'string' ? { name: s, status: 'PENDING' } : s).find(s => s.name === serviceName);
      if (!current) return;
 
@@ -443,7 +460,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleRepairStatusChange = async (status: RepairStatus) => {
-    if (!project) return;
+    if (!project || !canModifyProject || project.status !== ProjectStatus.ACTIVE) return;
     try {
       await store.updateRepairStatus(project.id, status, currentUser.id);
       showToast(`Repair status: ${status}`);
@@ -466,7 +483,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleSaveRepairDetails = async () => {
-    if (!project || !editableRepair) return;
+    if (!project || !editableRepair || !canEditRepairFinancials) return;
     setIsSavingRepair(true);
     try {
       await store.updateRepairDetails(project.id, editableRepair);
@@ -481,14 +498,17 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const submitRequest = async () => {
     const valid = requestLines.filter(l => l.pcs > 0);
     if(!valid.length) return;
+    const stableOperationId = requestOperationId || crypto.randomUUID();
+    if (!requestOperationId) setRequestOperationId(stableOperationId);
     setLoadingAction(true);
     try {
-      await store.createRequest({ projectId: project!.id, requestedById: currentUser.id, lines: valid.map(l => ({specId: l.specId, requestedPcs: l.pcs})), jobNumberSnapshot: project!.code });
+      await store.createRequest({ projectId: project!.id, requestedById: currentUser.id, lines: valid.map(l => ({specId: l.specId, requestedPcs: l.pcs})), jobNumberSnapshot: project!.code }, stableOperationId);
       setIsRequesting(false); 
       showToast("Request Sent");
     } catch(e: any) { 
-      console.error(e);
-      showToast(e.message || "Failed to send request");
+      console.error("Error sending diamond request:", e);
+      const errMsg = e?.details?.message || e?.message || "Failed to send request";
+      showToast(errMsg);
     } finally {
       setLoadingAction(false);
     }
@@ -514,6 +534,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
     
     const validLines = returnLines.filter(l => l.pcs > 0);
     if(validLines.length === 0) return showToast("Please add at least one item to return");
+    const stableOperationId = returnOperationId || crypto.randomUUID();
+    if (!returnOperationId) setReturnOperationId(stableOperationId);
     
     setLoadingAction(true);
     try {
@@ -525,7 +547,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
         validLines.map(l => ({specId: l.specId, requestedPcs: l.pcs})),
         project!.code,
         returnNotes,
-        returnPhotoSource
+        returnPhotoSource,
+        stableOperationId
       );
       setIsReturning(false); 
       setReturnBagNum(''); 
@@ -578,6 +601,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const submitHandoff = async () => {
+    if (!canModifyProject || project?.status !== ProjectStatus.ACTIVE) return;
     if(!handoffTarget) return alert("Please select a team member to handoff to.");
     const weightVal = parseFloat(handoffWeight);
     if(!handoffWeight || isNaN(weightVal)) return alert("Valid weight is required for handoff.");
@@ -587,9 +611,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
     // Optimistic UI Update
     const updatedProject = { ...project! };
     let assignments = [...(updatedProject.assignments || [])];
+    const acceptedProfileIds = new Set([currentUser.id, ...(currentUser.legacyProfileIds || [])]);
     
     // Unassign current user
-    assignments = assignments.map(a => a.userId === currentUser.id ? { ...a, active: false } : a);
+    assignments = assignments.map(a => acceptedProfileIds.has(a.userId) ? { ...a, active: false } : a);
     
     // Assign target user
     const toUserExists = assignments.some(a => a.userId === handoffTarget);
@@ -719,7 +744,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const submitNote = async () => {
-    if(!newNote && !newNoteImage) return;
+    if ((!newNote && !newNoteImage) || !canModifyProject || project?.status !== ProjectStatus.ACTIVE) return;
     setLoadingAction(true);
     
     const note: any = {
@@ -765,7 +790,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleProjectPhotoUpload = async (base64: string | undefined) => {
-    if (base64 && project) {
+    if (base64 && project && canModifyProject && project.status === ProjectStatus.ACTIVE) {
       setIsUploadingPhoto(true);
       try {
         await store.addProjectPhoto(project.id, base64);
@@ -785,7 +810,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const confirmDeletePhoto = async () => {
-     if (photoToDelete === null || !project) return;
+     if (photoToDelete === null || !project || !canModifyProject || project.status !== ProjectStatus.ACTIVE) return;
      const index = photoToDelete;
      setIsDeletingPhoto(false);
      setDeletingPhotoIndex(index);
@@ -832,6 +857,78 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       }
   };
 
+  const openInstructionRevision = () => {
+      if (!project) return;
+      setInstructionDraft(project.workDetails || '');
+      setRevisionReason('');
+      setRevisionOperationId(crypto.randomUUID());
+      setRevisionModal('INSTRUCTIONS');
+  };
+
+  const openMetalRevision = () => {
+      if (!project) return;
+      setMetalDraft(project.goldType || project.goldComponents?.[0]?.type || 'Yellow');
+      setPurityDraft(project.goldPurity || project.goldComponents?.[0]?.purity || '14k');
+      setRevisionReason('');
+      setRevisionOperationId(crypto.randomUUID());
+      setRevisionModal('METAL');
+  };
+
+  const handleSaveRevision = async () => {
+      if (!project || !revisionModal) return;
+      if (!revisionReason.trim()) {
+          showToast('A reason is required.');
+          return;
+      }
+      const operationId = revisionOperationId || crypto.randomUUID();
+      setRevisionOperationId(operationId);
+      if (revisionModal === 'METAL') {
+          const currentMetal = project.goldType || project.goldComponents?.[0]?.type || '';
+          const currentPurity = project.goldPurity || project.goldComponents?.[0]?.purity || '';
+          if (!window.confirm(`Change ${currentMetal} ${currentPurity} to ${metalDraft} ${purityDraft}? This will be recorded permanently in Project History.`)) return;
+      }
+      setIsSavingRevision(true);
+      try {
+          if (revisionModal === 'INSTRUCTIONS') {
+              await store.reviseProjectDetails({
+                  operationId,
+                  projectId: project.id,
+                  kind: 'INSTRUCTIONS',
+                  reason: revisionReason.trim(),
+                  expectedVersion: project.instructionRevisionVersion || 0,
+                  expectedInstructions: project.workDetails || '',
+                  instructions: instructionDraft.trim()
+              });
+              setProject({ ...project, workDetails: instructionDraft.trim(), instructionRevisionVersion: (project.instructionRevisionVersion || 0) + 1 });
+          } else {
+              const currentMetal = project.goldType || project.goldComponents?.[0]?.type || '';
+              const currentPurity = project.goldPurity || project.goldComponents?.[0]?.purity || '';
+              const components = project.goldComponents?.length
+                  ? project.goldComponents.map((component, index) => index === 0 ? { ...component, type: metalDraft, purity: purityDraft } : component)
+                  : [{ id: 'legacy-component', label: 'Main Piece', type: metalDraft, purity: purityDraft }];
+              await store.reviseProjectDetails({
+                  operationId,
+                  projectId: project.id,
+                  kind: 'METAL',
+                  reason: revisionReason.trim(),
+                  expectedVersion: project.metalRevisionVersion || 0,
+                  expectedMetal: currentMetal,
+                  expectedPurity: currentPurity,
+                  metal: metalDraft,
+                  purity: purityDraft
+              });
+              setProject({ ...project, goldType: metalDraft as Project['goldType'], goldPurity: purityDraft, goldComponents: components, metalRevisionVersion: (project.metalRevisionVersion || 0) + 1 });
+          }
+          setRevisionModal(null);
+          showToast('Project revision saved and added to Project History.');
+      } catch (error: any) {
+          console.error(error);
+          showToast(error?.message || 'Failed to save revision. Refresh and try again.');
+      } finally {
+          setIsSavingRevision(false);
+      }
+  };
+
   const formatDateTime = (iso: string) => {
     return new Date(iso).toLocaleString('en-US', { 
       month: 'short', 
@@ -846,9 +943,17 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const currentPercent = project.currentPercentComplete || 0;
   const repair = store.getRepairDetails(project);
   const repairCost = store.getRepairCostSummary(project.id);
-  const canEditRepairFinancials = isManager || isDesigner;
+  const currentIdentityIds = [currentUser?.id, currentUser?.authUid, ...(currentUser?.legacyProfileIds || [])].filter(Boolean);
+  const assignedToProject = (project.activeAssignees || []).some(userId => currentIdentityIds.includes(userId))
+      || (project.assignments || []).some(assignment => assignment.active && currentIdentityIds.includes(assignment.userId));
+  const isPickedUp = project.status === ProjectStatus.CLOSED || !!project.date_picked_up;
+  const canModifyProject = !isPickedUp && (isManager || assignedToProject);
+  const canEditRepairFinancials = !isPickedUp && (isManager || (isDesigner && assignedToProject));
+  const canEditProjectDetails = !isPickedUp && (isManager || (isDesigner && assignedToProject));
+  const primaryMetal = project.goldType || project.goldComponents?.[0]?.type;
+  const primaryPurity = project.goldPurity || project.goldComponents?.[0]?.purity;
   // Locked if not ready OR if already completed (Review/Closed)
-  const isLocked = (!repair && project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
+  const isLocked = !canModifyProject || (!repair && project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
   const lastWeight = project.progress?.filter(p => p.weightG).pop()?.weightG;
   const openRequests = requests.filter(r => r.status === 'OPEN');
   const completedRequests = requests.filter(r => r.status === 'FULFILLED' || r.status === 'PARTIALLY_FULFILLED_CLOSED');
@@ -867,8 +972,11 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                <div className="flex flex-wrap items-center gap-3 mb-2">
                   <h1 className="text-3xl md:text-4xl font-serif font-bold text-white tracking-tight break-words line-clamp-2 max-w-full leading-tight">{project.code}</h1>
                   <StatusPill status={project.status} />
-                  {project.goldType && (
-                      <Badge color="amber">{project.goldType} {project.goldPurity}</Badge>
+                  {primaryMetal && (
+                      <button type="button" onClick={canEditProjectDetails ? openMetalRevision : undefined} className={canEditProjectDetails ? 'inline-flex items-center gap-1 cursor-pointer' : 'cursor-default'} title={canEditProjectDetails ? 'Edit metal and purity' : isPickedUp ? 'Picked Up projects are read-only' : undefined}>
+                        <Badge color="amber">{primaryMetal} {primaryPurity}</Badge>
+                        {canEditProjectDetails && <Edit2 size={12} className="text-amber-400" />}
+                      </button>
                   )}
                </div>
                <p className="text-zinc-400 text-lg break-words line-clamp-2 max-w-full">{project.pieceName}</p>
@@ -880,10 +988,13 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                    </p>
                )}
                
-               {project.workDetails && (
+               {(project.workDetails || canEditProjectDetails) && (
                    <div className="mt-3 bg-white/5 border border-white/5 rounded-2xl p-4 text-sm text-zinc-300">
-                       <span className="font-bold text-zinc-500 block mb-1 uppercase text-[10px] tracking-widest font-mono">Instructions</span>
-                       {project.workDetails}
+                       <div className="flex items-center justify-between gap-3 mb-1">
+                         <span className="font-bold text-zinc-500 uppercase text-[10px] tracking-widest font-mono">Instructions</span>
+                         {canEditProjectDetails && <button type="button" onClick={openInstructionRevision} className="text-zinc-500 hover:text-lux-gold transition-colors" title="Edit instructions"><Edit2 size={14} /></button>}
+                       </div>
+                       {project.workDetails || <span className="italic text-zinc-600">No instructions entered.</span>}
                    </div>
                )}
 
@@ -896,7 +1007,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                            </div>
                            <div className="text-right">
                                <span className="text-[10px] text-zinc-500 block uppercase font-mono tracking-widest">Repair Status</span>
-                               {(isManager || isDesigner || project.assignments.some(a => a.userId === currentUser.id && a.active)) && project.status === ProjectStatus.ACTIVE ? (
+                               {canModifyProject && project.status === ProjectStatus.ACTIVE ? (
                                  <select
                                    value={repair.status}
                                    onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
@@ -988,7 +1099,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                      })}
                   </div>
                   {isManager && project.status === ProjectStatus.ACTIVE && <button onClick={() => setIsAssigning(true)} className="shrink-0 bg-[#23262F]/50 backdrop-blur-md hover:bg-lux-gold hover:text-black text-zinc-400 p-2 rounded-full transition-colors border border-white/10"><UserPlus size={16}/></button>}
-                  {!isManager && !isDesigner && project.status === ProjectStatus.ACTIVE && (
+                  {(currentUser.role === Role.SETTER || currentUser.role === Role.JEWELLER) && canModifyProject && project.status === ProjectStatus.ACTIVE && (
                       <Button 
                         size="sm"
                         variant="secondary"
@@ -1004,35 +1115,82 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
             {/* Desktop Actions - Elevated Z-Index */}
             <div data-tour="project-actions" className="hidden md:flex flex-wrap gap-2 md:gap-3 relative z-30">
-              {!isManager && !isDesigner && project.status === ProjectStatus.ACTIVE && (
+              {!isManager && !isDesigner && canModifyProject && project.status === ProjectStatus.ACTIVE && (
                  <>
                    <Button size="sm" variant="secondary" onClick={() => setIsRequesting(true)} icon={<PackagePlus size={16} className="text-blue-400"/>}>Request</Button>
                    <Button size="sm" variant="secondary" onClick={() => { setReturnBagNum(''); setIsReturning(true); }} icon={<RotateCcw size={16} className="text-amber-400"/>}>Return</Button>
                  </>
               )}
-              {project.status === ProjectStatus.ACTIVE && (
+              {isManager && project.status === ProjectStatus.ACTIVE && (
                  <Button size="sm" variant="danger" onClick={() => setIsBroken(true)} icon={<AlertOctagon size={16} />}>Broken</Button>
               )}
             </div>
         </div>
       </div>
 
+      {revisionModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[250] flex items-end md:items-center justify-center p-4">
+          <Card className="w-full max-w-lg p-6 animate-in slide-in-from-bottom-4 md:zoom-in-95">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-lg font-bold text-white">{revisionModal === 'INSTRUCTIONS' ? 'Edit Project Instructions' : 'Edit Metal & Purity'}</h3>
+                <p className="text-xs text-zinc-500 mt-1">The previous value, replacement, editor, reason, and server time will be kept permanently.</p>
+              </div>
+              <button type="button" onClick={() => setRevisionModal(null)} disabled={isSavingRevision} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+            </div>
+
+            <div className="space-y-4">
+              {revisionModal === 'INSTRUCTIONS' ? (
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Replacement instructions</label>
+                  <textarea value={instructionDraft} onChange={event => setInstructionDraft(event.target.value)} maxLength={5000} className="w-full h-36 bg-black border border-zinc-700 rounded-2xl p-4 text-sm text-white resize-none focus:border-lux-gold" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Metal</label>
+                    <select value={metalDraft} onChange={event => { const next = event.target.value; setMetalDraft(next); if (next === 'Platinum') setPurityDraft('950'); else if (purityDraft === '950') setPurityDraft('14k'); }} className="w-full bg-black border border-zinc-700 rounded-2xl p-3 text-white">
+                      {['Yellow', 'White', 'Rose', 'Platinum'].map(metal => <option key={metal}>{metal}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Purity</label>
+                    <select value={purityDraft} onChange={event => setPurityDraft(event.target.value)} className="w-full bg-black border border-zinc-700 rounded-2xl p-3 text-white">
+                      {(metalDraft === 'Platinum' ? ['950'] : ['10k', '14k', '18k', '21k']).map(purity => <option key={purity}>{purity}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Reason (required)</label>
+                <textarea value={revisionReason} onChange={event => setRevisionReason(event.target.value)} maxLength={1000} placeholder="Why is this change required?" className="w-full h-24 bg-black border border-zinc-700 rounded-2xl p-4 text-sm text-white resize-none focus:border-lux-gold" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="ghost" onClick={() => setRevisionModal(null)} disabled={isSavingRevision}>Cancel</Button>
+              <Button onClick={handleSaveRevision} loading={isSavingRevision} disabled={!revisionReason.trim() || (revisionModal === 'INSTRUCTIONS' && !instructionDraft.trim())}>Save Revision</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* MOBILE ACTION BAR - High Z-Index */}
       {project.status === ProjectStatus.ACTIVE && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 pb-[max(12px,env(safe-area-inset-bottom))] bg-[#16171D]/90 backdrop-blur-xl border-t border-white/10 z-[200] flex gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.4)] animate-in slide-in-from-bottom-2">
-            {(!isManager && !isDesigner) && (
+            {(!isManager && !isDesigner && canModifyProject) && (
                 <>
                 <Button className="flex-1 shadow-none bg-[#23262F] hover:bg-[#2D313A] border border-white/5" onClick={() => setIsRequesting(true)} icon={<PackagePlus className="text-blue-400"/>}>Request</Button>
                 <Button className="flex-1 shadow-glow" onClick={() => { setReturnBagNum(''); setIsReturning(true); }} icon={<RotateCcw className="text-black"/>}>Return</Button>
                 </>
             )}
-            {(isManager || !isDesigner) && (
+            {isManager && (
                 <Button className="flex-1" variant="danger" onClick={() => setIsBroken(true)} icon={<AlertOctagon/>}>Broken</Button>
             )}
             {isManager && (
                 <Button className="flex-1" variant="secondary" onClick={() => setIsAssigning(true)} icon={<UserPlus/>}>Assign</Button>
             )}
-            {isDesigner && !repair && (
+            {isDesigner && assignedToProject && !repair && (
                 <Button className="flex-1 w-full" onClick={() => setIsAddingNote(true)} icon={<StickyNote/>}>Add Design Log</Button>
             )}
         </div>
@@ -1058,7 +1216,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       )}
 
       {/* DESIGN PROGRESS */}
-      {!repair && (isDesigner || (isManager && progressView === 'DESIGN')) && (
+      {!repair && ((isDesigner && assignedToProject) || (isManager && progressView === 'DESIGN')) && (
          <Card className="mb-8 p-6 relative z-10">
             {/* ... (Existing Design Progress Code) ... */}
             <div className="flex justify-between items-center mb-4">
@@ -1077,7 +1235,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                     const isCurrent = idx === currentStageIdx;
  
                     return (
-                        <div key={step} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => handleDesignStageUpdate(step)}>
+                        <div key={step} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => canModifyProject && handleDesignStageUpdate(step)}>
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-xl backdrop-blur-md ${isCompleted ? 'bg-lux-gold border-lux-gold text-black shadow-glow' : 'bg-[#16171D] border-zinc-700 text-zinc-500 group-hover:border-lux-gold/50'}`}>
                             {isCompleted ? <Check size={16} strokeWidth={3} /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
                             </div>
@@ -1098,11 +1256,11 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                             <div className="text-xs text-zinc-500">Current Cycle: #{project.castingEvents?.length ? project.castingEvents.length + ((project.designStage === 'Casting Sent' || project.designStage === 'Recasting Sent') ? 0 : 1) : 1}</div>
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    {canModifyProject && <div className="flex gap-2">
                         {project.designStage === 'Approved' && <Button size="sm" onClick={() => handleDesignStageUpdate('Casting Sent')}>Send to Casting</Button>}
                         {(project.designStage === 'Casting Sent' || project.designStage === 'Recasting Sent') && <Button size="sm" onClick={() => setIsCastingReceive(true)}>Receive Casting</Button>}
                         {project.designStage === 'Casting Received (Issue)' && <Button size="sm" onClick={handleSendRecast} variant="danger">Send for Recasting</Button>}
-                    </div>
+                    </div>}
                 </div>
             )}
          </Card>
@@ -1275,10 +1433,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                 <h3 className="text-2xl font-bold text-white">{repair.type}{repair.customName ? ` • ${repair.customName}` : ''}</h3>
               </div>
               <div className="flex flex-wrap gap-2">
-                {project.status === ProjectStatus.ACTIVE && (
+                {canModifyProject && project.status === ProjectStatus.ACTIVE && (
                   <Button size="sm" onClick={() => handleRepairStatusChange(RepairStatus.READY_FOR_PICKUP)} icon={<CheckCircle2 size={14} />}>Ready for Pickup</Button>
                 )}
-                {(isManager || isDesigner || project.assignments.some(a => a.userId === currentUser.id && a.active)) && project.status === ProjectStatus.ACTIVE && (
+                {canModifyProject && project.status === ProjectStatus.ACTIVE && (
                   <select
                     value={repair.status}
                     onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
@@ -1759,9 +1917,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                         return (
                         <div key={idx} className="flex items-center justify-between p-3 bg-zinc-900/50 rounded-2xl border border-zinc-800">
                            <span className="font-medium text-zinc-300">{s.name}</span>
-                           <button 
-                             onClick={() => handleServiceStatusToggle(s.name)}
-                             className={`px-3 py-1 rounded-2xl text-xs font-bold transition-all border ${s.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400 border-green-500/20' : s.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}
+                           <button
+                             onClick={() => canModifyProject && project.status === ProjectStatus.ACTIVE && handleServiceStatusToggle(s.name)}
+                             disabled={!canModifyProject || project.status !== ProjectStatus.ACTIVE}
+                             className={`px-3 py-1 rounded-2xl text-xs font-bold transition-all border disabled:cursor-default ${s.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400 border-green-500/20' : s.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}
                            >
                               {s.status.replace('_', ' ')}
                            </button>
@@ -1771,7 +1930,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                   </div>
               </Card>
 
-              <div className="bg-black/20 border border-zinc-800 rounded-3xl p-3 sm:p-4 shadow-sm relative">
+              {canModifyProject && project.status === ProjectStatus.ACTIVE && <div className="bg-black/20 border border-zinc-800 rounded-3xl p-3 sm:p-4 shadow-sm relative">
                   <div className="space-y-3 relative">
                      <textarea 
                        ref={textareaRef}
@@ -1831,7 +1990,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                         </div>
                      )}
                   </div>
-              </div>
+              </div>}
 
               {/* Casting History Timeline */}
               {project.castingEvents && project.castingEvents.length > 0 && (
@@ -1940,7 +2099,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
           <div className="space-y-6 animate-enter">
               <div className="flex justify-between items-center">
                   <h3 className="font-bold text-white">Project Gallery</h3>
-                  <Button size="sm" onClick={() => setIsUploadingPhoto(true)} icon={<Camera size={16}/>}>Add Photo</Button>
+                  {canModifyProject && project.status === ProjectStatus.ACTIVE && <Button size="sm" onClick={() => setIsUploadingPhoto(true)} icon={<Camera size={16}/>}>Add Photo</Button>}
               </div>
               
               {isUploadingPhoto && (
@@ -1958,9 +2117,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                           <img src={photo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                               <button onClick={(e) => {e.stopPropagation(); setLightboxIndex(idx)}} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-white hidden lg:block"><ZoomIn size={18}/></button>
-                              <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(idx)}} className="p-2 bg-red-500/20 rounded-full hover:bg-red-500 text-red-200 hidden lg:block"><Trash2 size={18}/></button>
+                              {canModifyProject && project.status === ProjectStatus.ACTIVE && <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(idx)}} className="p-2 bg-red-500/20 rounded-full hover:bg-red-500 text-red-200 hidden lg:block"><Trash2 size={18}/></button>}
                           </div>
-                          <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(idx)}} className="absolute top-2 right-2 p-2 bg-black/60 rounded-full text-red-400 lg:hidden shadow-lg border border-white/10"><Trash2 size={16}/></button>
+                          {canModifyProject && project.status === ProjectStatus.ACTIVE && <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(idx)}} className="absolute top-2 right-2 p-2 bg-black/60 rounded-full text-red-400 lg:hidden shadow-lg border border-white/10"><Trash2 size={16}/></button>}
                       </div>
                   ))}
                   {(!project.projectPhotos || project.projectPhotos.length === 0) && (
@@ -2127,7 +2286,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       {lightboxIndex !== null && project.projectPhotos && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setLightboxIndex(null)}>
            <div className="absolute top-4 right-4 flex gap-4 items-center">
-               <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(lightboxIndex);}} className="p-2 bg-red-500/20 rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30 shadow-lg"><Trash2 size={24}/></button>
+               {canModifyProject && project.status === ProjectStatus.ACTIVE && <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(lightboxIndex);}} className="p-2 bg-red-500/20 rounded-full text-red-400 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30 shadow-lg"><Trash2 size={24}/></button>}
                <button className="p-2 text-white/50 hover:text-white bg-black/50 rounded-full"><X size={32}/></button>
            </div>
            <img src={project.projectPhotos[lightboxIndex]} className="max-h-full max-w-full rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />
@@ -2680,7 +2839,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                          onChange={e => setHandoffTarget(e.target.value)}
                       >
                          <option value="">Select Team Member...</option>
-                         {store.getUsers().filter(u => u.active && u.role !== Role.MANAGER && u.id !== currentUser.id).map(u => (
+                         {store.getUsers().filter(u => u.active && [Role.DESIGNER, Role.SETTER, Role.JEWELLER].includes(u.role) && u.id !== currentUser.id).map(u => (
                             <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                          ))}
                       </select>

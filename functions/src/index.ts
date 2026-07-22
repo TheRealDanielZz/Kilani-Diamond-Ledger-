@@ -4,13 +4,33 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 
+export {
+  ensureUidSecurityProfile,
+  getMyInventoryContext,
+  createInventoryRequest,
+  cancelInventoryRequest,
+  getFulfillmentPreview,
+  confirmInventoryIssue,
+  submitInventoryReturn,
+  confirmInventoryReturn,
+  recordInventoryMovement,
+  applyInventoryCorrection,
+  hardenLegacyEvidenceAccess,
+  getPhase1BootstrapAudit,
+} from './inventory/phase1';
+
+export { runInventoryReconciliationAudit } from './inventory/reconciliation';
+export { reviseProjectDetails } from './projects/phase4';
+export { createProjectNotification } from './projects/notifications';
+export { handoffProject } from './projects/workflow';
+
 initializeApp();
 const db = getFirestore();
 const messaging = getMessaging();
 
 // Keep in sync with the "push-worthy" set chosen in docs/PUSH_NOTIFICATIONS_DESIGN.md.
 // STATUS_UPDATE is intentionally excluded (stays in-app-only).
-const PUSH_TYPES = new Set(['ASSIGNMENT', 'REQUEST', 'RETURN', 'HANDOFF', 'MENTION', 'SYSTEM']);
+const PUSH_TYPES = new Set(['ASSIGNMENT', 'REQUEST', 'RETURN', 'HANDOFF', 'MENTION', 'SYSTEM', 'PROJECT_REVISION']);
 
 const NOT_REGISTERED_CODES = new Set([
   'messaging/registration-token-not-registered',

@@ -13,7 +13,9 @@ import {
 } from 'firebase/auth';
 import { initializeApp, deleteApp, FirebaseApp } from 'firebase/app';
 import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, auth, storage, firebaseConfig } from './firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, auth, storage, functions, firebaseConfig } from './firebase';
+import { FulfillmentPreview, getInventoryEvidenceUrl, inventoryApi, newOperationId, uploadInventoryEvidence } from './inventoryApi';
 import {
     User, Project, Role, ProjectStatus, DiamondBag, IssueRequest, RequestLine, BagReturnLine, BagReturnTransaction,
     InventoryMovement, DiamondSpec, GoldPriceCache, GlobalSettings,
@@ -36,6 +38,9 @@ import {
     isAdditiveMovement, MIXED_UNSORTED_SPEC_ID
 } from './inventoryMath';
 import { InventoryCorrectionInput, ReconcileIssue, ReconcileResult } from '../types';
+import { getProjectRevisions as fetchProjectRevisions, reviseProjectDetails, ProjectRevisionPayload } from './projectRevisionApi';
+import { handoffProject as handoffProjectTrusted } from './projectWorkflowApi';
+import { ProjectRevision } from '../types';
 
 // Helpers
 const now = () => new Date().toISOString();
@@ -285,6 +290,11 @@ class StoreService {
 
     private async syncUserProfile(u: FirebaseUser) {
         try {
+            try {
+                await inventoryApi.ensureSecurityProfile();
+            } catch (profileBootstrapError) {
+                console.warn('Trusted UID profile bootstrap was unavailable; checking existing profile compatibility.', profileBootstrapError);
+            }
             const userEmail = u.email ? u.email.toLowerCase().trim() : '';
             const usersRef = collection(db, 'users');
 
@@ -302,6 +312,7 @@ class StoreService {
                 const updatedProfile: User = {
                     ...data,
                     id: u.uid,
+                    authUid: u.uid,
                     email: u.email || data.email || '',
                     name: data.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
                     role: finalRole,
@@ -309,7 +320,7 @@ class StoreService {
                 };
 
                 // Ensure ID and role consistency in Firestore if needed
-                if (data.id !== u.uid || data.role !== finalRole || !data.email) {
+                if (data.id !== u.uid || data.authUid !== u.uid || data.role !== finalRole || !data.email) {
                     await setDoc(directDocRef, deepCopySafe(updatedProfile), { merge: true });
                 }
 
@@ -332,6 +343,8 @@ class StoreService {
                     const migratedProfile: User = {
                         ...legacyData,
                         id: u.uid,
+                        authUid: u.uid,
+                        legacyProfileIds: Array.from(new Set([...(legacyData.legacyProfileIds || []), selectedDoc.id])),
                         email: u.email || legacyData.email || '',
                         name: legacyData.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
                         role: finalRole,
@@ -341,10 +354,12 @@ class StoreService {
                     // Write authoritative profile to users/{u.uid}
                     await setDoc(directDocRef, deepCopySafe(migratedProfile));
 
-                    // Clean up legacy documents that had non-UID doc IDs
+                    // Preserve legacy profile documents because historical projects,
+                    // assignments and ledger actors may still reference their IDs.
+                    // Add only a canonical UID link; never delete the historical record.
                     for (const d of querySnapshot.docs) {
                         if (d.id !== u.uid) {
-                            await deleteDoc(doc(db, 'users', d.id)).catch(console.error);
+                            await setDoc(doc(db, 'users', d.id), { authUid: u.uid }, { merge: true }).catch(console.error);
                         }
                     }
 
@@ -357,6 +372,7 @@ class StoreService {
             const isOwner = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
             const newUser: User = {
                 id: u.uid,
+                authUid: u.uid,
                 name: u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
                 email: u.email || '',
                 role: isOwner ? Role.MANAGER : Role.SETTER,
@@ -423,20 +439,22 @@ class StoreService {
                     }
 
                     // --- Emergency Patch for Large Projects ---
-                    // Automatically find and scrub projects that might be approaching the 1MB limit
-                    setTimeout(() => {
-                        const projectsWithBase64 = this.projects.filter(p =>
-                            (p.projectPhotos || []).some(url => url && url.startsWith('data:')) ||
-                            (p.designLogs || []).some(log => log.attachment && log.attachment.startsWith('data:'))
-                        );
+                    // Automatically find and scrub projects that might be approaching the 1MB limit (Managers & Designers only)
+                    if (this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER) {
+                        setTimeout(() => {
+                            const projectsWithBase64 = this.projects.filter(p =>
+                                (p.projectPhotos || []).some(url => url && url.startsWith('data:')) ||
+                                (p.designLogs || []).some(log => log.attachment && log.attachment.startsWith('data:'))
+                            );
 
-                        if (projectsWithBase64.length > 0) {
-                            console.log(`Found ${projectsWithBase64.length} projects needing photo scrubbing...`);
-                            projectsWithBase64.forEach(p => {
-                                this.scrubProjectPhotos(p.id).catch(err => console.error(`Scrub failed for ${p.id}:`, err));
-                            });
-                        }
-                    }, 5000);
+                            if (projectsWithBase64.length > 0) {
+                                console.log(`Found ${projectsWithBase64.length} projects needing photo scrubbing...`);
+                                projectsWithBase64.forEach(p => {
+                                    this.scrubProjectPhotos(p.id).catch(err => console.error(`Scrub failed for ${p.id}:`, err));
+                                });
+                            }
+                        }, 5000);
+                    }
                 } else {
                     this.currentUser = null;
                     this.clearListeners();
@@ -454,8 +472,9 @@ class StoreService {
         if (this.unsubscribes.length > 0) return; // Already setup
         if (this.isDemoMode) return; // No listeners in demo mode
 
-        // Collections accessible to all authenticated users
-        const publicCollections = ['users', 'projects', 'bags', 'requests', 'specs', 'bands', 'transactions'];
+        // No inventory-bearing collection is globally subscribed. Setters receive
+        // a sanitized, user-scoped context from the trusted backend instead.
+        const publicCollections = ['users', 'projects'];
 
         publicCollections.forEach(col => {
             this.unsubscribes.push(onSnapshot(collection(db, col), (snap) => {
@@ -469,7 +488,8 @@ class StoreService {
                 }
                 if (col === 'projects') {
                     this.projects = data as Project[];
-                    const missing = this.projects.filter(p => !p.activeAssignees);
+                    const canRepairAssignments = this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER;
+                    const missing = canRepairAssignments ? this.projects.filter(p => !p.activeAssignees) : [];
                     if (missing.length > 0) {
                         missing.forEach(async p => {
                             const activeIds = (p.assignments || []).filter(a => a.active).map(a => a.userId);
@@ -485,22 +505,40 @@ class StoreService {
                         });
                     }
                 }
-                if (col === 'bags') this.bags = data as DiamondBag[];
-                if (col === 'requests') this.requests = data as IssueRequest[];
-                if (col === 'specs') {
-                    this.specs = data as DiamondSpec[];
-                    this.repairSpecsStockCache();
-                }
-                if (col === 'bands') this.bands = data as DiamondPriceBand[];
-                if (col === 'transactions') this.transactions = data as ProjectTransaction[];
-
                 this.notify();
             }, (error) => {
                 console.error(`Error listening to ${col}:`, error);
             }));
         });
 
-        // Collections restricted to Managers & Designers (unauthorized users will get empty arrays)
+        if (this.currentUser?.role === Role.MANAGER) {
+            ['bags', 'requests'].forEach(col => {
+                this.unsubscribes.push(onSnapshot(collection(db, col), (snap) => {
+                    const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                    if (col === 'bags') this.bags = data as DiamondBag[];
+                    if (col === 'requests') this.requests = data as IssueRequest[];
+                    this.notify();
+                }, error => console.error(`Error listening to Manager collection ${col}:`, error)));
+            });
+        }
+
+        if (this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER) {
+            ['specs', 'bands', 'transactions'].forEach(col => {
+                this.unsubscribes.push(onSnapshot(collection(db, col), (snap) => {
+                    const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                    if (col === 'specs') this.specs = data as DiamondSpec[];
+                    if (col === 'bands') this.bands = data as DiamondPriceBand[];
+                    if (col === 'transactions') this.transactions = data as ProjectTransaction[];
+                    this.notify();
+                }, error => console.error(`Error listening to restricted catalog ${col}:`, error)));
+            });
+        } else {
+            void this.refreshPrivateInventoryContext();
+            const contextTimer = window.setInterval(() => void this.refreshPrivateInventoryContext(), 30_000);
+            this.unsubscribes.push(() => window.clearInterval(contextTimer));
+        }
+
+        // Collections restricted to Managers & Designers (unauthorized users get no raw inventory)
         if (this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER) {
             const restrictedCollections = ['movements', 'weekly_reports', 'system_logs', 'diamond_transactions', 'diamonds'];
             restrictedCollections.forEach(col => {
@@ -508,7 +546,6 @@ class StoreService {
                     const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
                     if (col === 'movements') {
                         this.movements = data as InventoryMovement[];
-                        this.repairSpecsStockCache();
                     }
                     if (col === 'weekly_reports') this.weeklyReports = data as WeeklyReportSnapshot[];
                     if (col === 'system_logs') this.systemLogs = data as SystemLog[];
@@ -542,37 +579,44 @@ class StoreService {
             this.notifications = [];
         }
 
-        // Settings
-        this.unsubscribes.push(onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-            if (snap.exists()) {
-                const data = snap.data() as Partial<GlobalSettings>;
-                this.settings = {
-                    ...this.settings,
-                    ...data,
-                    purityMapping: {
-                        ...this.settings.purityMapping,
-                        ...(data.purityMapping || {})
-                    },
-                    goldWidget: {
-                        ...this.settings.goldWidget,
-                        ...(data.goldWidget || {})
-                    }
-                } as GlobalSettings;
-            }
-            this.notify();
-        }, (error) => console.error("Error listening to settings:", error)));
-
-        // Gold Price
-        this.unsubscribes.push(onSnapshot(doc(db, 'settings', 'gold_price'), (snap) => {
-            if (snap.exists()) this.liveGoldPrice = snap.data() as GoldPriceCache;
-            this.notify();
-        }, (error) => console.error("Error listening to gold_price:", error)));
-
-        // Evidence (Only Managers and Designers are authorized to subscribe)
         if (this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER) {
-            this.unsubscribes.push(onSnapshot(collection(db, 'evidence'), (snap) => {
-                this.evidenceImages = snap.docs.map(d => ({ ...d.data(), id: d.id })) as EvidenceImage[];
+            this.unsubscribes.push(onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data() as Partial<GlobalSettings>;
+                    this.settings = {
+                        ...this.settings,
+                        ...data,
+                        purityMapping: { ...this.settings.purityMapping, ...(data.purityMapping || {}) },
+                        goldWidget: { ...this.settings.goldWidget, ...(data.goldWidget || {}) }
+                    } as GlobalSettings;
+                }
                 this.notify();
+            }, (error) => console.error("Error listening to settings:", error)));
+
+            this.unsubscribes.push(onSnapshot(doc(db, 'settings', 'gold_price'), (snap) => {
+                if (snap.exists()) this.liveGoldPrice = snap.data() as GoldPriceCache;
+                this.notify();
+            }, (error) => console.error("Error listening to gold_price:", error)));
+        }
+
+        // Evidence is Manager-only. New documents store an immutable Storage path;
+        // download URLs are resolved only inside a Manager session.
+        if (this.currentUser?.role === Role.MANAGER) {
+            this.unsubscribes.push(onSnapshot(collection(db, 'evidence'), (snap) => {
+                const evidence = snap.docs.map(d => ({ ...d.data(), id: d.id })) as EvidenceImage[];
+                void Promise.all(evidence.map(async item => {
+                    if (!item.storagePath) return item;
+                    try {
+                        const photoUrl = await getInventoryEvidenceUrl(item.storagePath);
+                        return { ...item, photoUrl, thumbnailUrl: photoUrl };
+                    } catch (error) {
+                        console.error('Unable to resolve Manager evidence URL:', error);
+                        return item;
+                    }
+                })).then(items => {
+                    this.evidenceImages = items;
+                    this.notify();
+                });
             }, (error) => {
                 console.error("Error listening to evidence:", error);
             }));
@@ -581,33 +625,34 @@ class StoreService {
         }
     }
 
+    async refreshPrivateInventoryContext() {
+        if (this.isDemoMode || !this.currentUser || this.currentUser.role === Role.MANAGER || this.currentUser.role === Role.DESIGNER) return;
+        try {
+            const context = await inventoryApi.getMyContext();
+            this.specs = context.specs;
+            this.bags = context.bags;
+            this.requests = context.requests;
+            this.movements = [];
+            this.diamondTransactions = [];
+            this.notify();
+        } catch (error) {
+            console.error('Unable to refresh private inventory context:', error);
+        }
+    }
+
     private async repairSpecsStockCache() {
-        if (this.movements.length === 0 || this.specs.length === 0) return;
-        const summary = this.getInventorySummary('Melee');
         const missing = this.specs.filter(s => s.pcs === undefined || s.ct === undefined);
         if (missing.length > 0) {
-            console.log(`[INTEGRITY] Found ${missing.length} specs missing pcs/ct cache. Repairing...`);
-            for (const s of missing) {
-                const specSummary = summary.find(sum => sum.spec.id === s.id);
-                const pcs = specSummary ? specSummary.pcs : 0;
-                const ct = specSummary ? specSummary.ct : 0;
-                if (!this.isDemoMode) {
-                    try {
-                        await updateDoc(doc(db, 'specs', s.id), { pcs, ct });
-                    } catch (err) {
-                        console.error("Failed to repair pcs/ct for spec:", s.id, err);
-                    }
-                } else {
-                    s.pcs = pcs;
-                    s.ct = ct;
-                }
-            }
+            console.error(`[INTEGRITY] ${missing.length} specs are missing authoritative balances. Phase 1 mutations remain blocked until bootstrap validation passes.`);
         }
     }
 
     private clearListeners() {
         this.unsubscribes.forEach(unsub => unsub());
         this.unsubscribes = [];
+        this.evidenceImages.forEach(item => {
+            if (item.photoUrl?.startsWith('blob:')) URL.revokeObjectURL(item.photoUrl);
+        });
         this.evidenceImages = [];
     }
 
@@ -865,7 +910,21 @@ class StoreService {
         try {
             await setDoc(doc(db, 'notifications', id), safeNotification);
         } catch (err) {
-            console.warn(`[NOTIFICATIONS] Client notification setDoc bypassed due to firestore rules: ${id}`);
+            const projectId = relatedProjectId || metadata?.projectId || link?.match(/^\/project\/([^/?#]+)/)?.[1];
+            const trustedProjectTypes: NotificationType[] = ['ASSIGNMENT', 'HANDOFF', 'MENTION', 'STATUS_UPDATE'];
+            if (projectId && trustedProjectTypes.includes(type)) {
+                const callable = httpsCallable(functions, 'createProjectNotification');
+                await callable({
+                    operationId: customId || crypto.randomUUID(),
+                    projectId,
+                    targetUserId: userId,
+                    title,
+                    message,
+                    type,
+                });
+                return;
+            }
+            console.warn(`[NOTIFICATIONS] Notification was rejected by Firestore and has no trusted project fallback: ${id}`, err);
         }
     }
 
@@ -1399,6 +1458,42 @@ class StoreService {
         await updateDoc(doc(db, 'projects', project.id), safeProject);
     }
 
+    async reviseProjectDetails(payload: ProjectRevisionPayload) {
+        if (this.isDemoMode) {
+            const project = this.getProject(payload.projectId);
+            if (!project) throw new Error('Project was not found.');
+            if (project.status === ProjectStatus.CLOSED || project.date_picked_up) throw new Error('Picked Up projects are permanently read-only.');
+            if (!payload.reason.trim()) throw new Error('A reason is required.');
+            if (payload.kind === 'INSTRUCTIONS') {
+                if ((project.instructionRevisionVersion || 0) !== payload.expectedVersion || (project.workDetails || '') !== payload.expectedInstructions) {
+                    throw new Error('Instructions changed after this screen loaded. Refresh and try again.');
+                }
+                project.workDetails = payload.instructions;
+                project.instructionRevisionVersion = payload.expectedVersion + 1;
+            } else {
+                if ((project.metalRevisionVersion || 0) !== payload.expectedVersion
+                    || (project.goldType || project.goldComponents?.[0]?.type || '') !== payload.expectedMetal
+                    || (project.goldPurity || project.goldComponents?.[0]?.purity || '') !== payload.expectedPurity) {
+                    throw new Error('Metal information changed after this screen loaded. Refresh and try again.');
+                }
+                project.goldType = payload.metal as Project['goldType'];
+                project.goldPurity = payload.purity;
+                project.goldComponents = project.goldComponents?.length
+                    ? project.goldComponents.map((component, index) => index === 0 ? { ...component, type: payload.metal, purity: payload.purity } : component)
+                    : [{ id: 'legacy-component', label: 'Main Piece', type: payload.metal, purity: payload.purity }];
+                project.metalRevisionVersion = payload.expectedVersion + 1;
+            }
+            this.notify();
+            return { projectId: payload.projectId, revisionId: payload.operationId, kind: payload.kind, version: payload.expectedVersion + 1 };
+        }
+        return reviseProjectDetails(payload);
+    }
+
+    async getProjectRevisions(projectId: string): Promise<ProjectRevision[]> {
+        if (this.isDemoMode) return [];
+        return fetchProjectRevisions(projectId);
+    }
+
     async assignUser(projectId: string, userId: string) {
         const p = this.getProject(projectId);
         if (!p) return;
@@ -1431,62 +1526,14 @@ class StoreService {
         await updateDoc(doc(db, 'projects', projectId), updatePayload);
     }
     async handoffProject(projectId: string, fromUserId: string, toUserId: string, note: string, weight: number) {
-        await this.addProgress({
-            id: Math.random().toString(),
+        if (this.isDemoMode) return;
+        await handoffProjectTrusted({
+            operationId: crypto.randomUUID(),
             projectId,
-            createdById: fromUserId,
-            createdAt: now(),
-            stageName: 'Handoff',
-            percentComplete: 0,
+            targetUserId: toUserId,
+            note,
             weightG: weight,
-            handoffToUserId: toUserId,
-            note: note
         });
-        const p = this.getProject(projectId);
-        if (!p) return;
-
-        let assignments = [...(p.assignments || [])];
-
-        // Unassign fromUserId
-        assignments = assignments.map(a => a.userId === fromUserId ? { ...a, active: false } : a);
-
-        // Assign toUserId
-        const toUserExists = assignments.some(a => a.userId === toUserId);
-        if (toUserExists) {
-            assignments = assignments.map(a => a.userId === toUserId ? { ...a, active: true } : a);
-        } else {
-            assignments.push({ userId: toUserId, assignedAt: now(), active: true });
-        }
-
-        const safeAssignments = deepCopySafe(assignments);
-
-        // Sync legacy assignedSetterId for handoff target
-        const activeIds = assignments.filter(a => a.active).map(a => a.userId);
-        const updatePayload: any = { assignments: safeAssignments, activeAssignees: activeIds };
-        const toUser = this.getUser(toUserId);
-        if (toUser && (toUser.role === Role.SETTER || toUser.role === Role.JEWELLER)) {
-            updatePayload.assignedSetterId = toUserId;
-        }
-
-        await updateDoc(doc(db, 'projects', projectId), updatePayload);
-
-        // Validate handoff integrity
-        const updatedActiveIds = assignments.filter(a => a.active).map(a => a.userId);
-        if (!updatedActiveIds.includes(toUserId)) {
-            console.error('[ASSIGNMENT INTEGRITY] Handoff failed: toUser not active after handoff', { projectId, toUserId });
-        }
-        if (updatedActiveIds.includes(fromUserId)) {
-            console.warn('[ASSIGNMENT INTEGRITY] Handoff warning: fromUser still active after handoff', { projectId, fromUserId });
-        }
-
-        // Notify the recipient
-        this.sendNotification(
-            toUserId,
-            'Project Handoff',
-            `${this.getUser(fromUserId)?.name} handed off ${p.code} to you.`,
-            'HANDOFF',
-            `/project/${projectId}`
-        );
     }
 
     // --- Assignment Integrity Check (run on login) ---
@@ -1802,6 +1849,9 @@ class StoreService {
     async revertToActive(projectId: string, userId: string) {
         const p = this.getProject(projectId);
         if (!p) return;
+        if (p.status === ProjectStatus.CLOSED || p.date_picked_up) {
+            throw new Error('Picked Up projects are permanently read-only and cannot be reopened.');
+        }
 
         const logEntry = {
             id: Math.random().toString(),
@@ -2019,7 +2069,39 @@ class StoreService {
         return this.requests;
     }
 
-    async createRequest(req: Partial<IssueRequest>) {
+    getFulfillmentPreview(requestId: string): Promise<FulfillmentPreview> {
+        if (this.isDemoMode) {
+            return Promise.resolve({
+                requestId,
+                specs: this.specs.filter(spec => !spec.location || spec.location === 'Melee').map(spec => ({
+                    id: spec.id,
+                    label: spec.label,
+                    shape: spec.shape || '',
+                    sizeMm: spec.sizeMm,
+                    ctPerStone: spec.ctPerStone,
+                    location: 'TORONTO_MELEE' as const,
+                    availablePcs: spec.pcs || 0,
+                    maximumIssuePcs: spec.pcs || 0,
+                    recommendedIssuePcs: 0,
+                    availabilityState: (spec.pcs || 0) > 0 ? 'AVAILABLE' as const : 'OUT_OF_STOCK' as const,
+                })),
+            });
+        }
+        return inventoryApi.getFulfillmentPreview(requestId);
+    }
+
+    async cancelInventoryRequest(requestId: string) {
+        if (this.isDemoMode) {
+            const request = this.requests.find(item => item.id === requestId);
+            if (request?.status === 'OPEN') request.status = 'CANCELLED';
+            this.notify();
+            return;
+        }
+        await inventoryApi.cancelRequest({ operationId: newOperationId(), requestId });
+        await this.refreshPrivateInventoryContext();
+    }
+
+    async createRequest(req: Partial<IssueRequest>, operationId: string = newOperationId()) {
         if (req.lines) {
             for (const line of req.lines) {
                 const spec = this.specs.find(s => s.id === line.specId);
@@ -2028,426 +2110,70 @@ class StoreService {
                 }
             }
         }
-        const id = 'req-' + Math.random().toString(36).substr(2, 9);
-        const safeReq = deepCopySafe({
-            id,
-            createdAt: now(),
-            status: 'OPEN',
-            requestedAt: now(),
-            ...req
-        });
         if (this.isDemoMode) {
+            const id = 'req-' + Math.random().toString(36).substr(2, 9);
+            const safeReq = deepCopySafe({ id, createdAt: now(), status: 'OPEN', requestedAt: now(), ...req });
             this.requests.push(safeReq as any);
             this.notify();
             return;
         }
-        await setDoc(doc(db, 'requests', id), safeReq);
-
-        // Notify Managers
-        const projectCode = this.getProject(req.projectId || '')?.code || 'Unknown';
-        const requestor = this.getUser(req.requestedById || '')?.name || 'User';
-        const managers = this.getUsers().filter(u => u.role === Role.MANAGER);
-
-        for (const m of managers) {
-            this.sendNotification(m.id, 'New Request', `${requestor} requested diamonds for ${projectCode}`, 'REQUEST', '/');
-        }
+        if (!this.currentUser) throw new Error('Sign in is required.');
+        await inventoryApi.createRequest({
+            operationId,
+            projectId: req.projectId || '',
+            jobNumberSnapshot: req.jobNumberSnapshot,
+            lines: req.lines || [],
+        });
+        await this.refreshPrivateInventoryContext();
     }
 
     async issueBag(
         projectId: string,
         bagNumber: string,
-        items: BagItem[],
+        items: (BagItem & { sourceLineIndex?: number; explanation?: string })[],
         issuedById: string,
         requestedById: string,
         requestId?: string,
         photo?: string,
         imageSource?: 'Camera' | 'Device Gallery',
         jobNumberSnapshot?: string,
-        explanations?: Record<string, string>
+        explanations?: Record<string, string>,
+        operationId: string = newOperationId()
     ) {
-        // 1. Normalization of bagNumber for uniqueness checks
         const normalizedBagNumber = bagNumber.trim().replace(/\s+/g, ' ');
-        const cleanBagNumLower = normalizedBagNumber.toLowerCase();
-
-        // Merge duplicate specIds into a single clean list of items with issuedPcs
-        const mergedItemsMap = new Map<string, number>();
-        for (const item of items) {
-            if (item.issuedPcs <= 0) {
-                throw new Error(`Issued pieces must be greater than zero.`);
+        if (!requestId) throw new Error('A request is required for Phase 1 bag issue.');
+        if (this.isDemoMode) {
+            const request = this.requests.find(r => r.id === requestId);
+            if (!request || request.status !== 'OPEN') throw new Error('Request is already closed.');
+            const positive = items.filter(item => item.issuedPcs > 0);
+            const full = items.every((item, index) => item.issuedPcs === request.lines[index]?.requestedPcs && item.specId === request.lines[index]?.specId);
+            request.status = full ? 'FULFILLED' : 'PARTIALLY_FULFILLED_CLOSED';
+            if (positive.length > 0) {
+                this.bags.push({ id: `bag-${operationId}`, bagNumber: normalizedBagNumber, projectId, issuedById, issuedToId: requestedById, issuedAt: now(), status: BagStatus.ISSUED, items: positive });
             }
-            mergedItemsMap.set(item.specId, (mergedItemsMap.get(item.specId) || 0) + item.issuedPcs);
+            this.notify();
+            return;
         }
-        const mergedItems: BagItem[] = Array.from(mergedItemsMap.entries()).map(([specId, issuedPcs]) => ({ specId, issuedPcs }));
-
-        // Stage photo upload before transaction starts
-        const id = 'bag-' + Math.random().toString(36).substr(2, 9);
-        const evidenceId = 'ev-' + Math.random().toString(36).substr(2, 9);
-        let uploadedPhotoUrl = '';
-        let uploadedThumbUrl = '';
-
-        if (photo && photo.startsWith('data:')) {
-            const path = `evidence/projects/${projectId}/issues/${normalizedBagNumber}_issued_v1.jpg`;
-            const thumbPath = `evidence/projects/${projectId}/issues/${normalizedBagNumber}_issued_v1_thumb.jpg`;
-            try {
-                uploadedPhotoUrl = await this.uploadImage(path, photo);
-                const thumbBase64 = await generateThumbnail(photo);
-                uploadedThumbUrl = await this.uploadImage(thumbPath, thumbBase64);
-            } catch (uploadError) {
-                console.error("Image upload failed:", uploadError);
-                throw new Error("Failed to upload evidence image. Transaction aborted.");
-            }
-        } else if (photo) {
-            uploadedPhotoUrl = photo;
-            uploadedThumbUrl = photo;
+        if (!this.currentUser || this.currentUser.role !== Role.MANAGER) throw new Error('Only Managers can confirm an issue.');
+        const positiveItems = items.filter(item => item.issuedPcs > 0);
+        let evidencePath: string | undefined;
+        if (positiveItems.length > 0) {
+            if (!photo?.startsWith('data:')) throw new Error('A new evidence image is required.');
+            evidencePath = await uploadInventoryEvidence({ dataUrl: photo, kind: 'issues', uploaderUid: this.currentUser.id, operationId, projectId });
         }
-
-        try {
-            if (this.isDemoMode) {
-                // Local Memory Checks (Demo mode)
-                const existingBag = this.bags.find(
-                    b => b.projectId === projectId && b.bagNumber.trim().toLowerCase() === cleanBagNumLower
-                );
-                if (existingBag) {
-                    throw new Error(`Bag #${normalizedBagNumber} already exists for this project.`);
-                }
-
-                let isPartial = false;
-                let fulfillmentDetails: any = null;
-                let targetStatus: 'FULFILLED' | 'PARTIALLY_FULFILLED_CLOSED' = 'FULFILLED';
-
-                if (requestId) {
-                    const reqDoc = this.requests.find(r => r.id === requestId);
-                    if (!reqDoc) {
-                        throw new Error(`Request document not found.`);
-                    }
-                    if (['FULFILLED', 'PARTIALLY_FULFILLED_CLOSED', 'CANCELLED'].includes(reqDoc.status)) {
-                        throw new Error(`Request has already been processed or cancelled.`);
-                    }
-                    // Idempotency: verify no existing bag already references this requestId
-                    const duplicateBag = this.bags.find(b => b.evidenceId === `ev-req-${requestId}` || (b.jobNumberSnapshot === `req-${requestId}`));
-                    if (duplicateBag) {
-                        throw new Error(`Fulfillment already exists for request ${requestId}.`);
-                    }
-
-                    const fulfillmentLines = reqDoc.lines.map(rl => {
-                        const issued = mergedItems.find(i => i.specId === rl.specId)?.issuedPcs ?? 0;
-                        if (issued < rl.requestedPcs) {
-                            isPartial = true;
-                        }
-                        return {
-                            specId: rl.specId,
-                            requestedPcs: rl.requestedPcs,
-                            issuedPcs: issued,
-                            explanation: explanations?.[rl.specId] || ''
-                        };
-                    });
-                    fulfillmentDetails = {
-                        fulfilledAt: now(),
-                        fulfilledById: issuedById,
-                        lines: fulfillmentLines
-                    };
-                    targetStatus = isPartial ? 'PARTIALLY_FULFILLED_CLOSED' : 'FULFILLED';
-                }
-
-                // Validate stock balances for each specification in local memory
-                for (const item of mergedItems) {
-                    const spec = this.specs.find(s => s.id === item.specId);
-                    if (!spec) {
-                        throw new Error(`Specification ${item.specId} not found.`);
-                    }
-                    const availablePcs = spec.pcs ?? 0;
-                    if (item.issuedPcs > availablePcs) {
-                        throw new Error(`Insufficient stock for "${spec.label}". Requested: ${item.issuedPcs}, Available: ${availablePcs}.`);
-                    }
-                    // Validate carats for weight-authoritative or Melee specs
-                    const isMelee = !spec.location || spec.location === 'Melee';
-                    if (isMelee) {
-                        const ctPerStone = spec.ctPerStone || 0;
-                        const issuedCt = item.issuedPcs * ctPerStone;
-                        const availableCt = spec.ct ?? 0;
-                        if (issuedCt > availableCt) {
-                            throw new Error(`Insufficient carat weight for "${spec.label}". Required: ${issuedCt.toFixed(3)} ct, Available: ${availableCt.toFixed(3)} ct.`);
-                        }
-                    }
-                }
-
-                const uploaderName = this.getUser(issuedById)?.name || this.currentUser?.name || 'Manager';
-                const evidenceDoc: EvidenceImage = {
-                    id: evidenceId,
-                    projectId,
-                    transactionId: id,
-                    transactionType: 'ISSUE',
-                    bagId: id,
-                    bagNumber: normalizedBagNumber,
-                    uploaderId: issuedById,
-                    uploaderName,
-                    uploadedAt: now(),
-                    imageSource: imageSource || 'Camera',
-                    photoUrl: uploadedPhotoUrl,
-                    thumbnailUrl: uploadedThumbUrl,
-                    version: 1,
-                    transactionStatus: BagStatus.ISSUED,
-                    replacementHistory: []
-                };
-
-                const bag: DiamondBag = {
-                    id,
-                    bagNumber: normalizedBagNumber,
-                    projectId,
-                    issuedById,
-                    issuedToId: requestedById,
-                    issuedAt: now(),
-                    status: BagStatus.ISSUED,
-                    items: mergedItems,
-                    issuedPhoto: uploadedPhotoUrl,
-                    evidenceId: photo ? evidenceId : undefined,
-                    jobNumberSnapshot: requestId ? `req-${requestId}` : jobNumberSnapshot
-                };
-
-                this.bags.push(bag);
-                if (photo) {
-                    this.evidenceImages.push(evidenceDoc);
-                }
-                if (requestId) {
-                    const req = this.requests.find(r => r.id === requestId);
-                    if (req) {
-                        req.status = targetStatus;
-                        req.fulfillmentDetails = fulfillmentDetails;
-                    }
-                }
-
-                const movementItems = mergedItems.map(i => {
-                    const spec = this.specs.find(s => s.id === i.specId);
-                    return {
-                        specId: i.specId,
-                        pcs: i.issuedPcs,
-                        ct: i.issuedPcs * (spec?.ctPerStone || 0)
-                    };
-                });
-
-                await this.createInventoryMovement({
-                    type: InventoryMovementType.ISSUE,
-                    createdById: issuedById,
-                    referenceProjectId: projectId,
-                    referenceBagNumber: normalizedBagNumber,
-                    lines: movementItems,
-                    location: this.getUser(issuedById)?.location || this.currentUser?.location || 'Toronto'
-                });
-                this.notify();
-            } else {
-                // Production Mode: Firestore read/write Transaction
-                await runTransaction(db, async (transaction) => {
-                    // A. Bag uniqueness verification using a deterministic path
-                    // We use a deterministic path to represent bag uniqueness constraints: bags/{projectId}_{normalizedBagNumber}
-                    const uniqueBagRef = doc(db, 'bags', `${projectId}_${cleanBagNumLower.replace(/\//g, '_')}`);
-                    const uniqueBagSnap = await transaction.get(uniqueBagRef);
-                    if (uniqueBagSnap.exists()) {
-                        throw new Error(`Bag #${normalizedBagNumber} already exists for this project.`);
-                    }
-
-                    // Alternatively, search existing bags using query (outside tx or within checks)
-                    // For safety, we set a uniqueness lease document within the transaction
-                    const uniquenessLeaseRef = doc(db, 'uniqueness_locks', `bag_${projectId}_${cleanBagNumLower.replace(/\//g, '_')}`);
-                    const leaseSnap = await transaction.get(uniquenessLeaseRef);
-                    if (leaseSnap.exists()) {
-                        throw new Error(`Bag #${normalizedBagNumber} already exists for this project.`);
-                    }
-
-                    // B. Request status & Idempotency validation
-                    let isPartial = false;
-                    let fulfillmentDetails: any = null;
-                    let targetStatus: 'FULFILLED' | 'PARTIALLY_FULFILLED_CLOSED' = 'FULFILLED';
-
-                    if (requestId) {
-                        const requestRef = doc(db, 'requests', requestId);
-                        const requestSnap = await transaction.get(requestRef);
-                        if (!requestSnap.exists()) {
-                            throw new Error(`Request document not found.`);
-                        }
-                        const requestData = requestSnap.data() as IssueRequest;
-                        if (['FULFILLED', 'PARTIALLY_FULFILLED_CLOSED', 'CANCELLED'].includes(requestData.status)) {
-                            throw new Error(`Request has already been processed or cancelled.`);
-                        }
-
-                        // Check idempotency lock
-                        const idempotencyLockRef = doc(db, 'uniqueness_locks', `req_${requestId}`);
-                        const idSnap = await transaction.get(idempotencyLockRef);
-                        if (idSnap.exists()) {
-                            throw new Error(`Fulfillment already exists for request ${requestId}.`);
-                        }
-
-                        const fulfillmentLines = requestData.lines.map(rl => {
-                            const issued = mergedItems.find(i => i.specId === rl.specId)?.issuedPcs ?? 0;
-                            if (issued < rl.requestedPcs) {
-                                isPartial = true;
-                            }
-                            return {
-                                specId: rl.specId,
-                                requestedPcs: rl.requestedPcs,
-                                issuedPcs: issued,
-                                explanation: explanations?.[rl.specId] || ''
-                            };
-                        });
-                        fulfillmentDetails = {
-                            fulfilledAt: now(),
-                            fulfilledById: issuedById,
-                            lines: fulfillmentLines
-                        };
-                        targetStatus = isPartial ? 'PARTIALLY_FULFILLED_CLOSED' : 'FULFILLED';
-                    }
-
-                    // C. Fresh database stock validations
-                    const specsMap = new Map<string, DiamondSpec>();
-                    for (const item of mergedItems) {
-                        const specRef = doc(db, 'specs', item.specId);
-                        const specSnap = await transaction.get(specRef);
-                        if (!specSnap.exists()) {
-                            throw new Error(`Specification ${item.specId} not found.`);
-                        }
-                        const specData = specSnap.data() as DiamondSpec;
-                        specsMap.set(item.specId, specData);
-
-                        const availablePcs = specData.pcs ?? 0;
-                        if (item.issuedPcs > availablePcs) {
-                            throw new Error(`Insufficient stock for "${specData.label}". Requested: ${item.issuedPcs}, Available: ${availablePcs}.`);
-                        }
-
-                        // Validate carats for Melee specs
-                        const isMelee = !specData.location || specData.location === 'Melee';
-                        if (isMelee) {
-                            const ctPerStone = specData.ctPerStone || 0;
-                            const issuedCt = item.issuedPcs * ctPerStone;
-                            const availableCt = specData.ct ?? 0;
-                            if (issuedCt > availableCt) {
-                                throw new Error(`Insufficient carat weight for "${specData.label}". Required: ${issuedCt.toFixed(3)} ct, Available: ${availableCt.toFixed(3)} ct.`);
-                            }
-                        }
-                    }
-
-                    // D. Calculate new balances and construct documents
-                    const uploaderName = this.getUser(issuedById)?.name || this.currentUser?.name || 'Manager';
-                    const evidenceDoc: EvidenceImage = {
-                        id: evidenceId,
-                        projectId,
-                        transactionId: id,
-                        transactionType: 'ISSUE',
-                        bagId: id,
-                        bagNumber: normalizedBagNumber,
-                        uploaderId: issuedById,
-                        uploaderName,
-                        uploadedAt: now(),
-                        imageSource: imageSource || 'Camera',
-                        photoUrl: uploadedPhotoUrl,
-                        thumbnailUrl: uploadedThumbUrl,
-                        version: 1,
-                        transactionStatus: BagStatus.ISSUED,
-                        replacementHistory: []
-                    };
-
-                    const bag: DiamondBag = {
-                        id,
-                        bagNumber: normalizedBagNumber,
-                        projectId,
-                        issuedById,
-                        issuedToId: requestedById,
-                        issuedAt: now(),
-                        status: BagStatus.ISSUED,
-                        items: mergedItems,
-                        issuedPhoto: uploadedPhotoUrl,
-                        evidenceId: photo ? evidenceId : undefined,
-                        jobNumberSnapshot: requestId ? `req-${requestId}` : jobNumberSnapshot
-                    };
-
-                    // E. Set Uniqueness and Idempotency Locks
-                    transaction.set(uniquenessLeaseRef, { createdAt: now(), bagId: id });
-                    if (requestId) {
-                        transaction.set(doc(db, 'uniqueness_locks', `req_${requestId}`), { createdAt: now(), bagId: id });
-                    }
-
-                    // F. Write Documents
-                    transaction.set(doc(db, 'bags', id), deepCopySafe(bag));
-                    if (photo) {
-                        transaction.set(doc(db, 'evidence', evidenceId), deepCopySafe(evidenceDoc));
-                    }
-
-                    if (requestId) {
-                        transaction.update(doc(db, 'requests', requestId), deepCopySafe({
-                            status: targetStatus,
-                            fulfillmentDetails
-                        }));
-                    }
-
-                    const movementItems = mergedItems.map(i => {
-                        const spec = specsMap.get(i.specId);
-                        return {
-                            specId: i.specId,
-                            pcs: i.issuedPcs,
-                            ct: i.issuedPcs * (spec?.ctPerStone || 0)
-                        };
-                    });
-
-                    await this.createInventoryMovement({
-                        type: InventoryMovementType.ISSUE,
-                        createdById: issuedById,
-                        referenceProjectId: projectId,
-                        referenceBagNumber: normalizedBagNumber,
-                        lines: movementItems,
-                        location: this.getUser(issuedById)?.location || this.currentUser?.location || 'Toronto'
-                    }, transaction);
-
-                    // G. Apply verified stock balance writes directly (no direct reliance on blind atomic increment alone)
-                    for (const item of mergedItems) {
-                        const spec = specsMap.get(item.specId);
-                        if (spec) {
-                            const specRef = doc(db, 'specs', item.specId);
-                            const isMelee = !spec.location || spec.location === 'Melee';
-                            if (isMelee) {
-                                const ctPerStone = spec.ctPerStone || 0;
-                                const issuedCt = item.issuedPcs * ctPerStone;
-                                transaction.update(specRef, {
-                                    pcs: (spec.pcs ?? 0) - item.issuedPcs,
-                                    ct: roundCt((spec.ct ?? 0) - issuedCt)
-                                });
-                            } else {
-                                transaction.update(specRef, {
-                                    pcs: (spec.pcs ?? 0) - item.issuedPcs
-                                });
-                            }
-                        }
-                    }
-                });
-
-                // Run negative stock check now that transaction has committed
-                await this.runLedgerAuditAndNotify();
-            }
-
-            // Notify Recipient
-            this.sendNotification(
-                requestedById,
-                'Bag Issued',
-                `Bag #${normalizedBagNumber} issued to you for project ${this.getProject(projectId)?.code}`,
-                'ASSIGNMENT',
-                `/project/${projectId}`
-            );
-
-        } catch (dbError) {
-            console.error("Database operation failed. Performing compensating deletion of uploaded files.", dbError);
-            if (uploadedPhotoUrl && uploadedPhotoUrl.startsWith('http')) {
-                try {
-                    await this.deleteUploadedImage(uploadedPhotoUrl);
-                } catch (cleanError) {
-                    console.error("CRITICAL: Failed to clean up staged main image:", uploadedPhotoUrl, cleanError);
-                }
-            }
-            if (uploadedThumbUrl && uploadedThumbUrl.startsWith('http')) {
-                try {
-                    await this.deleteUploadedImage(uploadedThumbUrl);
-                } catch (cleanError) {
-                    console.error("CRITICAL: Failed to clean up staged thumbnail image:", uploadedThumbUrl, cleanError);
-                }
-            }
-            throw dbError;
-        }
+        await inventoryApi.confirmIssue({
+            operationId,
+            requestId,
+            bagNumber: normalizedBagNumber,
+            issuedLines: items.map((item, index) => ({
+                sourceLineIndex: item.sourceLineIndex ?? index,
+                specId: item.specId,
+                issuedPcs: item.issuedPcs,
+                explanation: item.explanation || explanations?.[item.specId] || '',
+            })),
+            evidencePath,
+            imageSource,
+        });
     } // end issueBag
 
     async submitBagReturn(
@@ -2458,9 +2184,34 @@ class StoreService {
         returnedLines?: RequestLine[],
         jobNumberSnapshot?: string,
         returnedNotes?: string,
-        imageSource?: 'Camera' | 'Device Gallery'
+        imageSource?: 'Camera' | 'Device Gallery',
+        operationId: string = newOperationId()
     ) {
         const bag = this.bags.find(b => b.bagNumber === bagNumber && b.projectId === projectId);
+
+        if (!this.isDemoMode) {
+            if (!this.currentUser || this.currentUser.id !== userId) throw new Error('Return identity does not match the signed-in user.');
+            if (!bag) throw new Error('The selected issued bag was not found.');
+            if (!photo?.startsWith('data:')) throw new Error('A new return evidence image is required.');
+            const evidencePath = await uploadInventoryEvidence({
+                dataUrl: photo,
+                kind: 'returns',
+                uploaderUid: this.currentUser.id,
+                operationId,
+                projectId,
+            });
+            await inventoryApi.submitReturn({
+                operationId,
+                bagId: bag.id,
+                projectId,
+                evidencePath,
+                notes: returnedNotes,
+                imageSource,
+                returnLines: (returnedLines || []).map(line => ({ specId: line.specId, returnedPcs: line.requestedPcs })),
+            });
+            await this.refreshPrivateInventoryContext();
+            return;
+        }
 
         const txId = 'ret-' + Math.random().toString(36).substring(2, 9);
         const evidenceId = 'ev-' + Math.random().toString(36).substr(2, 9);
@@ -2625,11 +2376,32 @@ class StoreService {
         brokenCounts?: { specId: string, pcs: number }[],
         weighedCarats?: { specId: string, ct: number }[],
         returnTransactionId?: string,
-        correctionReason?: string
+        correctionReason?: string,
+        breakageReason?: string,
+        operationId: string = newOperationId()
     ) {
         const bag = this.bags.find(b => b.bagNumber === bagNumber);
         if (!bag) {
             throw new Error(`Bag #${bagNumber} not found.`);
+        }
+
+        if (!this.isDemoMode) {
+            if (!this.currentUser || this.currentUser.role !== Role.MANAGER || this.currentUser.id !== userId) {
+                throw new Error('Only the signed-in Manager can confirm a return.');
+            }
+            if (!returnTransactionId) throw new Error('A pending return transaction is required.');
+            if (mixedReturn) throw new Error('Mixed or unsorted returns cannot be confirmed in Phase 1. Correct the return to issued specifications first.');
+            if (correctedItems || correctionReason) throw new Error('A physical return mismatch must be corrected before confirmation; Manager overrides are not permitted.');
+            if (weighedCarats && weighedCarats.length > 0) throw new Error('Return weight variance cannot override the submitted piece counts in Phase 1.');
+            await inventoryApi.confirmReturn({
+                operationId,
+                bagId: bag.id,
+                returnId: returnTransactionId,
+                returnLines: counts.map(line => ({ specId: line.specId, returnedPcs: line.pcs })),
+                breakageLines: (brokenCounts || []).filter(line => line.pcs > 0).map(line => ({ specId: line.specId, pieces: line.pcs })),
+                breakageReason,
+            });
+            return;
         }
 
         // Check if photo evidence exists for this return transaction
@@ -3110,6 +2882,16 @@ class StoreService {
     }
 
     async createInventoryMovement(mov: Partial<InventoryMovement> & { weightAuthoritative?: boolean }, tx?: any) {
+        if (!this.isDemoMode) {
+            if (tx) throw new Error('Client-side inventory transactions are disabled. Use a protected Phase 1 backend operation.');
+            if (!this.currentUser || this.currentUser.role !== Role.MANAGER) throw new Error('Only Managers can record inventory movements.');
+            await inventoryApi.recordMovement({
+                ...mov,
+                operationId: mov.operationId || newOperationId(),
+                createdById: this.currentUser.id,
+            });
+            return;
+        }
         const id = mov.id || 'mov-' + Math.random().toString(36).substr(2, 9);
         const weightAuthoritative = !!mov.weightAuthoritative;
 
@@ -3461,6 +3243,9 @@ class StoreService {
     }
 
     async logDiamondTransaction(tx: Omit<DiamondLedgerTransaction, 'id' | 'createdAt' | 'status'>) {
+        if (!this.isDemoMode) {
+            throw new Error('Direct ledger writes are disabled. Use a protected inventory operation.');
+        }
         const id = 'tx-' + Math.random().toString(36).substr(2, 9);
         const newTx: DiamondLedgerTransaction = {
             id,
@@ -3478,6 +3263,9 @@ class StoreService {
     }
 
     async editLedgerTransaction(txId: string, updatedFields: Partial<Omit<DiamondLedgerTransaction, 'id' | 'createdAt' | 'status'>>, userId: string) {
+        if (!this.isDemoMode) {
+            throw new Error('Historical ledger records are immutable. Apply a reversing and replacement correction instead.');
+        }
         const tx = this.diamondTransactions.find(t => t.id === txId);
         if (!tx) {
             const allTxs = this.getLedgerTransactions();
@@ -3539,6 +3327,9 @@ class StoreService {
     }
 
     async deleteLedgerTransaction(txId: string, userId: string) {
+        if (!this.isDemoMode) {
+            throw new Error('Historical ledger records cannot be deleted. Apply a reversing and replacement correction instead.');
+        }
         const tx = this.diamondTransactions.find(t => t.id === txId);
         if (!tx) {
             const allTxs = this.getLedgerTransactions();
@@ -3691,6 +3482,19 @@ class StoreService {
             );
             return;
         }
+
+        await inventoryApi.applyCorrection({
+            operationId: newOperationId(),
+            specId: input.specId,
+            reason: input.reason.trim(),
+            mode: input.mode,
+            previousPcs: input.previousPcs,
+            previousCt: input.previousCt,
+            targetPcs,
+            targetCt,
+            reconciliation: input.reconciliation,
+        });
+        return;
 
         // Production / Firestore Mode: Run inside a true transaction to prevent concurrent correction drift
         const lockId = `corr_${input.specId}_${input.location}_${input.previousPcs}_${input.previousCt}_${input.newPcs}_${input.newCt}`.replace(/\s+/g, '_');
@@ -3933,6 +3737,15 @@ class StoreService {
             return this.getInventoryAudit(locations);
         }
 
+        // Phase 2 replaces this legacy browser-side reader. The protected
+        // callable paginates the specification page and reads source history on
+        // the backend, so inventory history never has to be loaded into a tab.
+        const audit = await inventoryApi.runReconciliationAudit({ location: 'TORONTO_MELEE', dryRun: true });
+        return audit as unknown as ReconcileResult;
+
+        /* Retired Phase 1 client-side implementation. Kept below temporarily
+         * only as a historical reference while the Phase 2 service rolls out;
+         * it is unreachable in every runtime path. */
         const movsSnap = await getDocs(collection(db, 'movements'));
         const specsSnap = await getDocs(collection(db, 'specs'));
 
@@ -4043,7 +3856,13 @@ class StoreService {
         return [...this.specs].sort((a, b) => a.sizeMm - b.sizeMm);
     }
     async addSpec(spec: DiamondSpec) {
-        const safeSpec = deepCopySafe(spec);
+        const safeSpec = deepCopySafe({
+            ...spec,
+            location: spec.location || 'Melee',
+            pcs: spec.pcs ?? 0,
+            ct: spec.ct ?? 0,
+            stockVersion: spec.stockVersion ?? 0,
+        });
         await setDoc(doc(db, 'specs', spec.id), safeSpec);
     }
     async updateSpecs(specs: DiamondSpec[]) {
@@ -4113,6 +3932,9 @@ class StoreService {
     }
 
     async clearSpecs(keepIds: string[] = []) {
+        if (!this.isDemoMode) {
+            throw new Error('Bulk specification deletion is disabled while Phase 1 inventory integrity controls are active.');
+        }
         const batch = writeBatch(db);
         for (const s of this.specs) {
             if (!keepIds.includes(s.id)) {
@@ -4126,11 +3948,10 @@ class StoreService {
         const spec = this.specs.find(s => s.id === id);
         const label = spec ? spec.label : 'Unknown Spec';
 
-        if (this.isDemoMode) {
-            this.specs = this.specs.filter(s => s.id !== id);
-        } else {
-            await deleteDoc(doc(db, 'specs', id)).catch(console.error);
+        if (!this.isDemoMode) {
+            throw new Error('Specification deletion is disabled because historical inventory records reference this specification.');
         }
+        this.specs = this.specs.filter(s => s.id !== id);
 
         // Keeping movements collection completely immutable. Deleting/modifying historical movements is blocked.
 
@@ -4902,7 +4723,11 @@ class StoreService {
                         shape: 'RD',
                         ctPerStone: ctPerStone,
                         defaultCostPerCtUsd: band.pricePerCtUsd,
-                        isOverride: false
+                        isOverride: false,
+                        location: 'Melee',
+                        pcs: 0,
+                        ct: 0,
+                        stockVersion: 0,
                     };
                     const safeSpec = deepCopySafe(newSpec);
                     await setDoc(doc(db, 'specs', newSpec.id), safeSpec);
@@ -4913,6 +4738,9 @@ class StoreService {
         return { created, updated };
     }
     async correctEvidence(evidenceId: string, newPhotoBase64: string, imageSource: 'Camera' | 'Device Gallery', reason: string, managerId: string) {
+        if (!this.isDemoMode) {
+            throw new Error('Submitted inventory evidence is immutable and cannot be replaced.');
+        }
         let ev: EvidenceImage | undefined;
         if (this.isDemoMode) {
             ev = this.evidenceImages.find(e => e.id === evidenceId);

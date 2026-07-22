@@ -1,183 +1,267 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ----------------------------------------------------------------
-    // Helper functions
-    // ----------------------------------------------------------------
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function getUserData() {
+    function profile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isManager() {
-      return isSignedIn() && getUserData().role == 'Manager';
+    function activeRole(role) {
+      return signedIn() && profile().active != false && profile().role == role;
     }
 
-    function isDesigner() {
-      return isSignedIn() && getUserData().role == 'Designer';
+    function manager() {
+      return activeRole('Manager');
     }
 
-    function isManagerOrDesigner() {
-      return isManager() || isDesigner();
+    function designer() {
+      return activeRole('Designer');
     }
 
-    // ----------------------------------------------------------------
-    // users collection
-    // ----------------------------------------------------------------
+    function managerOrDesigner() {
+      return manager() || designer();
+    }
+
+    function assignedProjectMember() {
+      return signedIn() && profile().active != false
+        && ((resource.data.activeAssignees is list
+              && (request.auth.uid in resource.data.activeAssignees
+                || resource.data.activeAssignees.hasAny(profile().legacyProfileIds)))
+          || (('assignedSetterId' in resource.data)
+              && (request.auth.uid == resource.data.assignedSetterId
+                || resource.data.assignedSetterId in profile().legacyProfileIds))
+          || (('assignedJewellerId' in resource.data)
+              && (request.auth.uid == resource.data.assignedJewellerId
+                || resource.data.assignedJewellerId in profile().legacyProfileIds))
+          || (('assignedDesignerId' in resource.data)
+              && (request.auth.uid == resource.data.assignedDesignerId
+                || resource.data.assignedDesignerId in profile().legacyProfileIds))
+          || (('createdById' in resource.data)
+              && (request.auth.uid == resource.data.createdById
+                || resource.data.createdById in profile().legacyProfileIds)));
+    }
+
+    function assignedDesigner() {
+      return designer() && assignedProjectMember();
+    }
+
+    function assignedProductionStaff() {
+      return assignedProjectMember()
+        && (profile().role == 'Setter' || profile().role == 'Jeweller');
+    }
+
+    function pickedUp() {
+      return (('status' in resource.data) && resource.data.status == 'Closed')
+        || (('date_picked_up' in resource.data) && resource.data.date_picked_up != null);
+    }
+
+    function primaryComponentMetalUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['goldComponents'])
+        || (resource.data.goldComponents is list
+          && request.resource.data.goldComponents is list
+          && resource.data.goldComponents.size() > 0
+          && request.resource.data.goldComponents.size() > 0
+          && request.resource.data.goldComponents[0].type == resource.data.goldComponents[0].type
+          && request.resource.data.goldComponents[0].purity == resource.data.goldComponents[0].purity)
+        || (!('goldComponents' in resource.data)
+          && request.resource.data.goldComponents is list
+          && request.resource.data.goldComponents.size() > 0
+          && request.resource.data.goldComponents[0].type == resource.data.goldType
+          && request.resource.data.goldComponents[0].purity == resource.data.goldPurity);
+    }
+
+    function directProjectUpdateIsSafe() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'workDetails', 'goldType', 'goldPurity', 'instructionRevisionVersion',
+          'metalRevisionVersion', 'projectRevisionUpdatedAt'
+        ])
+        && primaryComponentMetalUnchanged()
+        && !pickedUp();
+    }
+
+    function appendedOnly(oldList, newList) {
+      return oldList is list && newList is list
+        && newList.size() == oldList.size() + 1
+        && newList.toSet().hasAll(oldList.toSet());
+    }
+
+    function productionProjectUpdateIsSafe() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'progress', 'currentStageName', 'currentPercentComplete',
+          'services', 'designLogs', 'projectPhotos', 'projectPhotoIds',
+          'repair', 'status', 'date_completed', 'date_picked_up',
+          'last_status_change_at', 'last_status_change_by'
+        ])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['progress'])
+          || ((!('progress' in resource.data)
+                && request.resource.data.progress is list
+                && request.resource.data.progress.size() == 1)
+            || (('progress' in resource.data)
+                && appendedOnly(resource.data.progress, request.resource.data.progress))))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['designLogs'])
+          || ((!('designLogs' in resource.data)
+                && request.resource.data.designLogs is list
+                && request.resource.data.designLogs.size() == 1)
+            || (('designLogs' in resource.data)
+                && appendedOnly(resource.data.designLogs, request.resource.data.designLogs))))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['repair'])
+          || (resource.data.repair is map
+            && request.resource.data.repair is map
+            && request.resource.data.repair.diff(resource.data.repair).affectedKeys()
+              .hasOnly(['status', 'completedDate'])))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'status', 'date_completed', 'date_picked_up', 'last_status_change_at', 'last_status_change_by'
+          ])
+          || request.resource.data.diff(resource.data).affectedKeys().hasAny(['repair']));
+    }
+
+    // Canonical security profiles are keyed by Firebase Auth UID. Legacy user
+    // documents remain readable for compatibility, but are not authorization roots.
     match /users/{userId} {
-      allow read: if isSignedIn();
-      // Managers can register or edit any user.
-      // Users can only create their own profile with Setter role (or Manager if kilanimedia@gmail.com).
-      // Users can update their profile but are forbidden from modifying role or active status.
-      allow create: if isSignedIn() && request.auth.uid == userId
-         && (request.resource.data.role == 'Setter' || (request.resource.data.role == 'Manager' && request.auth.token.email == 'kilanimedia@gmail.com'));
-      allow update: if isManager() || (
-        request.auth.uid == userId &&
-        !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'active']))
-      );
-      allow delete: if isManager();
+      allow read: if signedIn();
+      allow create: if manager() || (signedIn() && request.auth.uid == userId
+        && request.resource.data.authUid == request.auth.uid
+        && (request.resource.data.role == 'Setter' || request.resource.data.role == 'Jeweller' || request.resource.data.role == 'Designer'
+          || (request.resource.data.role == 'Manager'
+            && (request.auth.token.email == 'kilanimedia@gmail.com' || request.auth.token.email == 'harout@kilani.com'))));
+      allow update: if manager() || (signedIn() && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'active', 'authUid', 'legacyProfileIds']));
+      allow delete: if manager();
+
+      match /pushTokens/{token} {
+        allow read, write: if signedIn() && request.auth.uid == userId;
+      }
     }
 
-    // ----------------------------------------------------------------
-    // pushTokens sub-collection
-    // ----------------------------------------------------------------
-    match /users/{userId}/pushTokens/{token} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    match /projects/{projectId} {
+      allow read: if signedIn();
+      allow create: if managerOrDesigner();
+      allow update: if directProjectUpdateIsSafe()
+        && (manager() || assignedDesigner()
+          || (assignedProductionStaff() && productionProjectUpdateIsSafe()));
+      allow delete: if manager() && !pickedUp();
+
+      match /revisions/{revisionId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
     }
 
-    // ----------------------------------------------------------------
-    // evidence collection
-    // ----------------------------------------------------------------
+    // Evidence metadata and object paths are Manager-only. Setters submit an
+    // immutable Storage object and the trusted backend creates this record.
     match /evidence/{evidenceId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uploaderId == request.auth.uid;
-      allow update: if (isManager() || (isSignedIn() && resource.data.uploaderId == request.auth.uid && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['uploaderId']))))
-        && (!('transactionStatus' in resource.data) || resource.data.transactionStatus != 'CONFIRMED');
-      allow delete: if isManager();
+      allow read: if manager();
+      allow write: if false;
     }
 
-    // ----------------------------------------------------------------
-    // projects collection
-    // ----------------------------------------------------------------
-    match /projects/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isManagerOrDesigner();
-      allow update: if isManager() || (isDesigner() && request.auth.uid in resource.data.activeAssignees);
-      allow delete: if isManager();
+    // Setters receive only their sanitized bag/request context through a callable.
+    // All workflow writes are performed atomically by trusted backend functions.
+    match /bags/{bagId} {
+      allow read: if manager();
+      allow write: if false;
     }
 
-    // ----------------------------------------------------------------
-    // bags collection
-    // ----------------------------------------------------------------
-    match /bags/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isManagerOrDesigner();
-      // Managers may perform any update (count confirmation, status changes, etc.)
-      allow update: if isManager();
-      // Setters (the assigned issuedToId) may only initiate a return.
-      // The rule enforces: bag must be in ISSUED state, and the only
-      // permitted transition is to RETURNED_PENDING_COUNT.
-      // Setters are forbidden from modifying bag specifications, weights, or issue history.
-      allow update: if isSignedIn()
-        && request.auth.uid == resource.data.issuedToId
-        && resource.data.status == 'ISSUED'
-        && request.resource.data.status == 'RETURNED_PENDING_COUNT'
-        && !(request.resource.data.diff(resource.data).affectedKeys().hasAny(['items', 'bagNumber', 'projectId', 'issuedToId', 'issuedAt', 'issuedById', 'notes']));
-      allow delete: if isManager();
+    match /requests/{requestId} {
+      allow read: if manager();
+      allow write: if false;
     }
 
-
-    // ----------------------------------------------------------------
-    // requests collection
-    // ----------------------------------------------------------------
-    match /requests/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isManager() || (isSignedIn() && request.auth.uid == resource.data.requestedById);
-      allow delete: if isManager();
+    match /movements/{movementId} {
+      allow read: if managerOrDesigner();
+      allow write: if false;
     }
 
-    // ----------------------------------------------------------------
-    // movements & transactions collections (Inventory Ledger)
-    // Setters must not see quantities, valuation, or ledger movements.
-    // ----------------------------------------------------------------
-    match /movements/{docId} {
-      allow read: if isManagerOrDesigner();
-      allow create: if isManager();
-      allow update, delete: if false;
+    match /diamond_transactions/{transactionId} {
+      allow read: if managerOrDesigner();
+      allow write: if false;
     }
-    match /diamond_transactions/{docId} {
-      allow read: if isManagerOrDesigner();
-      allow create: if isManager();
-      allow update, delete: if false;
+
+    match /inventory_operations/{operationId} {
+      allow read: if manager();
+      allow write: if false;
     }
-    match /uniqueness_locks/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() &&
-        (
-          (docId.matches('^corr_.*') && isManager()) ||
-          (docId.matches('^req_.*') && isSignedIn()) ||
-          (docId.matches('^bag_.*') && isManagerOrDesigner())
-        );
-      allow update: if false;
-      allow delete: if isManager();
+
+    match /bag_number_claims/{claimId} {
+      allow read: if manager();
+      allow write: if false;
     }
-    // weekly_reports: Managers and Designers may read and create snapshots.
-    // Reports are append-only; update and delete are permanently disabled so
-    // the historical record can never be altered retroactively.
-    match /weekly_reports/{docId} {
-      allow read: if isManagerOrDesigner();
-      allow create: if isManagerOrDesigner();
-      allow update, delete: if false;
+
+    match /uniqueness_locks/{lockId} {
+      allow read: if manager();
+      allow write: if false;
     }
-    // system_logs: immutable audit trail. Only Managers/Designers may read.
-    // Create is allowed by any signed-in user (store methods write audit entries).
-    // Update and delete are disabled — no log line may be altered.
-    match /system_logs/{docId} {
-      allow read: if isManagerOrDesigner();
-      allow create: if isSignedIn();
+
+    match /weekly_reports/{reportId} {
+      allow read: if managerOrDesigner();
+      allow create: if managerOrDesigner();
       allow update, delete: if false;
     }
 
-    // ----------------------------------------------------------------
-    // specs, bands & diamonds collections
-    // ----------------------------------------------------------------
-    match /specs/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isManagerOrDesigner();
-    }
-    match /bands/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isManagerOrDesigner();
-    }
-    match /diamonds/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isManager();
+    match /system_logs/{logId} {
+      allow read: if managerOrDesigner();
+      allow create: if managerOrDesigner()
+        && ((('userId' in request.resource.data) && request.resource.data.userId == request.auth.uid)
+          || (('createdById' in request.resource.data) && request.resource.data.createdById == request.auth.uid));
+      allow update, delete: if false;
     }
 
-    // ----------------------------------------------------------------
-    // settings collection
-    // ----------------------------------------------------------------
-    match /settings/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isManager();
+    match /specs/{specId} {
+      allow read: if managerOrDesigner();
+      allow create: if managerOrDesigner()
+        && ((!('pcs' in request.resource.data) && !('ct' in request.resource.data))
+          || (request.resource.data.pcs == 0 && request.resource.data.ct == 0));
+      allow update: if managerOrDesigner()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'pcs', 'ct', 'stockVersion', 'stockUpdatedAt', 'lastInventoryOperationId'
+        ]);
+      allow delete: if false;
     }
 
-    // ----------------------------------------------------------------
-    // notifications collection
-    // ----------------------------------------------------------------
-    match /notifications/{docId} {
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || resource.data.role == getUserData().role);
-      // Anyone signed in can create notifications (necessary since Setters/Designers/Managers send alerts to each other)
-      // but they must populate the createdById field correctly if it is present.
-      allow create: if isSignedIn() && (request.resource.data.createdById == request.auth.uid || !('createdById' in request.resource.data));
-      // Only the recipient or a Manager can update (e.g. mark read, archive). Deletion is not allowed (archiving only).
-      allow update: if isSignedIn() && (request.auth.uid == resource.data.userId || isManager());
-      allow delete: if isManager();
+    match /bands/{bandId} {
+      allow read: if managerOrDesigner();
+      allow write: if managerOrDesigner();
+    }
+
+    // Phase 1 intentionally keeps large-stone project assignment disabled.
+    match /diamonds/{diamondId} {
+      allow read: if managerOrDesigner();
+      allow create: if manager()
+        && !request.resource.data.keys().hasAny(['projectId', 'referenceProjectId', 'assignedProjectId']);
+      allow update: if manager()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['projectId', 'referenceProjectId', 'assignedProjectId']);
+      allow delete: if manager();
+    }
+
+    match /settings/{settingId} {
+      allow read: if managerOrDesigner();
+      allow write: if manager();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn()
+        && (request.auth.uid == resource.data.userId || manager());
+      allow create: if (!('type' in request.resource.data)
+          || request.resource.data.type != 'PROJECT_REVISION')
+        && (manager() || (designer()
+          && (!('createdById' in request.resource.data)
+            || request.resource.data.createdById == request.auth.uid)));
+      allow update: if manager() || (signedIn() && request.auth.uid == resource.data.userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['read', 'isRead', 'readAt', 'archived', 'isArchived', 'archivedAt']));
+      allow delete: if false;
+    }
+
+    match /project_workflow_operations/{operationId} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

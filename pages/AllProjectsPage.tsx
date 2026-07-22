@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, User, Role, Priority } from '../types';
 import { Card, StatusPill, SetterAvatar, Input, Badge, Button } from '../components/UI';
-import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, Edit2, UserCheck, X, LayoutGrid, List } from 'lucide-react';
+import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X, LayoutGrid, List, Image as ImageIcon } from 'lucide-react';
 import { useToast } from '../App';
 import ProjectDetail from './ProjectDetail';
 
@@ -83,10 +83,6 @@ const AllProjectsPage: React.FC = () => {
   const [projectToPickup, setProjectToPickup] = useState<string | null>(null);
   const [pickupConfirmation, setPickupConfirmation] = useState('');
 
-  // Date Edit State
-  const [editingDateId, setEditingDateId] = useState<string | null>(null);
-  const [newDate, setNewDate] = useState('');
-
   // Master-Detail Split View State
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -152,20 +148,6 @@ const AllProjectsPage: React.FC = () => {
               alert("Error reverting project: " + error.message);
           }
       }
-  };
-
-  const initiateDateEdit = (e: React.MouseEvent, p: Project) => {
-      e.stopPropagation();
-      setEditingDateId(p.id);
-      setNewDate(p.date_picked_up ? p.date_picked_up.split('T')[0] : new Date().toISOString().split('T')[0]);
-  };
-
-  const saveDate = async (e: React.MouseEvent, projectId: string) => {
-      e.stopPropagation();
-      if (!currentUser) return;
-      await store.updateProjectDate(projectId, 'date_picked_up', new Date(newDate).toISOString(), currentUser.id);
-      setEditingDateId(null);
-      showToast("Date Updated");
   };
 
   const filteredProjects = projects.filter(p => {
@@ -291,15 +273,152 @@ const AllProjectsPage: React.FC = () => {
       </div>
 
       {/* Project List */}
-      <div className="space-y-4">
+      <div className={viewMode === 'GRID' ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
         {filteredProjects.length === 0 ? (
-           <div className="text-center py-24 bg-black/20 border-2 border-dashed border-[#2D313A] rounded-3xl">
+           <div className={`text-center py-24 bg-black/20 border-2 border-dashed border-[#2D313A] rounded-3xl ${viewMode === 'GRID' ? 'col-span-full' : ''}`}>
               <p className="text-gray-500 font-medium">No projects match your filters.</p>
            </div>
         ) : (
           filteredProjects.map(p => {
              const activeAssignees = (p.assignments || []).filter(a => a.active);
              const setter = activeAssignees.length > 0 ? store.getUser(activeAssignees[0].userId) : undefined;
+
+             if (viewMode === 'GRID') {
+                return (
+                   <div
+                      key={p.id}
+                      onClick={() => handleProjectClick(p.id)}
+                      className={`
+                         group border rounded-3xl overflow-hidden flex flex-col justify-between transition-all duration-300 cursor-pointer relative shadow-subtle hover:shadow-glow active:scale-[0.99]
+                         ${selectedProjectId === p.id ? 'bg-lux-gold/10 border-lux-gold/50 shadow-glow' : 'bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/10'}
+                      `}
+                   >
+                      {/* Cover / Header Area */}
+                      {p.projectPhotos && p.projectPhotos.length > 0 ? (
+                         <div className="h-32 bg-black relative flex items-center justify-center border-b border-white/5">
+                            <img src={p.projectPhotos[p.projectPhotos.length - 1]} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={p.pieceName} />
+                            <div className="absolute top-3 right-3">{p.priority === Priority.RUSH && <Badge color="red">RUSH</Badge>}</div>
+                            <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold text-white shadow-lg">
+                               {p.code}
+                            </div>
+                         </div>
+                      ) : (
+                         <div className="p-5 pb-0 flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                               <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-xs font-black shadow-inner ${p.priority === Priority.RUSH ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-white/5 text-zinc-500 border border-white/5'}`}>
+                                  {p.code.substring(Math.max(0, p.code.length - 2))}
+                               </div>
+                               <div className="min-w-0">
+                                  <h3 className="font-bold text-white group-hover:text-lux-gold transition-colors truncate">{p.code}</h3>
+                                  <p className="text-[10px] text-zinc-500 font-medium truncate">
+                                     {p.clientName ? `${p.clientName} ` : ''}{p.clientPhone ? `(${p.clientPhone})` : ''}
+                                  </p>
+                               </div>
+                            </div>
+                            {p.priority === Priority.RUSH && <Badge color="red">RUSH</Badge>}
+                         </div>
+                      )}
+
+                      {/* Content Body */}
+                      <div className="p-5 flex-1 flex flex-col justify-between gap-3">
+                         <div>
+                            {p.projectPhotos && p.projectPhotos.length > 0 && (
+                               <h3 className="font-bold text-white group-hover:text-lux-gold transition-colors truncate mb-0.5">{p.code}</h3>
+                            )}
+                            <p className="text-xs text-zinc-300 font-medium line-clamp-2">
+                               {p.pieceName}
+                            </p>
+                            {p.projectPhotos && p.projectPhotos.length > 0 && (p.clientName || p.clientPhone) && (
+                               <p className="text-[10px] text-zinc-500 font-medium truncate mt-1">
+                                  {p.clientName ? `${p.clientName} ` : ''}{p.clientPhone ? `(${p.clientPhone})` : ''}
+                               </p>
+                            )}
+                         </div>
+
+                         {/* Status Info */}
+                         <div className="mt-auto pt-2">
+                            {p.status === ProjectStatus.REVIEW && (
+                               <div className="text-amber-500 bg-amber-950/30 p-2.5 rounded-2xl border border-amber-900/50 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
+                                  <div className="min-w-0">
+                                     <div className="text-[10px] font-bold uppercase tracking-wider">Ready for Pickup</div>
+                                     <div className="text-[10px] text-zinc-400 truncate">Waiting confirmation</div>
+                                  </div>
+                                  {isManager && (
+                                     <Button
+                                        size="sm"
+                                        onClick={(e) => handlePickup(e, p.id)}
+                                        className="bg-amber-500 text-black hover:bg-white hover:text-black border-none font-bold text-xs h-7 px-2.5 shrink-0"
+                                        icon={<CheckCircle2 size={12}/>}
+                                     >
+                                        Confirm
+                                     </Button>
+                                  )}
+                               </div>
+                            )}
+
+                            {p.status === ProjectStatus.CLOSED && (
+                               <div className="bg-emerald-950/20 p-2 rounded-2xl border border-emerald-900/30 flex items-center justify-between text-xs">
+                                  <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">Picked Up</span>
+                                  <span className="text-[10px] text-zinc-400">
+                                     {p.date_picked_up ? new Date(p.date_picked_up).toLocaleDateString() : '-'}
+                                  </span>
+                               </div>
+                            )}
+
+                            {p.status === ProjectStatus.ACTIVE && (
+                               <div className="flex items-center justify-between text-xs text-zinc-400 bg-black/20 p-2 rounded-2xl border border-white/5">
+                                  <div className="flex items-center gap-1.5 text-[11px]">
+                                     <Calendar size={12} className="text-zinc-500" />
+                                     <span>{new Date(p.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                  </div>
+                                  <StatusPill status={p.status} />
+                               </div>
+                            )}
+                         </div>
+
+                         {/* Card Footer */}
+                         <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                            <div className="flex -space-x-2 pl-1">
+                               {activeAssignees.length > 0 ? (
+                                  activeAssignees.map(a => {
+                                     const u = store.getUser(a.userId);
+                                     return u ? <div key={u.id} className="ring-2 ring-[#1F2128] rounded-full"><SetterAvatar name={u.name} color={u.setterColor} image={u.profilePhoto} size="sm" /></div> : null;
+                                  })
+                               ) : (
+                                  <span className="text-[10px] text-zinc-600 italic">Unassigned</span>
+                               )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                               {isManager && p.status === ProjectStatus.REVIEW && (
+                                  <button
+                                     onClick={(e) => handleRevert(e, p.id)}
+                                     className="w-8 h-8 rounded-full bg-[#16171D] border border-[#2D313A] flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-white transition-all z-10"
+                                     title="Revert to Active"
+                                  >
+                                     <RotateCcw size={14} />
+                                  </button>
+                               )}
+
+                               {p.status !== ProjectStatus.CLOSED && (
+                                  <button
+                                     onClick={(e) => initiateDelete(e, p.id)}
+                                     className="w-8 h-8 rounded-full bg-[#16171D] border border-[#2D313A] flex items-center justify-center text-zinc-500 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-all z-10"
+                                     title="Delete Project"
+                                  >
+                                     <Trash2 size={16} />
+                                  </button>
+                               )}
+                               <div className="w-8 h-8 rounded-full bg-[#16171D] flex items-center justify-center text-gray-500 group-hover:bg-lux-gold group-hover:text-[#16171D] transition-all border border-[#2D313A] group-hover:border-lux-gold">
+                                  <ArrowUpRight size={18} />
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                );
+             }
+
              return (
                <div key={p.id} className="relative overflow-hidden rounded-3xl group/swipe">
                  <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar w-full">
@@ -314,7 +433,7 @@ const AllProjectsPage: React.FC = () => {
                    >
                       <div className="flex-1 flex items-center gap-4 w-full min-w-0">
                          <div className={`w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black shadow-inner ${p.priority === Priority.RUSH ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-white/5 text-zinc-500 border border-white/5'}`}>
-                            {p.code.substring(p.code.length - 2)}
+                            {p.code.substring(Math.max(0, p.code.length - 2))}
                          </div>
                          <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between md:justify-start gap-2 mb-1">
@@ -360,29 +479,12 @@ const AllProjectsPage: React.FC = () => {
                          {/* CLOSED STATUS INFO & EDIT DATE */}
                          {p.status === ProjectStatus.CLOSED && (
                              <div className="text-right flex items-center gap-3">
-                                 {editingDateId === p.id ? (
-                                     <div className="flex items-center gap-1 bg-black rounded-xl p-1 border border-zinc-700" onClick={e => e.stopPropagation()}>
-                                         <input 
-                                            type="date" 
-                                            value={newDate} 
-                                            onChange={e => setNewDate(e.target.value)}
-                                            className="bg-transparent text-white text-xs border-none focus:ring-0 p-0"
-                                         />
-                                         <button onClick={(e) => saveDate(e, p.id)} className="text-green-400 hover:text-white p-1"><CheckCircle2 size={14}/></button>
+                                 <div>
+                                     <div className="text-[10px] text-emerald-500 font-bold uppercase">Picked Up</div>
+                                     <div className="text-[10px] text-zinc-500 flex items-center justify-end gap-1">
+                                         {p.date_picked_up ? new Date(p.date_picked_up).toLocaleDateString() : '-'}
                                      </div>
-                                 ) : (
-                                     <div>
-                                         <div className="text-[10px] text-emerald-500 font-bold uppercase">Picked Up</div>
-                                         <div className="text-[10px] text-zinc-500 flex items-center justify-end gap-1">
-                                             {p.date_picked_up ? new Date(p.date_picked_up).toLocaleDateString() : '-'}
-                                             {isManager && (
-                                                 <button onClick={(e) => initiateDateEdit(e, p)} className="text-zinc-600 hover:text-lux-gold transition-colors">
-                                                     <Edit2 size={10} />
-                                                 </button>
-                                             )}
-                                         </div>
-                                     </div>
-                                 )}
+                                 </div>
                              </div>
                          )}
 
@@ -400,7 +502,7 @@ const AllProjectsPage: React.FC = () => {
                          {/* Action Arrow & Delete/Revert (Desktop only, hidden on mobile for swipe) */}
                          <div className="hidden md:flex items-center gap-2">
                             {/* Revert Button for Managers on Non-Active Projects */}
-                            {isManager && p.status !== ProjectStatus.ACTIVE && (
+                            {isManager && p.status === ProjectStatus.REVIEW && (
                                 <button
                                     onClick={(e) => handleRevert(e, p.id)}
                                     className="w-8 h-8 rounded-full bg-[#16171D] border border-[#2D313A] flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-white transition-all z-10"
@@ -410,13 +512,15 @@ const AllProjectsPage: React.FC = () => {
                                 </button>
                             )}
 
-                            <button 
-                               onClick={(e) => initiateDelete(e, p.id)}
-                               className="w-8 h-8 rounded-full bg-[#16171D] border border-[#2D313A] flex items-center justify-center text-zinc-500 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-all z-10"
-                               title="Delete Project"
-                            >
-                               <Trash2 size={16} />
-                            </button>
+                            {p.status !== ProjectStatus.CLOSED && (
+                              <button
+                                 onClick={(e) => initiateDelete(e, p.id)}
+                                 className="w-8 h-8 rounded-full bg-[#16171D] border border-[#2D313A] flex items-center justify-center text-zinc-500 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-all z-10"
+                                 title="Delete Project"
+                              >
+                                 <Trash2 size={16} />
+                              </button>
+                            )}
                             <div className="w-8 h-8 rounded-full bg-[#16171D] flex items-center justify-center text-gray-500 group-hover:bg-lux-gold group-hover:text-[#16171D] transition-all border border-[#2D313A] group-hover:border-lux-gold">
                                <ArrowUpRight size={18} />
                             </div>
@@ -426,7 +530,7 @@ const AllProjectsPage: React.FC = () => {
 
                    {/* Swipe Actions (Mobile/iPad only) */}
                    <div className="md:hidden flex shrink-0 snap-center items-center justify-center gap-2 px-4 ml-2">
-                      {isManager && p.status !== ProjectStatus.ACTIVE && (
+                      {isManager && p.status === ProjectStatus.REVIEW && (
                          <button
                             onClick={(e) => handleRevert(e, p.id)}
                             className="w-20 h-full rounded-3xl bg-zinc-800/50 border border-zinc-700 flex flex-col items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-95"
@@ -435,13 +539,15 @@ const AllProjectsPage: React.FC = () => {
                             <span className="text-[10px] font-bold uppercase tracking-wider">Revert</span>
                          </button>
                       )}
-                      <button 
-                         onClick={(e) => initiateDelete(e, p.id)}
-                         className="w-20 h-full rounded-3xl bg-red-500/10 border border-red-500/20 flex flex-col items-center justify-center text-red-500 hover:bg-red-500/20 transition-all active:scale-95"
-                      >
-                         <Trash2 size={24} className="mb-2" />
-                         <span className="text-[10px] font-bold uppercase tracking-wider">Delete</span>
-                      </button>
+                      {p.status !== ProjectStatus.CLOSED && (
+                        <button
+                           onClick={(e) => initiateDelete(e, p.id)}
+                           className="w-20 h-full rounded-3xl bg-red-500/10 border border-red-500/20 flex flex-col items-center justify-center text-red-500 hover:bg-red-500/20 transition-all active:scale-95"
+                        >
+                           <Trash2 size={24} className="mb-2" />
+                           <span className="text-[10px] font-bold uppercase tracking-wider">Delete</span>
+                        </button>
+                      )}
                    </div>
                  </div>
                </div>

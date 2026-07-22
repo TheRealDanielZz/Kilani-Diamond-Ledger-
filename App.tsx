@@ -69,75 +69,6 @@ const App = () => {
       // 2. Initialize Store (Async Firebase Check)
       await store.init();
       
-      // TEMPORARY SCRIPT TO ADD RETURNS TO 1351
-      if (!localStorage.getItem('added_returns_1351_v2')) {
-        const project = store.getProjects().find(p => p.code === '1351');
-        if (project) {
-          const hagop = store.getUsers().find(u => u.name.toLowerCase() === 'hagop');
-          const harout = store.getUsers().find(u => u.name.toLowerCase() === 'harout');
-          const specs = store.getSpecs();
-
-          if (hagop) {
-            const hagopLines = [
-              { label: 'RD 0.8mm', pcs: 15 },
-              { label: 'RD 1mm', pcs: 8 },
-              { label: 'RD 1.2mm', pcs: 9 },
-              { label: 'RD 1.4mm', pcs: 16 },
-              { label: 'RD 1.6mm', pcs: 15 },
-              { label: 'RD 1.8mm', pcs: 3 },
-              { label: 'RD 2mm', pcs: 9 },
-              { label: 'RD 2.1mm', pcs: 2 },
-            ].map(l => {
-              const spec = specs.find(s => s.label === l.label);
-              return { specId: spec?.id || '', pcs: l.pcs, ct: l.pcs * (spec?.ctPerStone || 0) };
-            }).filter(l => l.specId);
-
-            await store.createInventoryMovement({
-              type: 'BULK_RETURN_INTAKE' as any,
-              createdById: 'manager',
-              referenceSetterId: hagop.id,
-              referenceProjectId: project.id,
-              notes: 'Bulk Return Intake [Reconciled]',
-              lines: hagopLines
-            });
-          }
-
-          if (harout) {
-            const haroutLines = [
-              { label: 'RD 0.9mm', pcs: 24 },
-              { label: 'RD 1.1mm', pcs: 23 },
-              { label: 'RD 1.25mm', pcs: 30 },
-              { label: 'RD 1.3mm', pcs: 7 },
-            ].map(l => {
-              const spec = specs.find(s => s.label === l.label);
-              return { specId: spec?.id || '', pcs: l.pcs, ct: l.pcs * (spec?.ctPerStone || 0) };
-            }).filter(l => l.specId);
-
-            await store.createInventoryMovement({
-              type: 'BULK_RETURN_INTAKE' as any,
-              createdById: 'manager',
-              referenceSetterId: harout.id,
-              referenceProjectId: project.id,
-              notes: 'Harout-1351 [Reconciled]',
-              lines: haroutLines
-            });
-
-            const mixedSpec = specs.find(s => s.label === 'Mixed / Unsorted');
-            if (mixedSpec) {
-              await store.createInventoryMovement({
-                type: 'BROKEN_OUT' as any,
-                createdById: 'manager',
-                referenceSetterId: harout.id,
-                referenceProjectId: project.id,
-                notes: 'BROKEN',
-                lines: [{ specId: mixedSpec.id, pcs: 2, ct: 0 }]
-              });
-            }
-          }
-          localStorage.setItem('added_returns_1351_v2', 'true');
-        }
-      }
-      
       setUser(store.getCurrentUser());
       setLoading(false);
     };
@@ -236,7 +167,7 @@ const App = () => {
                       <Route path="/project/:id" element={<ProtectedRoute user={user}><ProjectDetail currentUser={user} /></ProtectedRoute>} />
                       <Route path="/verify/:projectId" element={<ProtectedRoute user={user}><VerificationFlow currentUser={user} /></ProtectedRoute>} />
                       
-                      <Route path="/projects" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER, Role.SETTER, Role.JEWELLER, Role.SALES_REP]}><AllProjectsPage /></ProtectedRoute>} />
+                      <Route path="/projects" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><AllProjectsPage /></ProtectedRoute>} />
                       <Route path="/team" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><TeamManagement /></ProtectedRoute>} />
                       <Route path="/inventory" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><InventoryPage /></ProtectedRoute>} />
 

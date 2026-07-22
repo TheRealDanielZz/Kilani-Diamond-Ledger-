@@ -52,6 +52,8 @@ export interface User {
     skippedAt?: string;
   };
   location?: string;
+  authUid?: string;
+  legacyProfileIds?: string[];
 }
 
 export interface InventoryNote {
@@ -85,6 +87,7 @@ export interface DiamondSpec {
   isOverride?: boolean;
   pcs?: number;
   ct?: number;
+  stockVersion?: number;
   color?: string; // New: "White", "Yellow", "Blue", etc.
   location?: string; // e.g. 'Active' — undefined/absent means Melee
   inventoryNote?: InventoryNote;
@@ -304,6 +307,19 @@ export interface Project {
   designLogs?: ProjectNote[];
   progress: ProjectProgress[];
   workDetails?: string;
+  instructionRevisionVersion?: number;
+  metalRevisionVersion?: number;
+  inventoryUsage?: {
+    bySpec: Record<string, {
+      issuedPcs: number;
+      returnedPcs: number;
+      brokenPcs: number;
+      netUsedPcs: number;
+      averageWeightSnapshot: number;
+    }>;
+    updatedAt?: string;
+    lastOperationId?: string;
+  };
 
   // -- Financials & Metals --
   goldComponents?: GoldComponent[]; // Auto-migrated list of gold parts
@@ -363,7 +379,8 @@ export interface BagReturnTransaction {
   setterId: string;
   submittedAt: string;
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED';
-  photo: string;
+  photo?: string;
+  evidencePath?: string;
   notes?: string;
   lines: BagReturnLine[];
   managerId?: string;
@@ -374,12 +391,17 @@ export interface BagReturnTransaction {
   correctionReason?: string;
   correctionTimestamp?: string;
   correctingManagerId?: string;
+  operationId?: string;
+  confirmOperationId?: string;
+  confirmedBreakageLines?: { specId: string; pieces: number }[];
+  breakageReason?: string;
 }
 
 
 export interface BagItem {
   specId: string;
   issuedPcs: number;
+  averageWeightSnapshot?: number;
 }
 
 export interface DiamondBag {
@@ -399,6 +421,9 @@ export interface DiamondBag {
   jobNumberSnapshot?: string;
   returns?: BagReturnTransaction[];
   evidenceId?: string;
+  requestId?: string;
+  issueOperationId?: string;
+  lastReturnOperationId?: string;
 }
 
 export interface RequestLine {
@@ -417,11 +442,17 @@ export interface IssueRequest {
   fulfillmentDetails?: {
     fulfilledAt: string;
     fulfilledById: string;
+    operationId?: string;
+    bagId?: string | null;
     lines: {
       specId: string;
       requestedPcs: number;
       issuedPcs: number;
       explanation?: string;
+      sourceLineIndex?: number;
+      requestedSpecId?: string;
+      issuedSpecId?: string | null;
+      decision?: 'FULL' | 'PARTIAL_OR_CHANGED' | 'REMOVED';
     }[];
   };
 }
@@ -532,6 +563,12 @@ export interface InventoryMovement {
   reversesCorrectionId?: string;
   reversesTransactionId?: string;
   replacementCorrectionId?: string;
+  operationId?: string;
+  actionType?: string;
+  referenceRequestId?: string;
+  referenceReturnId?: string;
+  sourceRecordPath?: string;
+  reason?: string;
 }
 
 export interface GlobalSettings {
@@ -630,6 +667,12 @@ export interface InventoryCorrectionInput {
   reversesCorrectionId?: string;
   reversesTransactionId?: string;
   replacementCorrectionId?: string;
+  reconciliation?: {
+    auditFingerprint: string;
+    expectedPcs: number;
+    expectedCt: number;
+    sourceEvidence: string[];
+  };
 }
 
 // Result of a reconciliation audit comparing displayed balances to the ledger.
@@ -709,7 +752,22 @@ export interface TransactionVerification {
 }
 
 // Notifications
-export type NotificationType = 'ASSIGNMENT' | 'REQUEST' | 'RETURN' | 'SYSTEM' | 'HANDOFF' | 'MENTION' | 'STATUS_UPDATE';
+export type NotificationType = 'ASSIGNMENT' | 'REQUEST' | 'RETURN' | 'SYSTEM' | 'HANDOFF' | 'MENTION' | 'STATUS_UPDATE' | 'PROJECT_REVISION';
+
+export interface ProjectRevision {
+  id: string;
+  operationId: string;
+  projectId: string;
+  projectCode: string;
+  kind: 'INSTRUCTIONS' | 'METAL';
+  reason: string;
+  editor: { uid: string; name: string; role: string };
+  before: { instructions?: string; metal?: string; purity?: string };
+  after: { instructions?: string; metal?: string; purity?: string };
+  version: number;
+  createdAt: string;
+  recipients?: string[];
+}
 
 export interface AppNotification {
   id: string;
@@ -762,11 +820,12 @@ export interface EvidenceImage {
   bagId: string;
   bagNumber: string;
   uploaderId: string;
-  uploaderName: string;
+  uploaderName?: string;
   uploadedAt: string;
   imageSource: 'Camera' | 'Device Gallery';
-  photoUrl: string;
-  thumbnailUrl: string;
+  photoUrl?: string;
+  thumbnailUrl?: string;
+  storagePath?: string;
   version: number;
   transactionStatus: string;
   replacementHistory?: EvidenceReplacement[];

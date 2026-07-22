@@ -103,8 +103,9 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
     }
   };
 
-  const myProjects = projects.filter(p => p.assignments.some(a => a.userId === currentUser.id && a.active));
-  const otherProjects = projects.filter(p => !p.assignments.some(a => a.userId === currentUser.id && a.active));
+  const acceptedProfileIds = new Set([currentUser.id, ...(currentUser.legacyProfileIds || [])]);
+  const myProjects = projects.filter(p => p.assignments.some(a => acceptedProfileIds.has(a.userId) && a.active));
+  const otherProjects = projects.filter(p => !p.assignments.some(a => acceptedProfileIds.has(a.userId) && a.active));
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 pb-32">
@@ -151,7 +152,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
         ) : (
           <div className="space-y-3">
             {projects.slice(0, 6).map(p => {
-              const isAssigned = p.assignments.some(a => a.userId === currentUser.id && a.active);
+              const isAssigned = p.assignments.some(a => acceptedProfileIds.has(a.userId) && a.active);
               return (
                 <div
                   key={p.id}

@@ -334,6 +334,23 @@ const ReportsPage: React.FC = () => {
        
        const combined = [...progress, ...inventory, ...designNotes].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
        setProjectLogs(combined);
+       void store.getProjectRevisions(p.id).then(revisions => {
+          const revisionLogs = revisions.map(revision => ({
+             id: revision.id,
+             type: revision.kind === 'INSTRUCTIONS' ? 'INSTRUCTIONS REVISION' : 'METAL REVISION',
+             date: revision.createdAt,
+             user: store.getUser(revision.editor.uid) || { name: revision.editor.name },
+             details: revision.kind === 'INSTRUCTIONS'
+                ? `Instructions: “${revision.before.instructions || ''}” → “${revision.after.instructions || ''}”`
+                : `Metal: ${revision.before.metal || '-'} ${revision.before.purity || ''} → ${revision.after.metal || '-'} ${revision.after.purity || ''}`,
+             extra: `Reason: ${revision.reason}`,
+             highlight: true
+          }));
+          setProjectLogs([...combined, ...revisionLogs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+       }).catch(error => {
+          console.error('Failed to load project revisions', error);
+          setProjectLogs(combined);
+       });
     }
   }, [selectedProject, isEditingLabour]); // Dependency on isEditingLabour prevents overwrite while typing
 

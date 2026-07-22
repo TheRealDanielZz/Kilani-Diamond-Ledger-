@@ -9,6 +9,7 @@ import { useToast } from '../App';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { InventoryNotesSection } from '../components/InventoryNotesSection';
 import { jsPDF } from 'jspdf';
+import { inventoryApi } from '../services/inventoryApi';
 
 const InventoryPage: React.FC = () => {
   const showToast = useToast();
@@ -416,10 +417,7 @@ const InventoryPage: React.FC = () => {
 
   // Reconciliation Audit states
   const [resolvingIssueIdx, setResolvingIssueIdx] = useState<number | null>(null);
-  const [resolvePcs, setResolvePcs] = useState<string>('');
-  const [resolveCt, setResolveCt] = useState<string>('');
   const [resolveReason, setResolveReason] = useState<string>('');
-  const [resolveMode, setResolveMode] = useState<'PCS' | 'WEIGHT'>('PCS');
 
   // Diamond Edit Modal State
   const [editingDiamond, setEditingDiamond] = useState<Diamond | null>(null);
@@ -610,11 +608,32 @@ const InventoryPage: React.FC = () => {
       }
       setAuditBusy(true);
       try {
-        const res = await store.getInventoryAuditFresh(['Melee']);
+        const res = await inventoryApi.runReconciliationAudit({ location: 'TORONTO_MELEE', dryRun: true });
         setAuditResult(res);
         setShowAudit(true);
       } catch (err: any) {
         showToast(err?.message || 'Reconciliation audit failed');
+      } finally {
+        setAuditBusy(false);
+      }
+    };
+
+    const loadMoreAudit = async () => {
+      if (!auditResult?.nextCursor || auditBusy) return;
+      setAuditBusy(true);
+      try {
+        const next = await inventoryApi.runReconciliationAudit({
+          location: 'TORONTO_MELEE', dryRun: true, cursor: auditResult.nextCursor,
+        });
+        setAuditResult((previous: any) => ({
+          ...next,
+          scannedSpecs: previous.scannedSpecs + next.scannedSpecs,
+          lines: [...previous.lines, ...next.lines],
+          issues: [...previous.issues, ...next.issues],
+          needsManagerReview: [...previous.needsManagerReview, ...next.needsManagerReview],
+        }));
+      } catch (err: any) {
+        showToast(err?.message || 'Could not load the next audit page');
       } finally {
         setAuditBusy(false);
       }
@@ -629,32 +648,35 @@ const InventoryPage: React.FC = () => {
         showToast("A correction reason is required");
         return;
       }
-      const targetPcs = parseInt(resolvePcs);
-      const targetCt = parseFloat(resolveCt);
-      if (isNaN(targetPcs) || targetPcs < 0) {
-        showToast("Enter a valid piece count");
+      if (!iss.correctionAllowed) {
+        showToast("This discrepancy is evidence-only and cannot be corrected from the audit.");
         return;
       }
-      if (isNaN(targetCt) || targetCt < 0) {
-        showToast("Enter a valid carat weight");
-        return;
-      }
+      const targetPcs = iss.expectedPcs;
+      const targetCt = iss.expectedCt;
+      if (!window.confirm(`Approve this single reconciliation correction?\n\nCurrent: ${iss.currentPcs} pcs / ${iss.currentCt.toFixed(6)} ct\nExpected: ${targetPcs} pcs / ${targetCt.toFixed(6)} ct\n\nThis cannot be changed automatically or applied in bulk.`)) return;
 
       setCorrectionSubmitting(true);
       try {
         await store.applyInventoryCorrection({
           specId: iss.specId,
           location: iss.location,
-          mode: resolveMode,
+          mode: 'PCS',
           previousPcs: iss.currentPcs,
           previousCt: iss.currentCt,
           newPcs: targetPcs,
           newCt: targetCt,
           reason: resolveReason.trim(),
           managerId: getCurrentUserId(),
+          reconciliation: {
+            auditFingerprint: iss.auditFingerprint,
+            expectedPcs: iss.expectedPcs,
+            expectedCt: iss.expectedCt,
+            sourceEvidence: iss.sourceEvidence,
+          },
         });
         showToast("Reconciliation correction applied");
-        const res = await store.getInventoryAuditFresh(['Melee']);
+        const res = await inventoryApi.runReconciliationAudit({ location: 'TORONTO_MELEE', dryRun: true });
         setAuditResult(res);
         setResolvingIssueIdx(null);
         setResolveReason('');
@@ -2129,20 +2151,7 @@ const InventoryPage: React.FC = () => {
 
                 <Input label="Correction Reason (required)" value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="e.g. Physical recount, data entry fix" />
 
-                <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                    <Button
-                      variant="danger"
-                      onClick={async () => {
-                        const label = cSpec ? cSpec.label : 'Unknown Spec';
-                        if (confirm(`Are you sure you want to delete the spec '${label}'? This will delete the specification and all its stock movements permanently.`)) {
-                          await store.deleteSpec(editingStock);
-                          showToast(`Deleted ${label}`);
-                          setEditingStock(null);
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
+                <div className="flex justify-end items-center pt-4 border-t border-white/5">
                    <div className="flex gap-3">
                       <Button variant="secondary" onClick={() => setEditingStock(null)}>Cancel</Button>
                       <Button onClick={handleStockEdit} disabled={correctionSubmitting || !editReason.trim() || (diffPcs === 0 && diffCt === 0)}>
@@ -2164,7 +2173,7 @@ const InventoryPage: React.FC = () => {
              <div className="flex items-center justify-between mb-4">
                 <div>
                    <h3 className="font-bold text-lg text-lux-cream">Inventory Reconciliation</h3>
-                   <p className="text-xs text-zinc-500 mt-0.5">Balances recalculated from the full ledger and checked against data invariants.</p>
+                   <p className="text-xs text-zinc-500 mt-0.5">Manager-only dry run. Historical sources are read on the protected backend; this screen never changes stock automatically.</p>
                 </div>
                 <button onClick={() => { setShowAudit(false); setResolvingIssueIdx(null); }} className="text-zinc-500 hover:text-white text-sm font-bold">✕</button>
              </div>
@@ -2174,9 +2183,9 @@ const InventoryPage: React.FC = () => {
                    <div className="text-xl font-bold font-mono text-lux-cream">{auditResult.scannedSpecs}</div>
                    <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Scanned</div>
                 </div>
-                <div className="p-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-center">
-                   <div className="text-xl font-bold font-mono text-emerald-400">{auditResult.autoRepaired.length}</div>
-                   <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 font-bold">Auto-repairable</div>
+                <div className="p-3 rounded-2xl bg-blue-500/5 border border-blue-500/20 text-center">
+                   <div className="text-xl font-bold font-mono text-blue-300">0</div>
+                   <div className="text-[9px] uppercase tracking-wider text-blue-300/80 font-bold">Auto changes</div>
                 </div>
                 <div className="p-3 rounded-2xl bg-orange-500/5 border border-orange-500/20 text-center">
                    <div className="text-xl font-bold font-mono text-orange-400">{auditResult.needsManagerReview.length}</div>
@@ -2186,27 +2195,22 @@ const InventoryPage: React.FC = () => {
 
              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2 mb-4">
                 {auditResult.issues.length === 0 ? (
-                  <div className="py-10 text-center text-emerald-400 text-sm font-bold">✓ All balances are consistent. Nothing to repair.</div>
+                  <div className="py-10 text-center text-emerald-400 text-sm font-bold">✓ This audit page has no discrepancies. No stock was changed.</div>
                 ) : auditResult.issues.map((iss: any, idx: number) => {
-                  const spec = specs.find(s => s.id === iss.specId);
-                  const avg = spec?.ctPerStone || 0;
                   return (
-                    <div key={idx} className={`p-3 rounded-xl border text-xs ${iss.autoRepairable ? 'bg-emerald-500/[0.03] border-emerald-500/15' : 'bg-orange-500/[0.03] border-orange-500/15'}`}>
+                    <div key={`${iss.specId}-${idx}`} className="p-3 rounded-xl border text-xs bg-orange-500/[0.03] border-orange-500/15">
                        <div className="flex justify-between items-center">
                           <span className="font-bold text-lux-cream">{iss.specLabel} <span className="text-zinc-600 font-normal">· {iss.location}</span></span>
                           <div className="flex items-center gap-2">
-                             <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${iss.autoRepairable ? 'bg-emerald-500/15 text-emerald-400' : 'bg-orange-500/15 text-orange-400'}`}>{iss.autoRepairable ? 'Auto' : 'Review'}</span>
-                             {isManager && (
+                             <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-orange-500/15 text-orange-400">Review</span>
+                             {isManager && iss.correctionAllowed && (
                                 <button 
                                    onClick={() => {
                                       if (resolvingIssueIdx === idx) {
                                          setResolvingIssueIdx(null);
                                       } else {
                                          setResolvingIssueIdx(idx);
-                                         setResolvePcs(String(iss.resolvedPcs));
-                                         setResolveCt(String(iss.resolvedCt));
                                          setResolveReason('');
-                                         setResolveMode('PCS');
                                       }
                                    }}
                                    className="text-lux-gold hover:underline font-bold text-[10px] uppercase tracking-wider transition-all"
@@ -2217,26 +2221,15 @@ const InventoryPage: React.FC = () => {
                           </div>
                        </div>
                        <div className="text-zinc-500 mt-1 font-mono">{iss.detail}</div>
-                       <div className="text-zinc-600 mt-0.5 font-mono">Raw {iss.currentPcs}pc / {iss.currentCt.toFixed(4)}ct → resolves to {iss.resolvedPcs}pc / {iss.resolvedCt.toFixed(3)}ct</div>
+                       <div className="text-zinc-600 mt-0.5 font-mono">Current {iss.currentPcs}pc / {iss.currentCt.toFixed(6)}ct · transaction evidence {iss.expectedPcs}pc / {iss.expectedCt.toFixed(6)}ct</div>
+                       {iss.sourceEvidence?.length > 0 && <div className="text-zinc-600 mt-1 font-mono break-all">Evidence: {iss.sourceEvidence.join(', ')}</div>}
+                       {!iss.correctionAllowed && <div className="text-amber-300/80 mt-1">Evidence-only finding. It cannot be corrected from this audit.</div>}
                        
                        {resolvingIssueIdx === idx && (
                           <div className="mt-3 p-3 bg-black/40 rounded-xl border border-white/5 space-y-3 animate-in slide-in-from-top-2 duration-200">
                              <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                                <span>Inline Resolution Form</span>
-                                <div className="flex bg-black/40 rounded border border-white/5 text-[9px]">
-                                   <button 
-                                      onClick={() => setResolveMode('PCS')} 
-                                      className={`px-2 py-1 rounded transition-all ${resolveMode === 'PCS' ? 'bg-lux-gold text-black font-extrabold' : 'text-zinc-500 hover:text-white'}`}
-                                   >
-                                      By Pcs
-                                   </button>
-                                   <button 
-                                      onClick={() => setResolveMode('WEIGHT')} 
-                                      className={`px-2 py-1 rounded transition-all ${resolveMode === 'WEIGHT' ? 'bg-lux-gold text-black font-extrabold' : 'text-zinc-500 hover:text-white'}`}
-                                   >
-                                      By Weight
-                                   </button>
-                                </div>
+                                <span>Single Correction Review</span>
+                                <span className="text-amber-300">Expected values are locked to this audit.</span>
                              </div>
 
                              <div className="grid grid-cols-2 gap-2">
@@ -2245,16 +2238,8 @@ const InventoryPage: React.FC = () => {
                                    <input 
                                       type="number" 
                                       min="0" 
-                                      value={resolvePcs} 
-                                      disabled={resolveMode === 'WEIGHT'}
-                                      onChange={e => {
-                                         const val = e.target.value;
-                                         setResolvePcs(val);
-                                         const q = parseInt(val);
-                                         if (!isNaN(q) && q >= 0) {
-                                            setResolveCt(String(parseFloat((q * avg).toFixed(3))));
-                                         }
-                                      }}
+                                      value={iss.expectedPcs}
+                                      disabled
                                       className="w-full border border-lux-border bg-lux-input rounded-lg p-2 font-mono text-xs text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none" 
                                    />
                                 </div>
@@ -2264,16 +2249,8 @@ const InventoryPage: React.FC = () => {
                                       type="number" 
                                       min="0" 
                                       step="0.001" 
-                                      value={resolveCt} 
-                                      disabled={resolveMode === 'PCS'}
-                                      onChange={e => {
-                                         const val = e.target.value;
-                                         setResolveCt(val);
-                                         const ct = parseFloat(val);
-                                         if (!isNaN(ct) && ct >= 0) {
-                                            setResolvePcs(String(avg > 0 ? Math.round(ct / avg) : 0));
-                                         }
-                                      }}
+                                      value={iss.expectedCt}
+                                      disabled
                                       className="w-full border border-lux-border bg-lux-input rounded-lg p-2 font-mono text-xs text-lux-cream focus:ring-1 focus:ring-lux-gold outline-none" 
                                    />
                                 </div>
@@ -2311,6 +2288,14 @@ const InventoryPage: React.FC = () => {
                   );
                 })}
              </div>
+
+             {auditResult.nextCursor && (
+               <div className="flex justify-center pb-3">
+                 <Button variant="secondary" onClick={loadMoreAudit} disabled={auditBusy}>
+                   {auditBusy ? 'Loading…' : 'Load next audit page'}
+                 </Button>
+               </div>
+             )}
 
              <div className="flex justify-end pt-4 border-t border-white/5">
                 <div className="flex gap-3">

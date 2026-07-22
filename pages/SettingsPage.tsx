@@ -5,6 +5,7 @@ import { Card, Button, Input, Modal } from '../components/UI';
 import { useToast } from '../App';
 import { Settings, RefreshCw, Plus, Trash2, Key, Gem, MapPin } from 'lucide-react';
 import { DiamondPriceBand, DiamondSpec } from '../types';
+import { inventoryApi, Phase1BootstrapAudit } from '../services/inventoryApi';
 
 const SettingsPage: React.FC = () => {
   const showToast = useToast();
@@ -12,6 +13,8 @@ const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState(store.getSettings());
   const [specs, setSpecs] = useState(store.getSpecs());
   const [bands, setBands] = useState<DiamondPriceBand[]>(store.getBands());
+  const [phase1Audit, setPhase1Audit] = useState<Phase1BootstrapAudit | null>(null);
+  const [phase1Busy, setPhase1Busy] = useState(false);
   
   // Sorting state
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -236,6 +239,42 @@ const SettingsPage: React.FC = () => {
     showToast('All pricing bands cleared.');
   };
 
+  const runPhase1Audit = async () => {
+    setPhase1Busy(true);
+    try {
+      const audit = await inventoryApi.getBootstrapAudit();
+      setPhase1Audit(audit);
+      showToast(audit.ready ? 'Phase 1 inventory audit is ready.' : 'Phase 1 audit found deployment blockers.');
+    } catch (error) {
+      console.error('Phase 1 bootstrap audit failed:', error);
+      showToast('Could not run the Phase 1 audit.');
+    } finally {
+      setPhase1Busy(false);
+    }
+  };
+
+  const hardenLegacyEvidence = async () => {
+    if (!window.confirm('Rotate legacy evidence download tokens now? Existing files and records will be preserved.')) return;
+    setPhase1Busy(true);
+    try {
+      const result = await inventoryApi.hardenLegacyEvidence(true);
+      if (result.failed.length > 0) {
+        showToast(`Evidence hardening completed with ${result.failed.length} item(s) requiring review.`);
+      } else {
+        showToast(`Evidence hardening complete: ${result.migratedCount} record(s) updated.`);
+      }
+      await runPhase1Audit();
+    } catch (error) {
+      console.error('Legacy evidence hardening failed:', error);
+      showToast('Could not harden legacy evidence.');
+    } finally {
+      setPhase1Busy(false);
+    }
+  };
+
+  const currentUser = store.getCurrentUser();
+  const isManager = currentUser?.role === 'Manager';
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
       <h1 className="text-2xl font-bold text-lux-cream mb-6 flex items-center gap-2">
@@ -356,6 +395,33 @@ const SettingsPage: React.FC = () => {
               </div>
            </Card>
 
+           {isManager && (
+             <Card className="p-6 border-amber-700/40">
+               <div className="flex items-center justify-between gap-4 mb-3">
+                 <div>
+                   <h3 className="font-bold text-lg text-lux-cream">Phase 1 Inventory Safety</h3>
+                   <p className="text-xs text-zinc-500 mt-1">Audit Toronto Melee balances and rotate legacy evidence download tokens before activation.</p>
+                 </div>
+                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${phase1Audit?.ready ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                   {phase1Audit?.ready ? 'READY' : 'NOT AUDITED'}
+                 </span>
+               </div>
+               {phase1Audit && (
+                 <p className="text-xs text-zinc-400 mb-4">
+                   Checked {phase1Audit.specsChecked} Toronto Melee specs and {phase1Audit.evidenceChecked} evidence records. {phase1Audit.blockers.length + phase1Audit.legacyEvidenceBlockers.length} blocker(s).
+                 </p>
+               )}
+               <div className="flex flex-wrap gap-3">
+                 <Button variant="secondary" onClick={runPhase1Audit} disabled={phase1Busy}>
+                   {phase1Busy ? 'Working…' : 'Run Safety Audit'}
+                 </Button>
+                 <Button variant="danger" onClick={hardenLegacyEvidence} disabled={phase1Busy}>
+                   Rotate Legacy Evidence Tokens
+                 </Button>
+               </div>
+             </Card>
+           )}
+
            <div className="flex justify-end">
              <Button onClick={handleSaveGeneralSettings} icon={<Key size={18}/>}>Save All Settings</Button>
            </div>
@@ -433,9 +499,7 @@ const SettingsPage: React.FC = () => {
           <div className="flex justify-between items-center mb-4">
              <h3 className="font-bold text-lg text-lux-cream">Diamond Catalog</h3>
              <div className="flex gap-2">
-               <Button size="sm" variant="danger" onClick={() => setIsClearModalOpen(true)}>
-                 <Trash2 className="w-4 h-4 mr-2" /> Clear All
-               </Button>
+               <span className="text-[10px] uppercase tracking-wider text-zinc-500">Historical specifications are preserved</span>
                <Button size="sm" onClick={handleSaveCatalogOverrides}>Save Overrides</Button>
              </div>
           </div>
@@ -505,18 +569,7 @@ const SettingsPage: React.FC = () => {
                        </div>
                     </td>
                     <td className="p-3 text-right">
-                      {s.id !== 'MIXED-UNSORTED' && (
-                        <button 
-                          onClick={() => {
-                            setSizeToDelete(s);
-                            setIsDeleteSizeModalOpen(true);
-                          }}
-                          className="text-zinc-500 hover:text-red-400 p-1 rounded hover:bg-zinc-800 transition-colors"
-                          title="Delete Size"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      {s.id !== 'MIXED-UNSORTED' && <span className="text-[9px] text-zinc-600 uppercase">Preserved</span>}
                     </td>
                   </tr>
                 ))}
