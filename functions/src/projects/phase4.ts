@@ -85,7 +85,7 @@ export function parseRevisionInput(value: unknown): RevisionInput {
 }
 
 export function canReviseProject(project: Record<string, unknown>, role: unknown, assigned: boolean): boolean {
-  return role === 'Manager' || (role === 'Designer' && assigned);
+  return role === 'Manager' || assigned;
 }
 
 export function replacePrimaryMetal(

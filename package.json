@@ -10,6 +10,8 @@
     "test:phase1": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions,storage --project kilani-phase1-test \"node --test tests/phase1.integration.test.mjs\"",
     "test:phase2": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions --project kilani-phase2-test \"node --test tests/phase2.integration.test.mjs\"",
     "test:phase4": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions --project kilani-phase4-test \"node --test tests/phase4.integration.test.mjs\"",
+    "test:phase5": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions --project kilani-phase5-test \"node --test tests/phase5.integration.test.mjs\"",
+    "test:phase6": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions --project kilani-phase6-test \"node --test tests/phase6.integration.test.mjs\"",
     "test:rules": "firebase emulators:exec --only firestore,storage --project kilani-phase1-test \"node --test tests/firestore.rules.test.mjs\"",
     "preview": "vite preview",
     "deploy": "export PATH=\"/Users/mo/Documents/Anti Graviti Projects/Skill Master/.tools/node-js/bin:$PATH\" && npm run build && firebase deploy"

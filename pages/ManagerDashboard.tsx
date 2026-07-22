@@ -1,15 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
-import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction } from '../types';
+import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
 import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones } from '../components/UI';
 import { Inbox, PackageCheck, Plus, LayoutGrid, List as ListIcon, Image as ImageIcon, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
 import { RepairProjectModal } from '../components/RepairProjectModal';
+import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 
-const SERVICE_OPTIONS = ['Custom Make', 'Engagement', 'Repair', 'Other'];
+const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
+   { code: 'CUSTOM_MAKE' },
+   { code: 'ENGAGEMENT' },
+   { code: 'REPAIR' },
+   { code: 'OTHER', disabled: true },
+];
 
 const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const navigate = useNavigate();
@@ -77,7 +83,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       code: '', pieceName: '', priority: Priority.NORMAL, dueDate: new Date().toISOString().split('T')[0],
       clientName: '', clientPhone: '', salesRepId: '', services: [], workDetails: '',
       goldType: 'Yellow', goldPurity: '14k',
-      goldComponents: [{ id: crypto.randomUUID(), label: 'Component 1', type: 'Yellow', purity: '14k' }],
+      goldComponents: (() => { const id = crypto.randomUUID(); return [{ id, componentId: id, revisionId: id, revisionVersion: 0, state: 'ACTIVE' as const, label: 'Component 1', type: 'Yellow', purity: '14k', purityRatioPpm: 585000 }]; })(),
       repairDetails: {
          date: new Date().toISOString().split('T')[0],
          items: [{ stoneSize: '', quantity: 0 }],
@@ -85,7 +91,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          report: ''
       }
    });
-   const [selectedServices, setSelectedServices] = useState<string[]>(['Setting']);
+   const [selectedServices, setSelectedServices] = useState<CanonicalProjectServiceCode[]>(['CUSTOM_MAKE']);
    const [newAssignees, setNewAssignees] = useState<string[]>([]);
 
    useEffect(() => {
@@ -182,7 +188,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       if (!newProject.code || !newProject.pieceName) return alert("Code and Name required");
       setLoading(true);
 
-      const serviceObjects = selectedServices.map(s => ({ name: s, status: 'PENDING' as const }));
+      const serviceObjects = selectedServices.map(code => createCanonicalService(code));
 
       try {
          const finalAssignees = [...newAssignees];
@@ -191,7 +197,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          }
 
          const projectDataToSave = { ...newProject, services: serviceObjects };
-         if (!selectedServices.includes('Repair')) {
+         if (!selectedServices.includes('REPAIR')) {
             delete projectDataToSave.repairDetails;
          } else if (projectDataToSave.repairDetails) {
             const total = projectDataToSave.repairDetails.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
@@ -202,6 +208,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
          setLoading(false);
          setIsCreating(false);
+         setSelectedServices(['CUSTOM_MAKE']);
          showToast("Project Created");
          if (created) navigate(`/project/${created.id}`);
       } catch (e: any) {
@@ -368,8 +375,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       }
    };
 
-   const toggleService = (svc: string) => {
-      if (svc === 'Repair') {
+   const toggleService = (svc: CanonicalProjectServiceCode) => {
+      if (svc === 'OTHER') return;
+      if (svc === 'REPAIR') {
          setIsCreating(false);
          setIsQuickRepairing(true);
          setQuickRepair({
@@ -386,7 +394,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       }
 
       setSelectedServices([svc]);
-      if (svc === 'Custom Make') {
+      if (svc === 'CUSTOM_MAKE') {
          const designers = store.getUsers().filter(u => u.role === Role.DESIGNER && u.active);
          if (designers.length > 0) {
             const designerIds = designers.map(d => d.id);
@@ -407,7 +415,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       <div className="max-w-7xl mx-auto px-4 py-8 pb-32">
          <RepairProjectModal isOpen={isQuickRepairing} onClose={() => setIsQuickRepairing(false)} currentUser={currentUser} />
 
-         {isQuickRepairing && (
+         {false && isQuickRepairing && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
                <div className="w-full max-w-lg bg-theme-modal-bg rounded-3xl border border-theme-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="px-6 py-5 border-b border-zinc-800/50 flex justify-between items-center">
@@ -494,7 +502,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   <button onClick={() => setViewMode('GRID')} className={`px-4 py-2 rounded-xl transition-all h-full flex items-center ${viewMode === 'GRID' ? 'bg-lux-gold text-black shadow-lg scale-[1.05]' : 'text-zinc-500 hover:text-theme-text-primary'}`}><LayoutGrid size={18} /></button>
                </div>
                <div data-tour="manager-new-project">
-                  <Button onClick={() => setIsCreating(true)} icon={<Plus size={20} />}>New Project</Button>
+                  <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={20} />}>New Project</Button>
                </div>
             </div>
          </div>
@@ -892,7 +900,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                            <Input label="Client Phone" value={newProject.clientPhone} onChange={e => setNewProject({ ...newProject, clientPhone: e.target.value })} placeholder="e.g. 555-0192" />
                         </div>
                      </section>
-                     {!selectedServices.includes('Repair') && (
+                     {!selectedServices.includes('REPAIR') && (
                         <section className="space-y-4">
                            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Logistics</h3>
                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -916,9 +924,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                         </section>
                      )}
                      <section className="space-y-4">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{selectedServices.includes('Repair') ? 'Selection' : 'Materials'}</h3>
+                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{selectedServices.includes('REPAIR') ? 'Selection' : 'Materials'}</h3>
                         <div className="bg-theme-input-bg p-5 rounded-2xl border border-theme-border">
-                           {!selectedServices.includes('Repair') && (
+                           {!selectedServices.includes('REPAIR') && (
                               <>
                                  {newProject.goldComponents?.map((comp, index) => (
                                     <div key={comp.id} className="mb-6 pb-6 border-b border-theme-border last:border-0 last:mb-0 last:pb-0 relative group">
@@ -948,8 +956,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                              <button key={type.id} onClick={() => {
                                                 const newComps = [...(newProject.goldComponents || [])];
                                                 newComps[index].type = type.id;
-                                                if (type.id === 'Platinum') newComps[index].purity = '950';
+                                                if (type.id === 'Platinum') { newComps[index].purity = '950'; newComps[index].purityRatioPpm = 0; }
                                                 else if (newComps[index].purity === '950') newComps[index].purity = '14k';
+                                                if (type.id !== 'Platinum') newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000 } as Record<string, number>)[newComps[index].purity] || 0;
                                                 const updates: any = { goldComponents: newComps };
                                                 if (index === 0) { updates.goldType = type.id; updates.goldPurity = newComps[0].purity; }
                                                 setNewProject({ ...newProject, ...updates });
@@ -962,6 +971,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                              <button key={k} onClick={() => {
                                                 const newComps = [...(newProject.goldComponents || [])];
                                                 newComps[index].purity = k;
+                                                newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000, '950': 0 } as Record<string, number>)[k] || 0;
                                                 const updates: any = { goldComponents: newComps };
                                                 if (index === 0) updates.goldPurity = k;
                                                 setNewProject({ ...newProject, ...updates });
@@ -972,7 +982,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                  ))}
                                  <button onClick={() => {
                                     const count = (newProject.goldComponents?.length || 0) + 1;
-                                    setNewProject({ ...newProject, goldComponents: [...(newProject.goldComponents || []), { id: crypto.randomUUID(), label: `Component ${count}`, type: 'Yellow', purity: '14k' }] });
+                                    const id = crypto.randomUUID();
+                                    setNewProject({ ...newProject, goldComponents: [...(newProject.goldComponents || []), { id, componentId: id, revisionId: id, revisionVersion: 0, state: 'ACTIVE', label: `Component ${count}`, type: 'Yellow', purity: '14k', purityRatioPpm: 585000 }] });
                                  }} className="w-full mt-2 py-3 rounded-xl border border-dashed border-theme-border text-zinc-500 hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-sm font-bold transition-all"><Plus size={16} /> Add Another Gold Component</button>
                               </>
                            )}
@@ -981,33 +992,31 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                      <section className="space-y-4">
                         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Services</h3>
                         <div className="bg-theme-input-bg rounded-2xl p-4 border border-theme-border flex flex-wrap gap-2">
-                           {SERVICE_OPTIONS.map(svc => (
+                           {SERVICE_OPTIONS.map(option => (
                               <button
-                                 key={svc}
-                                 disabled={svc === 'Other' || svc === 'Engagement'}
-                                 onClick={() => toggleService(svc)}
-                                 className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${(svc === 'Other' || svc === 'Engagement')
+                                 key={option.code}
+                                 disabled={option.disabled}
+                                 onClick={() => toggleService(option.code)}
+                                 className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${option.disabled
                                        ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed opacity-60'
-                                       : selectedServices.includes(svc)
+                                       : selectedServices.includes(option.code)
                                           ? 'bg-lux-gold text-black border-lux-gold shadow-sm'
                                           : 'bg-theme-modal-bg border-theme-border text-zinc-400 hover:text-theme-text-primary hover:border-zinc-700'
                                     }`}
                               >
-                                 {svc}
+                                 {PROJECT_SERVICE_LABELS[option.code]}
                               </button>
                            ))}
                         </div>
-                        {selectedServices.includes('Engagement') && (
+                        {selectedServices.includes('ENGAGEMENT') && (
                            <div className="p-3 bg-blue-950/30 border border-blue-900/50 rounded-xl text-xs text-blue-400 font-medium">
-                              Engagement project workflows will be available in a future update.
+                              Engagement uses the standard project foundation. Specialized workflow tools will be available in a future update.
                            </div>
                         )}
-                        {selectedServices.includes('Other') && (
-                           <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-xs text-zinc-500 font-medium">
-                              Other project workflows will be available in a future update.
-                           </div>
-                        )}
-                        {selectedServices.includes('Repair') && (
+                        <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-xs text-zinc-500 font-medium">
+                           Other project workflows will be available in a future update.
+                        </div>
+                        {selectedServices.includes('REPAIR') && (
                            <div className="bg-zinc-900/80 p-5 rounded-2xl border border-zinc-800 space-y-6 animate-in fade-in slide-in-from-top-2">
                               <div className="flex justify-between items-center">
                                  <h3 className="text-sm font-bold text-lux-cream flex items-center gap-2"><span className="bg-lux-gold text-black px-2.5 py-1 rounded-md text-xs tracking-wide">REPAIR MENU</span></h3>
@@ -1057,7 +1066,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                            </div>
                         )}
                      </section>
-                     {!selectedServices.includes('Repair') && (
+                     {!selectedServices.includes('REPAIR') && (
                         <section className="space-y-4">
                            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Work Details / Instructions</h3>
                            <textarea className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border border-theme-border p-4 text-sm focus:ring-lux-gold focus:border-lux-gold h-28 transition-all resize-none" placeholder="Describe the work required..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} />

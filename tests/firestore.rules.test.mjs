@@ -43,7 +43,7 @@ before(async () => {
           { userId: 'setter-uid', active: true },
           { userId: 'jeweller-uid', active: true },
         ],
-        progress: [], designLogs: [], services: [{ name: 'Setting', status: 'PENDING' }],
+        progress: [], designLogs: [], services: [{ code: 'REPAIR', status: 'PENDING' }],
         projectPhotos: [], projectPhotoIds: [],
         repair: { type: 'General Repair', status: 'Intake', financials: { quotedPriceCad: 100 } },
       }),
@@ -53,7 +53,7 @@ before(async () => {
       setDoc(doc(db, 'projects/picked-up-role-project'), {
         code: 'ROLE-CLOSED', status: 'Closed', date_picked_up: '2026-07-20T12:00:00.000Z',
         activeAssignees: ['designer-uid', 'setter-uid'], assignments: [{ userId: 'designer-uid', active: true }, { userId: 'setter-uid', active: true }],
-        progress: [], designLogs: [], services: [], projectPhotos: [], projectPhotoIds: [],
+        progress: [], designLogs: [], services: [{ code: 'CUSTOM_MAKE', status: 'COMPLETED' }], projectPhotos: [], projectPhotoIds: [],
       }),
       setDoc(doc(db, 'specs/spec-1'), { label: 'RD 1mm', location: 'Melee', pcs: 10, ct: 0.05 }),
       setDoc(doc(db, 'bags/bag-1'), { issuedToId: 'setter-uid', projectId: 'project-1', status: 'Issued' }),
@@ -63,6 +63,7 @@ before(async () => {
       setDoc(doc(db, 'settings/global'), { goldPrice: 100 }),
       setDoc(doc(db, 'notifications/own'), { userId: 'setter-uid', read: false }),
       setDoc(doc(db, 'notifications/other'), { userId: 'other-uid', read: false }),
+      setDoc(doc(db, 'system_migrations/phase6-service-canonical-v1'), { state: 'DRY_RUN' }),
     ]);
   });
   managerDb = env.authenticatedContext('manager-uid').firestore();
@@ -169,6 +170,38 @@ test('Manager can create staff security profiles while non-Managers cannot assig
   await assertFails(updateDoc(doc(setterDb, 'users/setter-uid'), { role: 'Manager' }));
 });
 
+test('Phase 6 project creation requires exactly one enabled canonical service', async () => {
+  await assertSucceeds(setDoc(doc(managerDb, 'projects/canonical-create'), {
+    code: 'CANONICAL', status: 'Active', services: [{ code: 'CUSTOM_MAKE', status: 'PENDING' }],
+  }));
+  await assertFails(setDoc(doc(managerDb, 'projects/legacy-create'), {
+    code: 'LEGACY', status: 'Active', services: [{ name: 'Setting', status: 'PENDING' }],
+  }));
+  await assertFails(setDoc(doc(managerDb, 'projects/multiple-create'), {
+    code: 'MULTI', status: 'Active', services: [{ code: 'CUSTOM_MAKE', status: 'PENDING' }, { code: 'REPAIR', status: 'PENDING' }],
+  }));
+  await assertFails(setDoc(doc(managerDb, 'projects/other-create'), {
+    code: 'OTHER', status: 'Active', services: [{ code: 'OTHER', status: 'PENDING' }],
+  }));
+  await assertFails(setDoc(doc(designerDb, 'projects/designer-create'), {
+    code: 'DESIGNER', status: 'Active', services: [{ code: 'CUSTOM_MAKE', status: 'PENDING' }],
+  }));
+});
+
+test('Phase 6 service identity and migration metadata cannot be changed directly', async () => {
+  await assertSucceeds(updateDoc(doc(setterDb, 'projects/role-project'), {
+    services: [{ code: 'REPAIR', status: 'IN_PROGRESS', updatedBy: 'setter-uid' }],
+  }));
+  await assertFails(updateDoc(doc(managerDb, 'projects/role-project'), {
+    services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
+  }));
+  await assertFails(updateDoc(doc(managerDb, 'projects/role-project'), {
+    serviceMigration: { version: 'forged' },
+  }));
+  await assertSucceeds(getDoc(doc(managerDb, 'system_migrations/phase6-service-canonical-v1')));
+  await assertFails(getDoc(doc(setterDb, 'system_migrations/phase6-service-canonical-v1')));
+});
+
 test('assigned production staff can perform operational project writes but cannot change protected or financial fields', async () => {
   const progress = { id: 'progress-1', projectId: 'role-project', createdById: 'setter-uid', createdAt: 'now', stageName: 'Setting', percentComplete: 50 };
   await assertSucceeds(updateDoc(doc(setterDb, 'projects/role-project'), {
@@ -178,7 +211,7 @@ test('assigned production staff can perform operational project writes but canno
     designLogs: [{ id: 'note-1', projectId: 'role-project', createdById: 'jeweller-uid', createdAt: 'now', text: 'Work note' }],
   }));
   await assertSucceeds(updateDoc(doc(setterDb, 'projects/role-project'), {
-    services: [{ name: 'Setting', status: 'IN_PROGRESS', updatedBy: 'setter-uid' }],
+    services: [{ code: 'REPAIR', status: 'IN_PROGRESS', updatedBy: 'setter-uid' }],
   }));
   await assertSucceeds(updateDoc(doc(setterDb, 'projects/role-project'), {
     repair: { type: 'General Repair', status: 'In Progress', financials: { quotedPriceCad: 100 } },
@@ -220,5 +253,5 @@ test('project media is writable only by active assigned members and remains lock
   await assertSucceeds(deleteObject(setterRef));
   await assertFails(uploadBytes(ref(setterStorage, 'projects/picked-up-role-project/gallery/closed.jpg'), image, metadata));
   await assertFails(updateDoc(doc(managerDb, 'projects/picked-up-role-project'), { workDetails: 'Unlock attempt' }));
-  await assertFails(updateDoc(doc(designerDb, 'projects/picked-up-role-project'), { services: [{ name: 'Setting', status: 'PENDING' }] }));
+  await assertFails(updateDoc(doc(designerDb, 'projects/picked-up-role-project'), { services: [{ code: 'CUSTOM_MAKE', status: 'PENDING' }] }));
 });

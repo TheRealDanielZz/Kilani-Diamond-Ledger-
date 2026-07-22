@@ -43,11 +43,7 @@ export const MOCK_PROJECTS: Project[] = [
       { userId: 'demo-manager-1', assignedAt: daysAgo(18), active: true },
       { userId: 'demo-jeweller-1', assignedAt: daysAgo(18), active: true }
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'COMPLETED' },
-      { name: 'Polish', status: 'COMPLETED' }
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'COMPLETED' }],
     currentStageName: 'Complete',
     currentPercentComplete: 100,
     goldType: 'Yellow',
@@ -76,10 +72,7 @@ export const MOCK_PROJECTS: Project[] = [
     assignments: [
       { userId: 'demo-setter-1', assignedAt: daysAgo(9), active: true }
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'IN_PROGRESS' }
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
     currentStageName: 'Setting',
     currentPercentComplete: 65,
     goldType: 'White',
@@ -102,7 +95,7 @@ export const MOCK_PROJECTS: Project[] = [
     assignments: [
       { userId: 'demo-jeweller-1', assignedAt: daysAgo(4), active: true }
     ],
-    services: [],
+    services: [{ code: 'CUSTOM_MAKE', status: 'PENDING' }],
     currentStageName: 'Intake',
     currentPercentComplete: 10,
     goldType: 'Yellow',
@@ -123,7 +116,7 @@ export const MOCK_PROJECTS: Project[] = [
     dueDate: daysFromNow(14),
     createdAt: daysAgo(2),
     assignments: [],
-    services: [],
+    services: [{ code: 'ENGAGEMENT', status: 'PENDING' }],
     currentStageName: 'Intake',
     currentPercentComplete: 0,
     goldType: 'Rose',
@@ -144,11 +137,7 @@ export const MOCK_PROJECTS: Project[] = [
     assignments: [
       { userId: 'demo-designer-1', assignedAt: daysAgo(25), active: true }
     ],
-    services: [
-      { name: 'Design', status: 'COMPLETED' },
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'COMPLETED' },
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'COMPLETED' }],
     currentStageName: 'QC/Polish',
     currentPercentComplete: 90,
     goldType: 'Yellow',
@@ -172,10 +161,7 @@ export const MOCK_PROJECTS: Project[] = [
       { userId: 'demo-setter-1', assignedAt: daysAgo(8), active: true },
       { userId: 'demo-jeweller-1', assignedAt: daysAgo(8), active: true },
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'IN_PROGRESS' },
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
     currentStageName: 'Pre-Polish',
     currentPercentComplete: 40,
     goldType: 'Yellow',
@@ -198,10 +184,7 @@ export const MOCK_PROJECTS: Project[] = [
     assignments: [
       { userId: 'demo-jeweller-1', assignedAt: daysAgo(12), active: true },
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'IN_PROGRESS' },
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
     currentStageName: 'Setting',
     currentPercentComplete: 70,
     goldType: 'White',
@@ -225,11 +208,7 @@ export const MOCK_PROJECTS: Project[] = [
       { userId: 'demo-manager-2', assignedAt: daysAgo(30), active: true },
       { userId: 'demo-setter-1', assignedAt: daysAgo(28), active: true },
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'COMPLETED' },
-      { name: 'Polish', status: 'COMPLETED' },
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'COMPLETED' }],
     currentStageName: 'Complete',
     currentPercentComplete: 100,
     goldType: 'Yellow',
@@ -258,10 +237,7 @@ export const MOCK_PROJECTS: Project[] = [
     assignments: [
       { userId: 'demo-setter-1', assignedAt: daysAgo(4), active: true },
     ],
-    services: [
-      { name: 'Casting', status: 'COMPLETED' },
-      { name: 'Setting', status: 'IN_PROGRESS' },
-    ],
+    services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
     currentStageName: 'Setting',
     currentPercentComplete: 30,
     goldType: 'Yellow',

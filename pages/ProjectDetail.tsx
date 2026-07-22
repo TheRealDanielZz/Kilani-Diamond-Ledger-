@@ -17,6 +17,14 @@ interface Props {
 
 const moneyInputValue = (value?: number) => value === undefined || value === 0 ? '' : String(value);
 const parseMoneyInput = (value: string) => value === '' ? undefined : Math.max(0, Number(value) || 0);
+const decimalToMinor = (value: string, decimalPlaces: number): number | null => {
+  const match = value.trim().match(/^(\d+)(?:\.(\d+))?$/);
+  if (!match) return null;
+  const fraction = (match[2] || '').padEnd(decimalPlaces, '0');
+  if (fraction.length > decimalPlaces) return null;
+  const result = Number(match[1]) * (10 ** decimalPlaces) + Number(fraction || 0);
+  return Number.isSafeInteger(result) ? result : null;
+};
 
 const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId }) => {
   const params = useParams();
@@ -126,6 +134,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const [labourCostInput, setLabourCostInput] = useState('');
   const [labourCostNote, setLabourCostNote] = useState('');
   const [isSavingCost, setIsSavingCost] = useState(false);
+  const [phase5Rates, setPhase5Rates] = useState<Record<string, string>>({});
+  const [phase5FinalWeights, setPhase5FinalWeights] = useState<Record<string, string>>({});
+  const [phase5Busy, setPhase5Busy] = useState<string | null>(null);
   const [editableRepair, setEditableRepair] = useState<RepairDetailsV2 | null>(null);
   const [isSavingRepair, setIsSavingRepair] = useState(false);
 
@@ -357,7 +368,6 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
         await store.sendToCasting(project!.id, currentUser.id, selectedCastingComponents.length > 0 ? selectedCastingComponents : undefined);
         const newStage = project!.designStage === 'Casting Received (Issue)' ? 'Recasting Sent' : 'Casting Sent';
         setProject({ ...project!, designStage: newStage });
-        await store.updateDesignStage(project!.id, newStage, currentUser.id);
         setIsCastingSend(false);
         setSelectedCastingComponents([]);
         showToast(newStage === 'Recasting Sent' ? "Sent for Recasting" : "Sent to Casting");
@@ -857,6 +867,89 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       }
   };
 
+  const handleConfirmInternalCost = async (component: any) => {
+      if (!project) return;
+      const revisionId = component.revisionId || component.id;
+      const rateCents = decimalToMinor(phase5Rates[revisionId] || '', 2);
+      if (!rateCents || rateCents <= 0) return showToast('Enter a valid supplier cost per gram with no more than two decimals.');
+      if (!component.castingWeightMg) return showToast('A confirmed casting-received weight is required first.');
+      const amountCents = Math.floor((component.castingWeightMg * rateCents + 500) / 1000);
+      if (!window.confirm(`Please confirm that the entered casting weight and supplier cost are correct.\n\n${component.label}\nCasting: ${(component.castingWeightMg / 1000).toFixed(3)} g\nSupplier: $${(rateCents / 100).toFixed(2)} CAD/g\nInternal component cost: $${(amountCents / 100).toFixed(2)} CAD`)) return;
+      setPhase5Busy(revisionId);
+      try {
+          await store.confirmInternalCastingCost(project.id, revisionId, rateCents);
+          showToast('Internal casting cost confirmed and locked.');
+      } catch (error: any) {
+          showToast(error?.message || 'Failed to confirm internal casting cost.');
+      } finally {
+          setPhase5Busy(null);
+      }
+  };
+
+  const handleCorrectInternalCost = async (component: any) => {
+      if (!project) return;
+      const weight = window.prompt('Correct casting-received weight in grams:', ((component.castingWeightMg || 0) / 1000).toFixed(3));
+      if (weight === null) return;
+      const rate = window.prompt('Correct supplier cost in CAD per gram:', ((component.internalCastingCost?.supplierRateCentsPerGram || 0) / 100).toFixed(2));
+      if (rate === null) return;
+      const reason = window.prompt('Correction reason (required):', '');
+      if (!reason?.trim()) return showToast('A correction reason is required.');
+      const weightMg = decimalToMinor(weight, 3);
+      const rateCents = decimalToMinor(rate, 2);
+      if (!weightMg || !rateCents) return showToast('Use at most three weight decimals and two rate decimals.');
+      const revisionId = component.revisionId || component.id;
+      setPhase5Busy(revisionId);
+      try {
+          await store.correctInternalCastingCost(project.id, revisionId, weightMg, rateCents, reason.trim());
+          showToast('Correction reversal and replacement were recorded.');
+      } catch (error: any) {
+          showToast(error?.message || 'Failed to correct internal cost.');
+      } finally {
+          setPhase5Busy(null);
+      }
+  };
+
+  const handleSaveFinalWeights = async () => {
+      if (!project) return;
+      const active = (project.goldComponents || []).filter(component => component.state !== 'SUPERSEDED');
+      const weights = active.map(component => ({
+          revisionId: component.revisionId || component.id,
+          weightMg: decimalToMinor(phase5FinalWeights[component.revisionId || component.id] || '', 3)
+      }));
+      if (weights.some(row => !row.weightMg)) return showToast('Enter every active component final weight with no more than three decimals.');
+      setPhase5Busy('final-weights');
+      try {
+          await store.recordFinalComponentWeights(project.id, weights as Array<{ revisionId: string; weightMg: number }>);
+          showToast('Final component weights and production variance recorded.');
+      } catch (error: any) {
+          showToast(error?.message || 'Failed to record final weights.');
+      } finally {
+          setPhase5Busy(null);
+      }
+  };
+
+  const handleReviseComponent = async (component: any) => {
+      if (!project) return;
+      const label = window.prompt('Component name:', component.label || 'Component');
+      if (!label?.trim()) return;
+      const metal = window.prompt('Metal (Yellow, White, Rose, or Platinum):', component.type || 'Yellow');
+      if (!metal) return;
+      const purity = window.prompt(`Purity (${metal === 'Platinum' ? '950' : '10k, 14k, 18k, or 21k'}):`, component.purity || '14k');
+      if (!purity) return;
+      const reason = window.prompt('Reason for this component revision:', '');
+      if (!reason?.trim()) return showToast('A revision reason is required.');
+      const revisionId = component.revisionId || component.id;
+      setPhase5Busy(revisionId);
+      try {
+          await store.reviseMetalComponent({ projectId: project.id, revisionId, reason: reason.trim(), expectedVersion: component.revisionVersion || 0, label: label.trim(), metal, purity });
+          showToast(metal !== component.type || purity !== component.purity ? 'Original component superseded and replacement revision created.' : 'Component revision saved.');
+      } catch (error: any) {
+          showToast(error?.message || 'Failed to revise component.');
+      } finally {
+          setPhase5Busy(null);
+      }
+  };
+
   const openInstructionRevision = () => {
       if (!project) return;
       setInstructionDraft(project.workDetails || '');
@@ -901,23 +994,18 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
               });
               setProject({ ...project, workDetails: instructionDraft.trim(), instructionRevisionVersion: (project.instructionRevisionVersion || 0) + 1 });
           } else {
-              const currentMetal = project.goldType || project.goldComponents?.[0]?.type || '';
-              const currentPurity = project.goldPurity || project.goldComponents?.[0]?.purity || '';
-              const components = project.goldComponents?.length
-                  ? project.goldComponents.map((component, index) => index === 0 ? { ...component, type: metalDraft, purity: purityDraft } : component)
-                  : [{ id: 'legacy-component', label: 'Main Piece', type: metalDraft, purity: purityDraft }];
-              await store.reviseProjectDetails({
-                  operationId,
+              const primary = (project.goldComponents || []).find(component => component.state !== 'SUPERSEDED' && component.componentId === project.primaryGoldComponentId)
+                  || (project.goldComponents || []).find(component => component.state !== 'SUPERSEDED')
+                  || { id: 'legacy-component', label: 'Main Piece', type: project.goldType || 'Yellow', purity: project.goldPurity || '14k', revisionVersion: 0 };
+              await store.reviseMetalComponent({
                   projectId: project.id,
-                  kind: 'METAL',
+                  revisionId: primary.revisionId || primary.id,
                   reason: revisionReason.trim(),
-                  expectedVersion: project.metalRevisionVersion || 0,
-                  expectedMetal: currentMetal,
-                  expectedPurity: currentPurity,
+                  expectedVersion: primary.revisionVersion || 0,
+                  label: primary.label,
                   metal: metalDraft,
                   purity: purityDraft
               });
-              setProject({ ...project, goldType: metalDraft as Project['goldType'], goldPurity: purityDraft, goldComponents: components, metalRevisionVersion: (project.metalRevisionVersion || 0) + 1 });
           }
           setRevisionModal(null);
           showToast('Project revision saved and added to Project History.');
@@ -1127,6 +1215,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             </div>
         </div>
       </div>
+
+
 
       {revisionModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[250] flex items-end md:items-center justify-center p-4">
@@ -1416,7 +1506,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
              options={[
                  ...(!isDesigner ? [{ label: 'Diamond Bags', value: 'bags' }] : []),
                  ...(repair ? [{ label: 'Repair', value: 'repair' }] : []),
-                 { label: 'Services & Activity', value: 'design' },
+                 { label: 'Activity & Notes', value: 'design' },
                  { label: 'Gallery', value: 'photos' }
              ]}
              value={activeTab}
@@ -1630,7 +1720,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                      <div>
                                          <div className="bg-black/20 p-5 rounded-3xl border border-white/5 mb-4">
                                              <div className="text-xs font-bold text-zinc-500 uppercase mb-4 tracking-wide flex justify-between items-center">
-                                                 <span>Gold Breakdown</span>
+                                                 <span>Client Gold Charge</span>
                                                  <span className="text-lux-gold">${cost?.goldCost.toFixed(2)} total</span>
                                              </div>
                                              
@@ -1669,12 +1759,18 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                              </div>
                                          </div>
                                          <div className="text-[10px] text-zinc-500 pl-1">
-                                             * Gold Price is locked upon completion. Currently showing live estimate.
+                                             {project.pickupPricingSnapshot
+                                               ? `* Locked from ${project.pickupPricingSnapshot.source} for the actual pickup date. No markup applied.`
+                                               : '* Client charge remains pending until final weights and the actual pickup-date historical rate are locked.'}
                                          </div>
                                      </div>
 
                                      {/* RIGHT: LABOUR & SETTER */}
                                      <div className="space-y-5">
+                                         <div className="p-4 bg-black/40 rounded-3xl border border-white/5 flex justify-between items-center">
+                                             <div><div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Internal Casting Cost</div><div className="text-[10px] text-zinc-500 mt-1">Confirmed supplier records only</div></div>
+                                             <div className="text-white font-mono font-bold text-lg">{cost.internalCastingCostCad ? `$${cost.internalCastingCostCad.toFixed(2)}` : 'Pending'}</div>
+                                         </div>
                                          <div>
                                              <label className="text-xs font-bold text-zinc-500 uppercase block mb-2 tracking-wide">Design / Jeweller Cost (CAD)</label>
                                              <div className="flex gap-2 mb-2">
@@ -1906,29 +2002,76 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
           </div>
       )}
 
-      {/* TAB CONTENT: SERVICES & ACTIVITY */}
+      {/* TAB CONTENT: ACTIVITY & NOTES */}
       {activeTab === 'design' && (
           <div className="space-y-6 animate-enter">
-              <Card className="p-5">
-                  <h3 className="font-bold text-white mb-4 flex items-center gap-2"><LayoutTemplate size={18}/> Services</h3>
-                  <div className="space-y-2">
-                     {project.services && project.services.length > 0 ? (project.services as any[]).map((rawService, idx) => {
-                        const s = typeof rawService === 'string' ? { name: rawService, status: 'PENDING' } : rawService;
-                        return (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-zinc-900/50 rounded-2xl border border-zinc-800">
-                           <span className="font-medium text-zinc-300">{s.name}</span>
-                           <button
-                             onClick={() => canModifyProject && project.status === ProjectStatus.ACTIVE && handleServiceStatusToggle(s.name)}
-                             disabled={!canModifyProject || project.status !== ProjectStatus.ACTIVE}
-                             className={`px-3 py-1 rounded-2xl text-xs font-bold transition-all border disabled:cursor-default ${s.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400 border-green-500/20' : s.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}
-                           >
-                              {s.status.replace('_', ' ')}
-                           </button>
-                        </div>
-                        );
-                     }) : <p className="text-zinc-500 text-sm">No services listed.</p>}
+              {!repair && (project.goldComponents?.length || 0) > 0 && (
+                <Card className="mb-6 p-5 md:p-6 relative z-20">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Metal Components</h3>
+                      <p className="text-[11px] text-zinc-500">Casting cost and client pickup pricing are kept separate per component.</p>
+                    </div>
+                    {project.pickupPricingSnapshot && <Badge color="green">Pickup pricing locked</Badge>}
                   </div>
-              </Card>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {(project.goldComponents || []).map(component => {
+                      const revisionId = component.revisionId || component.id;
+                      const castingMg = component.castingWeightMg ?? Math.round((component.weightG || 0) * 1000);
+                      const finalMg = component.finalWeightMg || 0;
+                      const varianceMg = castingMg && finalMg ? castingMg - finalMg : null;
+                      const superseded = component.state === 'SUPERSEDED';
+                      return (
+                        <div key={revisionId} className={`rounded-2xl border p-4 ${superseded ? 'border-zinc-800 bg-black/20 opacity-65' : 'border-white/10 bg-white/[0.03]'}`}>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <div className="font-bold text-white">{component.label}</div>
+                              <div className="text-xs text-zinc-500">{component.type} {component.purity} · Ratio {((component.purityRatioPpm || Math.round((component.ratioSnapshot || 0) * 1_000_000)) / 1_000_000).toFixed(3)}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge color={superseded ? 'gray' : 'green'}>{superseded ? 'Superseded' : 'Active'}</Badge>
+                              {!superseded && canEditProjectDetails && <Button size="sm" variant="ghost" loading={phase5Busy === revisionId} onClick={() => handleReviseComponent(component)}>Revise</Button>}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                            <div className="rounded-xl bg-black/30 p-3"><span className="block text-zinc-600 text-[9px] uppercase">Casting received</span><span className="text-white font-mono">{castingMg ? `${(castingMg / 1000).toFixed(3)}g` : 'Pending'}</span></div>
+                            <div className="rounded-xl bg-black/30 p-3"><span className="block text-zinc-600 text-[9px] uppercase">Final / variance</span><span className="text-white font-mono">{finalMg ? `${(finalMg / 1000).toFixed(3)}g` : 'Pending'}{varianceMg !== null ? ` / ${(varianceMg / 1000).toFixed(3)}g` : ''}</span></div>
+                          </div>
+                          {!superseded && !isPickedUp && (isManager || (assignedToProject && (currentUser.role === Role.SETTER || currentUser.role === Role.JEWELLER))) && castingMg > 0 && (
+                            <Input label="Final finished weight (g)" type="number" step="0.001" value={phase5FinalWeights[revisionId] ?? (finalMg ? (finalMg / 1000).toFixed(3) : '')} onChange={event => setPhase5FinalWeights(current => ({ ...current, [revisionId]: event.target.value }))} />
+                          )}
+                          {isManager && !superseded && (
+                            <div className="mt-3 pt-3 border-t border-white/5">
+                              {component.internalCastingCost ? (
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-xs"><span className="text-zinc-500 block">Locked internal casting cost</span><span className="text-lux-gold font-mono font-bold">${(component.internalCastingCost.amountCents / 100).toFixed(2)}</span><span className="text-zinc-600"> · ${(component.internalCastingCost.supplierRateCentsPerGram / 100).toFixed(2)} CAD/g</span></div>
+                                  {!isPickedUp && <Button size="sm" variant="secondary" loading={phase5Busy === revisionId} onClick={() => handleCorrectInternalCost(component)}>Correct</Button>}
+                                </div>
+                              ) : castingMg > 0 ? (
+                                <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                                  <div className="flex-1"><Input label="Supplier cost (CAD/g)" type="number" step="0.01" value={phase5Rates[revisionId] || ''} onChange={event => setPhase5Rates(current => ({ ...current, [revisionId]: event.target.value }))} placeholder="Internal casting cost pending" /></div>
+                                  <Button loading={phase5Busy === revisionId} onClick={() => handleConfirmInternalCost(component)}>Confirm & Lock</Button>
+                                </div>
+                              ) : <div className="text-xs text-amber-500">Internal casting cost pending — receive casting first.</div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!isPickedUp && (isManager || (assignedToProject && (currentUser.role === Role.SETTER || currentUser.role === Role.JEWELLER))) && (project.goldComponents || []).some(component => component.state !== 'SUPERSEDED' && (component.castingWeightMg || component.weightG)) && (
+                    <div className="flex justify-end mt-4"><Button loading={phase5Busy === 'final-weights'} onClick={handleSaveFinalWeights}>Save Final Weights</Button></div>
+                  )}
+                  {isManager && project.pickupPricingSnapshot && (
+                    <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div><span className="text-zinc-600 block">Actual pickup date</span><span className="text-white">{project.pickupPricingSnapshot.actualPickupDate}</span></div>
+                      <div><span className="text-zinc-600 block">Historical rate</span><span className="text-white">${(project.pickupPricingSnapshot.priceCentsPerGram / 100).toFixed(2)} CAD/g</span></div>
+                      <div><span className="text-zinc-600 block">Client gold charge · no markup</span><span className="text-lux-gold font-bold">${(project.pickupPricingSnapshot.totalClientGoldChargeCents / 100).toFixed(2)}</span></div>
+                      <div className="md:col-span-3 text-zinc-600">Source: {project.pickupPricingSnapshot.source}. Platinum components remain client-pricing pending.</div>
+                    </div>
+                  )}
+                </Card>
+              )}
 
               {canModifyProject && project.status === ProjectStatus.ACTIVE && <div className="bg-black/20 border border-zinc-800 rounded-3xl p-3 sm:p-4 shadow-sm relative">
                   <div className="space-y-3 relative">

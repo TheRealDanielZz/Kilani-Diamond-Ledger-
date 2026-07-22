@@ -40,7 +40,15 @@ import {
 import { InventoryCorrectionInput, ReconcileIssue, ReconcileResult } from '../types';
 import { getProjectRevisions as fetchProjectRevisions, reviseProjectDetails, ProjectRevisionPayload } from './projectRevisionApi';
 import { handoffProject as handoffProjectTrusted } from './projectWorkflowApi';
+import * as phase5Api from './phase5Api';
 import { ProjectRevision } from '../types';
+import {
+    createCanonicalService,
+    getCanonicalServiceCode,
+    getProjectServiceLabel,
+    PROJECT_SERVICE_LABELS,
+    requireCreatableService,
+} from './projectServiceModel';
 
 // Helpers
 const now = () => new Date().toISOString();
@@ -1113,11 +1121,15 @@ class StoreService {
     getProjects() { return this.projects; }
     getProject(id: string) { return this.projects.find(p => p.id === id); }
     getServiceNames(project: Project) {
-        return (project.services || []).map((service: any) => typeof service === 'string' ? service : service.name).filter(Boolean);
+        return [getProjectServiceLabel(project)];
+    }
+
+    getCanonicalServiceCode(project: Project) {
+        return getCanonicalServiceCode(project);
     }
 
     isRepairProject(project: Project) {
-        return !!project.repair || !!project.repairDetails || !!project.isQuickRepair || this.getServiceNames(project).includes('Repair');
+        return !!project.repair || !!project.repairDetails || !!project.isQuickRepair || getCanonicalServiceCode(project) === 'REPAIR';
     }
 
     getRepairDetails(project: Project): RepairDetailsV2 | null {
@@ -1191,6 +1203,7 @@ class StoreService {
     }
 
     async createProject(project: Partial<Project>, assigneeIds: string[]) {
+        requireCreatableService(project.services);
         const id = 'proj-' + Math.random().toString(36).substr(2, 9);
         const assignments = assigneeIds.map(uid => ({ userId: uid, assignedAt: now(), active: true }));
 
@@ -1206,7 +1219,7 @@ class StoreService {
             status: ProjectStatus.ACTIVE,
             currentStageName: 'Intake',
             currentPercentComplete: 10,
-            services: [],
+            services: [createCanonicalService('CUSTOM_MAKE')],
             progress: [],
             goldPurityRatioSnapshot: ratioSnapshot,
             ...project as any,
@@ -1283,7 +1296,7 @@ class StoreService {
             date_picked_up: repairStatus === RepairStatus.COMPLETED || repairStatus === RepairStatus.CANCELLED ? now() : undefined,
             priority: project.priority || Priority.NORMAL,
             dueDate: project.dueDate || new Date().toISOString().split('T')[0],
-            services: [{ name: 'Repair', status: serviceStatus as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' }],
+            services: [createCanonicalService('REPAIR', serviceStatus as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED')],
             currentStageName: repairStatus,
             currentPercentComplete: repairStatus === RepairStatus.INTAKE ? 10 : repairStatus === RepairStatus.COMPLETED ? 100 : 50,
             designStage: 'Ready for Production',
@@ -1347,11 +1360,11 @@ class StoreService {
                 ? 'PENDING'
                 : 'IN_PROGRESS';
 
-        const existingServices = (p.services || []).filter((s: any) => (typeof s === 'string' ? s : s.name) !== 'Repair');
-        const normalizedServices = [
-            ...existingServices.map((s: any) => typeof s === 'string' ? { name: s, status: 'PENDING' as const } : s),
-            { name: 'Repair', status: serviceStatus as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED', updatedAt: now(), updatedBy: userId }
-        ];
+        const normalizedServices = [{
+            ...createCanonicalService('REPAIR', serviceStatus as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'),
+            updatedAt: now(),
+            updatedBy: userId,
+        }];
 
         const progressEntry = {
             id: Math.random().toString(),
@@ -1413,7 +1426,7 @@ class StoreService {
             priority: Priority.NORMAL,
             dueDate: now(),
             pieceName: 'Repair Log',
-            services: [{ name: 'Repair', status: 'COMPLETED' }],
+            services: [createCanonicalService('REPAIR', 'COMPLETED')],
             progress: [],
             assignments: [],
             currentStageName: 'Complete',
@@ -1492,6 +1505,22 @@ class StoreService {
     async getProjectRevisions(projectId: string): Promise<ProjectRevision[]> {
         if (this.isDemoMode) return [];
         return fetchProjectRevisions(projectId);
+    }
+
+    async reviseMetalComponent(input: Omit<Parameters<typeof phase5Api.reviseMetalComponent>[0], 'operationId'>) {
+        return phase5Api.reviseMetalComponent({ ...input, operationId: newOperationId() });
+    }
+
+    async confirmInternalCastingCost(projectId: string, revisionId: string, supplierRateCentsPerGram: number) {
+        return phase5Api.confirmInternalCastingCost({ operationId: newOperationId(), projectId, revisionId, supplierRateCentsPerGram });
+    }
+
+    async correctInternalCastingCost(projectId: string, revisionId: string, castingWeightMg: number, supplierRateCentsPerGram: number, reason: string) {
+        return phase5Api.correctInternalCastingCost({ operationId: newOperationId(), projectId, revisionId, castingWeightMg, supplierRateCentsPerGram, reason });
+    }
+
+    async recordFinalComponentWeights(projectId: string, weights: Array<{ revisionId: string; weightMg: number }>) {
+        return phase5Api.recordFinalComponentWeights({ operationId: newOperationId(), projectId, weights });
     }
 
     async assignUser(projectId: string, userId: string) {
@@ -1751,19 +1780,11 @@ class StoreService {
         const p = this.getProject(projectId);
         if (!p) return;
 
-        const goldPrice = this.liveGoldPrice?.price || 0;
-
-        // Calculate all costs based on current settings before locking
-        // Pass finalWeight as fallback for legacy components
+        // Review is no longer a financial lock. Phase 5 locks client gold pricing
+        // only when the Manager records the actual pickup date.
         const currentCostSummary = this.getProjectCostSummary(projectId, finalWeight);
-        const calculatedGoldCost = currentCostSummary.goldCost;
         const finalDiamondCostCalculated = currentCostSummary.totalDiamondCostCad;
         const finalSetterCostCalculated = currentCostSummary.automatedSetterCost;
-
-        let ratio = p.goldPurityRatioSnapshot || 0;
-        if (!ratio && p.goldPurity) {
-            ratio = this.settings.purityMapping?.[p.goldPurity] || 0;
-        }
 
         const activeUsers = (p.assignments || []).filter(a => a.active).map(a => a.userId);
         for (const uid of activeUsers) {
@@ -1772,13 +1793,6 @@ class StoreService {
             }
         }
 
-        const components = this.normalizeGoldComponents(p);
-        const updatedComponents = components.map(c => ({
-            ...c,
-            ratioSnapshot: this.settings.purityMapping?.[c.purity] || 0,
-            goldPriceSnapshot: goldPrice
-        }));
-
         const safeUpdates = deepCopySafe({
             status: ProjectStatus.REVIEW,
             currentStageName: 'Complete',
@@ -1786,11 +1800,6 @@ class StoreService {
             date_completed: now(),
             last_status_change_at: now(),
             last_status_change_by: userId,
-            projectEndGoldPriceSnapshot: goldPrice,
-            projectEndGoldPriceCapturedAt: now(),
-            goldPurityRatioSnapshot: ratio, // Legacy support
-            goldComponents: updatedComponents,
-            finalGoldCostCalculated: calculatedGoldCost,
             usdToCadMultiplierSnapshot: this.settings.usdToCadMultiplier,
             setterCostPerSetPieceCadSnapshot: this.settings.setterCostPerSetPieceCad,
             finalDiamondCostCalculated: finalDiamondCostCalculated,
@@ -1799,9 +1808,18 @@ class StoreService {
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
     }
 
-    async confirmProjectPickup(projectId: string, userId: string) {
+    async confirmProjectPickup(projectId: string, userId: string, actualPickupDate?: string, lateEntryReason?: string) {
         const p = this.getProject(projectId);
         if (!p) throw new Error("Project not found in store");
+
+        if (!this.isDemoMode) {
+            return phase5Api.confirmProjectPickupPhase5({
+                operationId: newOperationId(),
+                projectId,
+                actualPickupDate: actualPickupDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }),
+                ...(lateEntryReason ? { lateEntryReason } : {})
+            });
+        }
 
         const logEntry = {
             id: Math.random().toString(),
@@ -1851,6 +1869,10 @@ class StoreService {
         if (!p) return;
         if (p.status === ProjectStatus.CLOSED || p.date_picked_up) {
             throw new Error('Picked Up projects are permanently read-only and cannot be reopened.');
+        }
+
+        if (!this.isDemoMode) {
+            return phase5Api.revertProjectToActivePhase5({ operationId: newOperationId(), projectId });
         }
 
         const logEntry = {
@@ -1936,9 +1958,11 @@ class StoreService {
     async updateServiceStatus(projectId: string, serviceName: string, status: string, userId: string) {
         const p = this.getProject(projectId);
         if (!p) return;
+        const canonicalCode = getCanonicalServiceCode(p);
+        if (PROJECT_SERVICE_LABELS[canonicalCode] !== serviceName) return;
         const services = (p.services || []).map((s: any) => {
-            const normalized = typeof s === 'string' ? { name: s, status: 'PENDING' as const } : s;
-            return normalized.name === serviceName ? { ...normalized, status } : normalized;
+            const normalized = typeof s === 'string' ? createCanonicalService(canonicalCode) : s;
+            return { ...normalized, code: canonicalCode, name: undefined, status };
         });
 
         const activeUsers = (p.assignments || []).filter(a => a.active).map(a => a.userId);
@@ -1970,6 +1994,14 @@ class StoreService {
     async sendToCasting(projectId: string, userId: string, goldComponentIds?: string[]) {
         const p = this.getProject(projectId);
         if (!p) return;
+        if (!this.isDemoMode) {
+            const active = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
+            const revisionIds = (goldComponentIds?.length ? goldComponentIds : active.map(component => component.id)).map(id => {
+                const component = active.find(candidate => candidate.id === id || candidate.revisionId === id);
+                return component?.revisionId || component?.id || id;
+            });
+            return phase5Api.dispatchCastingPhase5({ operationId: newOperationId(), projectId, revisionIds });
+        }
         const event: CastingEvent = {
             id: Math.random().toString(),
             projectId,
@@ -1984,6 +2016,19 @@ class StoreService {
     async receiveCasting(projectId: string, condition: any, weight: number, notes: string, userId: string, componentWeights?: Record<string, number>) {
         const p = this.getProject(projectId);
         if (!p || !p.castingEvents?.length) return;
+
+        if (!this.isDemoMode) {
+            const activeComponents = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
+            const selectedIds = p.castingEvents[p.castingEvents.length - 1]?.goldComponentIds || activeComponents.map(component => component.revisionId || component.id);
+            const weights = selectedIds.map(id => {
+                const component = activeComponents.find(candidate => (candidate.revisionId || candidate.id) === id || candidate.id === id);
+                const grams = componentWeights?.[id] ?? (selectedIds.length === 1 ? weight : 0);
+                return { revisionId: component?.revisionId || component?.id || id, weightMg: Math.round((grams || 0) * 1000) };
+            });
+            return phase5Api.recordCastingReceipt({
+                operationId: newOperationId(), projectId, condition, notes, weights
+            });
+        }
 
         const events = [...p.castingEvents];
         const last = { ...events[events.length - 1] };
@@ -2016,11 +2061,8 @@ class StoreService {
         });
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
 
-        if (condition === 'CORRECT') {
-            await this.updateDesignStage(projectId, 'Ready for Production', userId);
-        } else {
-            await this.updateDesignStage(projectId, 'Casting Received (Issue)', userId);
-        }
+        if (condition === 'CORRECT') await this.updateDesignStage(projectId, 'Ready for Production', userId);
+        else await this.updateDesignStage(projectId, 'Casting Received (Issue)', userId);
     }
 
     // --- Bags & Inventory ---
@@ -4223,11 +4265,13 @@ class StoreService {
         const p = this.getProject(projectId);
         if (!p) return { totalCaratsUsed: 0, totalBrokenCarats: 0, totalDiamondCostCad: 0, labourCost: 0, automatedSetterCost: 0, goldCost: 0, totalProjectCostCad: 0, initialWeightG: 0, finalWeightG: 0, goldLossG: 0, breakdown: [], isLocked: false, usedPurePricePerGram: 0, usedRatio: 0 };
 
-        const isLocked = (p.status === ProjectStatus.CLOSED || p.status === ProjectStatus.REVIEW) && !!p.projectEndGoldPriceSnapshot;
+        const isLocked = !!p.pickupPricingSnapshot || ((p.status === ProjectStatus.CLOSED || p.status === ProjectStatus.REVIEW) && !!p.projectEndGoldPriceSnapshot);
 
-        const goldPricePerGram = isLocked ? (p.projectEndGoldPriceSnapshot || 0) : (this.liveGoldPrice?.price || 0);
+        const goldPricePerGram = p.pickupPricingSnapshot
+            ? p.pickupPricingSnapshot.priceCentsPerGram / 100
+            : (isLocked ? (p.projectEndGoldPriceSnapshot || 0) : (this.liveGoldPrice?.price || 0));
 
-        const components = this.normalizeGoldComponents(p);
+        const components = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
         const goldBreakdown: GoldCostBreakdownItem[] = [];
         let totalGoldCost = 0;
         let totalInitialWeightG = 0;
@@ -4251,7 +4295,9 @@ class StoreService {
                 compGoldPrice = comp.goldPriceSnapshot;
             }
 
-            let weight = comp.weightG || 0;
+            let weight = p.pickupPricingSnapshot && comp.finalWeightMg
+                ? comp.finalWeightMg / 1000
+                : (comp.castingWeightMg !== undefined ? comp.castingWeightMg / 1000 : (comp.weightG || 0));
             if (comp.id === 'legacy-component' && weight === 0 && finalWeightFallback) {
                 weight = finalWeightFallback;
             }
@@ -4274,12 +4320,17 @@ class StoreService {
 
         const weights = (p.progress || []).map(prog => prog.weightG).filter(w => w !== undefined && w !== null && w > 0) as number[];
         const legacyMaxWeight = weights.length > 0 ? Math.max(...weights) : 0;
-        const finalWeightG = finalWeightFallback !== undefined ? finalWeightFallback : (weights.length > 0 ? weights[weights.length - 1] : 0);
+        const componentFinalWeightG = components.reduce((sum, component) => sum + ((component.finalWeightMg || 0) / 1000), 0);
+        const finalWeightG = componentFinalWeightG > 0 ? componentFinalWeightG : (finalWeightFallback !== undefined ? finalWeightFallback : (weights.length > 0 ? weights[weights.length - 1] : 0));
 
         const initialWeightG = totalInitialWeightG > 0 ? totalInitialWeightG : legacyMaxWeight;
         const goldLossG = initialWeightG > 0 && finalWeightG > 0 ? initialWeightG - finalWeightG : 0;
 
-        const goldCost = isLocked && p.finalGoldCostCalculated !== undefined ? p.finalGoldCostCalculated : totalGoldCost;
+        const pickupClientGoldChargeCad = p.pickupPricingSnapshot ? p.pickupPricingSnapshot.totalClientGoldChargeCents / 100 : undefined;
+        const goldCost = pickupClientGoldChargeCad !== undefined
+            ? pickupClientGoldChargeCad
+            : (isLocked && p.finalGoldCostCalculated !== undefined ? p.finalGoldCostCalculated : totalGoldCost);
+        const internalCastingCostCad = components.reduce((sum, component) => sum + ((component.internalCastingCost?.amountCents || 0) / 100), 0);
         const usedRatio = p.goldPurityRatioSnapshot || (components.length === 1 ? (this.settings.purityMapping?.[components[0].purity] || 0) : 0);
 
         const bags = this.getBags(projectId);
@@ -4355,7 +4406,9 @@ class StoreService {
             labourCost: designJewellerCost,
             automatedSetterCost,
             goldCost,
-            totalProjectCostCad: goldCost + totalDiamondCostCad + designJewellerCost + automatedSetterCost,
+            internalCastingCostCad,
+            pickupClientGoldChargeCad,
+            totalProjectCostCad: (internalCastingCostCad > 0 ? internalCastingCostCad : goldCost) + totalDiamondCostCad + designJewellerCost + automatedSetterCost,
             initialWeightG,
             finalWeightG,
             goldLossG,

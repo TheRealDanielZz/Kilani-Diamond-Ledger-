@@ -9,6 +9,47 @@ export interface GoldPriceCache {
   isManual?: boolean; // New: true if set by user, false if from API
 }
 
+export type MetalComponentState = 'ACTIVE' | 'SUPERSEDED';
+
+export interface InternalCastingCostSnapshot {
+  recordId: string;
+  status: 'LOCKED';
+  castingWeightMg: number;
+  supplierRateCentsPerGram: number;
+  amountCents: number;
+  enteredAt: string;
+  enteredBy: { uid: string; name: string };
+  correctionOfRecordId?: string;
+}
+
+export interface PickupGoldChargeComponent {
+  componentId: string;
+  revisionId: string;
+  label: string;
+  metal: string;
+  purity: string;
+  finalWeightMg: number;
+  purityRatioPpm: number;
+  priceCentsPerGram: number;
+  amountCents?: number;
+  pricingStatus: 'PRICED' | 'PLATINUM_PRICING_PENDING';
+}
+
+export interface PickupPricingSnapshot {
+  operationId: string;
+  actualPickupDate: string;
+  lateEntryReason?: string;
+  source: string;
+  currency: 'CAD';
+  priceCentsPerGram: number;
+  capturedAt: string;
+  capturedBy: { uid: string; name: string };
+  components: PickupGoldChargeComponent[];
+  totalClientGoldChargeCents: number;
+  formulaVersion: 'NO_MARKUP_V1';
+  locked: true;
+}
+
 export enum Role {
   MANAGER = 'Manager',
   SETTER = 'Setter',
@@ -136,11 +177,30 @@ export interface ProjectAssignment {
   active: boolean;
 }
 
+export type CanonicalProjectServiceCode =
+  | 'CUSTOM_MAKE'
+  | 'ENGAGEMENT'
+  | 'REPAIR'
+  | 'OTHER'
+  | 'MANAGER_REVIEW_REQUIRED';
+
 export interface ProjectService {
-  name: string;
+  code?: CanonicalProjectServiceCode;
+  /** Legacy display value. New records store only the stable code. */
+  name?: string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   updatedAt?: string;
   updatedBy?: string;
+}
+
+export interface ProjectServiceMigrationMetadata {
+  version: string;
+  classification: CanonicalProjectServiceCode;
+  ruleId: string;
+  originalServicesHash: string;
+  migratedAt: string;
+  migratedBy: string;
+  status: 'MIGRATED' | 'MANAGER_REVIEW_REQUIRED';
 }
 
 export interface ProjectNote {
@@ -166,10 +226,20 @@ export interface ProjectProgress {
 
 export interface GoldComponent {
   id: string; // Unique UUID
+  componentId?: string; // Stable physical-component identity across revisions
+  revisionId?: string; // Unique identity for this component revision
+  revisionVersion?: number;
+  supersedesRevisionId?: string;
+  state?: MetalComponentState;
   label: string; // User-defined, e.g., "Top Piece", "Band"
   type: string; // "Yellow", "White", "Rose", "Platinum"
   purity: string; // "10k", "14k", "18k", "22k", etc.
   weightG?: number; // Added post-casting
+  castingWeightMg?: number; // Phase 5 authoritative fixed-precision casting weight
+  finalWeightMg?: number; // Phase 5 authoritative fixed-precision finished weight
+  purityRatioPpm?: number;
+  internalCostRecordId?: string;
+  internalCastingCost?: InternalCastingCostSnapshot;
   ratioSnapshot?: number; // Snapshot on project complete
   goldPriceSnapshot?: number; // Snapshot on project complete
 }
@@ -298,6 +368,7 @@ export interface Project {
   assignments: ProjectAssignment[];
   activeAssignees?: string[];
   services: ProjectService[];
+  serviceMigration?: ProjectServiceMigrationMetadata;
   currentStageName: string;
   currentPercentComplete: number;
   designStage?: string;
@@ -323,6 +394,7 @@ export interface Project {
 
   // -- Financials & Metals --
   goldComponents?: GoldComponent[]; // Auto-migrated list of gold parts
+  primaryGoldComponentId?: string;
   goldType?: 'Yellow' | 'White' | 'Rose' | 'Platinum';
   goldPurity?: string; // '10k', '14k', etc.
   goldPurityRatioSnapshot?: number; // The specific ratio used (e.g. 0.585)
@@ -336,6 +408,7 @@ export interface Project {
   projectEndGoldPriceSnapshot?: number;
   projectEndGoldPriceCapturedAt?: string;
   finalGoldCostCalculated?: number; // The final calculated cost (Price * Ratio * Weight)
+  pickupPricingSnapshot?: PickupPricingSnapshot;
 
   usdToCadMultiplierSnapshot?: number;
   setterCostPerSetPieceCadSnapshot?: number;
@@ -502,6 +575,8 @@ export interface ProjectCostSummary {
   labourCost: number; // Manual Design/Jeweller cost
   automatedSetterCost: number; // New: Auto-calculated
   goldCost: number;
+  internalCastingCostCad?: number;
+  pickupClientGoldChargeCad?: number;
   totalProjectCostCad: number;
 
   initialWeightG: number;
@@ -759,11 +834,14 @@ export interface ProjectRevision {
   operationId: string;
   projectId: string;
   projectCode: string;
-  kind: 'INSTRUCTIONS' | 'METAL';
+  kind: 'INSTRUCTIONS' | 'METAL' | 'COMPONENT_REVISED' | 'COMPONENT_SUPERSEDED'
+    | 'CASTING_RECEIVED' | 'FINAL_WEIGHT_RECORDED' | 'INTERNAL_COST_CONFIRMED'
+    | 'INTERNAL_COST_REVERSAL' | 'INTERNAL_COST_REPLACEMENT' | 'PICKUP_PRICING_LOCKED'
+    | 'SERVICE_MIGRATION' | 'SERVICE_MIGRATION_ROLLBACK';
   reason: string;
   editor: { uid: string; name: string; role: string };
-  before: { instructions?: string; metal?: string; purity?: string };
-  after: { instructions?: string; metal?: string; purity?: string };
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
   version: number;
   createdAt: string;
   recipients?: string[];

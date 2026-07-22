@@ -23,6 +23,21 @@ export { runInventoryReconciliationAudit } from './inventory/reconciliation';
 export { reviseProjectDetails } from './projects/phase4';
 export { createProjectNotification } from './projects/notifications';
 export { handoffProject } from './projects/workflow';
+export {
+  reviseMetalComponent,
+  recordCastingReceipt,
+  dispatchCastingPhase5,
+  confirmInternalCastingCost,
+  correctInternalCastingCost,
+  recordFinalComponentWeights,
+  confirmProjectPickupPhase5,
+  revertProjectToActivePhase5,
+} from './projects/phase5';
+export {
+  getPhase6ServiceMigrationDryRun,
+  applyPhase6ServiceMigration,
+  rollbackPhase6ServiceMigration,
+} from './projects/phase6';
 
 initializeApp();
 const db = getFirestore();

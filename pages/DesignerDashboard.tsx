@@ -2,13 +2,19 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
-import { Project, ProjectStatus, Priority, Role, User } from '../types';
+import { CanonicalProjectServiceCode, Project, ProjectStatus, Priority, Role, User } from '../types';
 import { Card, StatusPill, Badge, ProgressBar, Button, Input, SetterAvatar } from '../components/UI';
 import { Briefcase, Calendar, PenTool, Image as ImageIcon, Plus, X, ChevronRight } from 'lucide-react';
 import { useToast } from '../App';
 import { RepairProjectModal } from '../components/RepairProjectModal';
+import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 
-const SERVICE_OPTIONS = ['Setting', 'Custom Make', 'Repair', 'Resize', 'Other'];
+const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
+  { code: 'CUSTOM_MAKE' },
+  { code: 'ENGAGEMENT' },
+  { code: 'REPAIR' },
+  { code: 'OTHER', disabled: true },
+];
 
 const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   const navigate = useNavigate();
@@ -22,7 +28,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   // Create Project Modal State
   const [isCreating, setIsCreating] = useState(false);
   const [isRepairing, setIsRepairing] = useState(false);
-  const [selectedServices, setSelectedServices] = useState<string[]>(['Custom Make']);
+  const [selectedServices, setSelectedServices] = useState<CanonicalProjectServiceCode[]>(['CUSTOM_MAKE']);
   const [newAssignees, setNewAssignees] = useState<string[]>([]);
   const [newProject, setNewProject] = useState<Partial<Project>>({
     code: '', pieceName: '', priority: Priority.NORMAL,
@@ -50,15 +56,14 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
     return store.subscribe(sync);
   }, []);
 
-  const toggleService = (svc: string) => {
-    if (svc === 'Repair') {
+  const toggleService = (svc: CanonicalProjectServiceCode) => {
+    if (svc === 'OTHER') return;
+    if (svc === 'REPAIR') {
       setIsCreating(false);
       setIsRepairing(true);
       return;
     }
-    setSelectedServices(prev =>
-      prev.includes(svc) ? prev.filter(s => s !== svc) : [...prev, svc]
-    );
+    setSelectedServices([svc]);
   };
 
   const resetModal = () => {
@@ -70,21 +75,21 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       goldComponents: [{ id: crypto.randomUUID(), label: 'Component 1', type: 'Yellow', purity: '14k' }],
       repairDetails: { date: new Date().toISOString().split('T')[0], items: [{ stoneSize: '', quantity: 0 }], totalQuantity: 0, report: '' }
     });
-    setSelectedServices(['Custom Make']);
+    setSelectedServices(['CUSTOM_MAKE']);
     setNewAssignees([]);
   };
 
   const handleCreateProject = async () => {
     if (!newProject.code || !newProject.pieceName) return alert('Code and Name required');
     setLoading(true);
-    const serviceObjects = selectedServices.map(s => ({ name: s, status: 'PENDING' as const }));
+    const serviceObjects = selectedServices.map(code => createCanonicalService(code));
     try {
       const finalAssignees = [...newAssignees];
       if (newProject.salesRepId && !finalAssignees.includes(newProject.salesRepId)) {
         finalAssignees.push(newProject.salesRepId);
       }
       const projectDataToSave = { ...newProject, services: serviceObjects };
-      if (!selectedServices.includes('Repair')) {
+      if (!selectedServices.includes('REPAIR')) {
         delete projectDataToSave.repairDetails;
       } else if (projectDataToSave.repairDetails) {
         const total = projectDataToSave.repairDetails.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
@@ -119,12 +124,11 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#23262F] border border-[#2D313A]">
             <PenTool className="text-lux-gold w-5 h-5" />
           </div>
-          <Button variant="secondary" onClick={() => setIsRepairing(true)}>New Repair</Button>
-          <Button onClick={() => setIsCreating(true)} icon={<Plus size={18} />}>New Project</Button>
+          <span className="text-xs text-zinc-500">Managers create projects; assigned Designers can edit project details.</span>
         </div>
       </div>
 
-      <RepairProjectModal isOpen={isRepairing} onClose={() => setIsRepairing(false)} currentUser={currentUser} />
+      <RepairProjectModal isOpen={false} onClose={() => setIsRepairing(false)} currentUser={currentUser} />
 
       {/* My Assigned Projects */}
       {myProjects.length > 0 && (
@@ -231,7 +235,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
               </section>
 
               {/* Logistics */}
-              {!selectedServices.includes('Repair') && (
+              {!selectedServices.includes('REPAIR') && (
                 <section className="space-y-4 animate-in fade-in">
                   <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Logistics</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -256,7 +260,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
               )}
 
               {/* Gold Components */}
-              {!selectedServices.includes('Repair') && (
+              {!selectedServices.includes('REPAIR') && (
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Materials</h3>
                   <div className="bg-theme-input-bg p-5 rounded-2xl border border-theme-border">
@@ -300,14 +304,15 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
               <section className="space-y-4">
                 <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Services</h3>
                   <div className="bg-theme-input-bg rounded-2xl p-4 border border-theme-border flex flex-wrap gap-2">
-                   {SERVICE_OPTIONS.map(svc => (
-                     <button key={svc} onClick={() => toggleService(svc)} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${selectedServices.includes(svc) ? 'bg-lux-gold text-black border-lux-gold' : 'bg-theme-modal-bg border-theme-border text-zinc-400 hover:text-theme-text-primary hover:border-zinc-700'}`}>{svc}</button>
+                   {SERVICE_OPTIONS.map(option => (
+                     <button key={option.code} disabled={option.disabled} onClick={() => toggleService(option.code)} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${option.disabled ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed opacity-60' : selectedServices.includes(option.code) ? 'bg-lux-gold text-black border-lux-gold' : 'bg-theme-modal-bg border-theme-border text-zinc-400 hover:text-theme-text-primary hover:border-zinc-700'}`}>{PROJECT_SERVICE_LABELS[option.code]}</button>
                   ))}
                 </div>
+                <div className="mt-3 text-xs text-zinc-500">Other project workflows will be available in a future update.</div>
               </section>
 
               {/* Work Details */}
-              {!selectedServices.includes('Repair') && (
+              {!selectedServices.includes('REPAIR') && (
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Work Details / Instructions</h3>
                   <textarea className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border border-theme-border p-4 text-sm focus:ring-lux-gold focus:border-lux-gold h-28 transition-all resize-none" placeholder="Describe the work required..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} />

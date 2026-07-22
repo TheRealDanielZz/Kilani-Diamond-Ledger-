@@ -8,6 +8,7 @@ import { Project, ProjectCostSummary, InventoryMovement, InventoryMovementType, 
 import { useToast } from '../App';
 import { runDiamondSituationalTests, TestScenarioResult } from '../services/testHarness';
 import { generateProjectPDF, generateEvidenceAppendixPDF } from '../utils/pdfGenerator';
+import { getCanonicalServiceCode, getProjectServiceLabel, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 
 function getEditDistance(a: string, b: string): number {
   if (a.length === 0) return b.length;
@@ -335,17 +336,33 @@ const ReportsPage: React.FC = () => {
        const combined = [...progress, ...inventory, ...designNotes].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
        setProjectLogs(combined);
        void store.getProjectRevisions(p.id).then(revisions => {
-          const revisionLogs = revisions.map(revision => ({
-             id: revision.id,
-             type: revision.kind === 'INSTRUCTIONS' ? 'INSTRUCTIONS REVISION' : 'METAL REVISION',
-             date: revision.createdAt,
-             user: store.getUser(revision.editor.uid) || { name: revision.editor.name },
-             details: revision.kind === 'INSTRUCTIONS'
-                ? `Instructions: “${revision.before.instructions || ''}” → “${revision.after.instructions || ''}”`
-                : `Metal: ${revision.before.metal || '-'} ${revision.before.purity || ''} → ${revision.after.metal || '-'} ${revision.after.purity || ''}`,
-             extra: `Reason: ${revision.reason}`,
-             highlight: true
-          }));
+          const revisionLogs = revisions.map(revision => {
+             const before = revision.before as any;
+             const after = revision.after as any;
+             const descriptions: Record<string, string> = {
+                INSTRUCTIONS: `Instructions: “${before.instructions || ''}” → “${after.instructions || ''}”`,
+                METAL: `Metal: ${before.metal || '-'} ${before.purity || ''} → ${after.metal || '-'} ${after.purity || ''}`,
+                COMPONENT_REVISED: `Component revised: ${after.label || after.revisionId || ''}`,
+                COMPONENT_SUPERSEDED: `Component ${before.label || before.revisionId || ''} superseded by ${after.label || after.revisionId || ''}`,
+                CASTING_RECEIVED: `Casting received: ${JSON.stringify(after.componentWeightsMg || {})}`,
+                FINAL_WEIGHT_RECORDED: `Final component weights recorded`,
+                INTERNAL_COST_CONFIRMED: `Internal casting cost locked: $${(Number(after.amountCents || 0) / 100).toFixed(2)}`,
+                INTERNAL_COST_REVERSAL: `Internal cost reversal: -$${(Math.abs(Number(after.amountCents || 0)) / 100).toFixed(2)}`,
+                INTERNAL_COST_REPLACEMENT: `Replacement internal cost locked: $${(Number(after.amountCents || 0) / 100).toFixed(2)}`,
+                PICKUP_PRICING_LOCKED: `Pickup pricing locked for ${after.actualPickupDate || ''}: $${(Number(after.totalClientGoldChargeCents || 0) / 100).toFixed(2)}`,
+                SERVICE_MIGRATION: `Service classification: ${JSON.stringify(before.services || [])} → ${PROJECT_SERVICE_LABELS[after.classification] || after.classification || 'Manager Review Required'}`,
+                SERVICE_MIGRATION_ROLLBACK: `Service migration rolled back to ${JSON.stringify(after.services || [])}`,
+             };
+             return {
+                id: revision.id,
+                type: revision.kind.replace(/_/g, ' '),
+                date: revision.createdAt,
+                user: store.getUser(revision.editor.uid) || { name: revision.editor.name },
+                details: descriptions[revision.kind] || 'Project revision',
+                extra: `Reason: ${revision.reason}`,
+                highlight: true
+             };
+          });
           setProjectLogs([...combined, ...revisionLogs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
        }).catch(error => {
           console.error('Failed to load project revisions', error);
@@ -423,12 +440,11 @@ const ReportsPage: React.FC = () => {
   const filteredProjects = projects.filter(p => {
      const matchesRep = salesRepFilter === 'ALL' || p.salesRepId === salesRepFilter;
      if (!matchesRep) return false;
-     const serviceNames = store.getServiceNames(p);
+     const canonicalService = getCanonicalServiceCode(p);
      const repair = store.getRepairDetails(p);
      const repairCost = store.getRepairCostSummary(p.id);
 
-     if (serviceFilter === 'Repair' && !repair) return false;
-     if (serviceFilter !== 'ALL' && serviceFilter !== 'Repair' && !serviceNames.includes(serviceFilter)) return false;
+     if (serviceFilter !== 'ALL' && canonicalService !== serviceFilter) return false;
      if (repairTypeFilter !== 'ALL' && repair?.type !== repairTypeFilter) return false;
      if (repairStatusFilter !== 'ALL' && repair?.status !== repairStatusFilter) return false;
      if (repairFlagFilter === 'NO_CHARGE' && !repairCost.noCharge) return false;
@@ -1412,11 +1428,15 @@ const ReportsPage: React.FC = () => {
                   piece: p.pieceName,
                   status: p.status,
                   salesRep: store.getUser(p.salesRepId || '')?.name || '',
-                  serviceType: repair ? 'Repair' : store.getServiceNames(p).join(' / '),
+                  serviceType: getProjectServiceLabel(p),
                   repairType: repair?.type || '',
                   repairStatus: repair?.status || '',
-                  internalCost: repair ? repairCost.totalInternalCostCad : store.getProjectCostSummary(p.id).totalProjectCostCad,
-                  clientCharge: repair ? repairCost.finalClientChargeCad : '',
+                  internalCost: repair ? repairCost.totalInternalCostCad : (store.getProjectCostSummary(p.id).internalCastingCostCad || ''),
+                  totalProjectCost: repair ? repairCost.totalInternalCostCad : store.getProjectCostSummary(p.id).totalProjectCostCad,
+                  clientCharge: repair ? repairCost.finalClientChargeCad : (store.getProjectCostSummary(p.id).pickupClientGoldChargeCad || ''),
+                  pickupDate: p.pickupPricingSnapshot?.actualPickupDate || p.date_picked_up || '',
+                  goldRateCadPerGram: p.pickupPricingSnapshot ? p.pickupPricingSnapshot.priceCentsPerGram / 100 : '',
+                  goldRateSource: p.pickupPricingSnapshot?.source || '',
                   profitLoss: repair ? repairCost.profitLossCad : '',
                   noCharge: repairCost.noCharge ? 'Yes' : '',
                   outsourced: repairCost.outsourced ? 'Yes' : ''
@@ -1426,10 +1446,11 @@ const ReportsPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
                  <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
                     <option value="ALL">All Services</option>
-                    <option value="Repair">Repair</option>
-                    <option value="Setting">Setting</option>
-                    <option value="Custom Make">Custom Make</option>
-                    <option value="Resize">Resize</option>
+                    <option value="CUSTOM_MAKE">Custom Make</option>
+                    <option value="ENGAGEMENT">Engagement</option>
+                    <option value="REPAIR">Repair</option>
+                    <option value="OTHER">Other</option>
+                    <option value="MANAGER_REVIEW_REQUIRED">Manager Review Required</option>
                  </select>
                  <select value={repairTypeFilter} onChange={e => setRepairTypeFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
                     <option value="ALL">All Repair Types</option>
@@ -1962,7 +1983,7 @@ const ReportsPage: React.FC = () => {
                             <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
                                <div className="flex justify-between items-start mb-2">
                                   <div className="flex flex-col">
-                                     <span className="text-zinc-300 font-bold text-sm">Final Gold Cost</span>
+                                     <span className="text-zinc-300 font-bold text-sm">Client Gold Charge</span>
                                      <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
                                         <span>Combined Weight</span>
                                         <span>•</span>
@@ -1970,7 +1991,7 @@ const ReportsPage: React.FC = () => {
                                      </div>
                                   </div>
                                   <span className="text-white font-mono text-xl tracking-tight">
-                                     {projectStats?.finalWeightG ? `$${projectStats?.goldCost.toFixed(2)}` : <span className="text-zinc-600">--</span>}
+                                     {selectedProject.pickupPricingSnapshot ? `$${(selectedProject.pickupPricingSnapshot.totalClientGoldChargeCents / 100).toFixed(2)}` : <span className="text-zinc-600">Pending pickup pricing</span>}
                                   </span>
                                </div>
                                

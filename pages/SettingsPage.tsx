@@ -6,6 +6,7 @@ import { useToast } from '../App';
 import { Settings, RefreshCw, Plus, Trash2, Key, Gem, MapPin } from 'lucide-react';
 import { DiamondPriceBand, DiamondSpec } from '../types';
 import { inventoryApi, Phase1BootstrapAudit } from '../services/inventoryApi';
+import { getPhase6ServiceMigrationDryRun, Phase6ServiceDryRun } from '../services/phase6Api';
 
 const SettingsPage: React.FC = () => {
   const showToast = useToast();
@@ -15,6 +16,8 @@ const SettingsPage: React.FC = () => {
   const [bands, setBands] = useState<DiamondPriceBand[]>(store.getBands());
   const [phase1Audit, setPhase1Audit] = useState<Phase1BootstrapAudit | null>(null);
   const [phase1Busy, setPhase1Busy] = useState(false);
+  const [phase6DryRun, setPhase6DryRun] = useState<Phase6ServiceDryRun | null>(null);
+  const [phase6Busy, setPhase6Busy] = useState(false);
   
   // Sorting state
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -31,6 +34,30 @@ const SettingsPage: React.FC = () => {
 
   // Custom Location Form
   const [newLocationName, setNewLocationName] = useState('');
+
+  const runPhase6DryRun = async () => {
+    setPhase6Busy(true);
+    try {
+      const result = await getPhase6ServiceMigrationDryRun();
+      setPhase6DryRun(result);
+      showToast(`Phase 6 dry run complete: ${result.projectCount} project(s), zero writes.`);
+    } catch (error: any) {
+      showToast(error?.message || 'Phase 6 dry run failed.');
+    } finally {
+      setPhase6Busy(false);
+    }
+  };
+
+  const downloadPhase6Backup = () => {
+    if (!phase6DryRun) return;
+    const blob = new Blob([JSON.stringify(phase6DryRun, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${phase6DryRun.version}-${phase6DryRun.dryRunHash.slice(0, 12)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   const locations = settings.inventoryLocations && settings.inventoryLocations.length > 0
     ? settings.inventoryLocations
@@ -417,6 +444,37 @@ const SettingsPage: React.FC = () => {
                  </Button>
                  <Button variant="danger" onClick={hardenLegacyEvidence} disabled={phase1Busy}>
                    Rotate Legacy Evidence Tokens
+                 </Button>
+               </div>
+             </Card>
+           )}
+
+           {isManager && (
+             <Card className="p-6 border-blue-700/40">
+               <div className="flex items-center justify-between gap-4 mb-3">
+                 <div>
+                   <h3 className="font-bold text-lg text-lux-cream">Phase 6 Service Migration</h3>
+                   <p className="text-xs text-zinc-500 mt-1">Read-only classification audit. Production migration execution remains disabled pending approval.</p>
+                 </div>
+                 <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-500/15 text-blue-400">
+                   {phase6DryRun ? 'DRY RUN READY' : 'NOT RUN'}
+                 </span>
+               </div>
+               {phase6DryRun && (
+                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-xs">
+                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Projects</div><div className="text-lg font-bold text-white">{phase6DryRun.projectCount}</div></div>
+                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Custom Make</div><div className="text-lg font-bold text-white">{phase6DryRun.classificationCounts.CUSTOM_MAKE}</div></div>
+                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Repair</div><div className="text-lg font-bold text-white">{phase6DryRun.classificationCounts.REPAIR}</div></div>
+                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Manager Review</div><div className="text-lg font-bold text-amber-400">{phase6DryRun.ambiguousCount}</div></div>
+                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Writes</div><div className="text-lg font-bold text-emerald-400">{phase6DryRun.writesPerformed}</div></div>
+                 </div>
+               )}
+               <div className="flex flex-wrap gap-3">
+                 <Button variant="secondary" onClick={runPhase6DryRun} disabled={phase6Busy}>
+                   {phase6Busy ? 'Auditing…' : 'Run Read-Only Dry Run'}
+                 </Button>
+                 <Button variant="secondary" onClick={downloadPhase6Backup} disabled={!phase6DryRun}>
+                   Download Backup Plan
                  </Button>
                </div>
              </Card>

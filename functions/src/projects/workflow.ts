@@ -18,8 +18,8 @@ function optionalString(value: unknown, maxLength: number): string {
 
 export const handoffProject = onCall(CALLABLE_OPTIONS, async request => {
   const actor = await requireActor(request);
-  if (actor.profile.role !== 'Setter' && actor.profile.role !== 'Jeweller') {
-    throw new HttpsError('permission-denied', 'Only assigned Setters and Jewellers may hand off production work.');
+  if (!['Manager', 'Designer', 'Setter', 'Jeweller'].includes(String(actor.profile.role || ''))) {
+    throw new HttpsError('permission-denied', 'Only active team members may hand off production work.');
   }
   const input = dataOf(request.data);
   const operationId = requireOperationId(input.operationId);

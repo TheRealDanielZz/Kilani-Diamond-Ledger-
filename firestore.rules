@@ -29,19 +29,19 @@ service cloud.firestore {
       return signedIn() && profile().active != false
         && ((resource.data.activeAssignees is list
               && (request.auth.uid in resource.data.activeAssignees
-                || resource.data.activeAssignees.hasAny(profile().legacyProfileIds)))
+                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.activeAssignees.hasAny(profile().legacyProfileIds))))
           || (('assignedSetterId' in resource.data)
               && (request.auth.uid == resource.data.assignedSetterId
-                || resource.data.assignedSetterId in profile().legacyProfileIds))
+                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedSetterId in profile().legacyProfileIds)))
           || (('assignedJewellerId' in resource.data)
               && (request.auth.uid == resource.data.assignedJewellerId
-                || resource.data.assignedJewellerId in profile().legacyProfileIds))
+                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedJewellerId in profile().legacyProfileIds)))
           || (('assignedDesignerId' in resource.data)
               && (request.auth.uid == resource.data.assignedDesignerId
-                || resource.data.assignedDesignerId in profile().legacyProfileIds))
+                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedDesignerId in profile().legacyProfileIds)))
           || (('createdById' in resource.data)
               && (request.auth.uid == resource.data.createdById
-                || resource.data.createdById in profile().legacyProfileIds)));
+                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.createdById in profile().legacyProfileIds))));
     }
 
     function assignedDesigner() {
@@ -58,34 +58,53 @@ service cloud.firestore {
         || (('date_picked_up' in resource.data) && resource.data.date_picked_up != null);
     }
 
-    function primaryComponentMetalUnchanged() {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['goldComponents'])
-        || (resource.data.goldComponents is list
-          && request.resource.data.goldComponents is list
-          && resource.data.goldComponents.size() > 0
-          && request.resource.data.goldComponents.size() > 0
-          && request.resource.data.goldComponents[0].type == resource.data.goldComponents[0].type
-          && request.resource.data.goldComponents[0].purity == resource.data.goldComponents[0].purity)
-        || (!('goldComponents' in resource.data)
-          && request.resource.data.goldComponents is list
-          && request.resource.data.goldComponents.size() > 0
-          && request.resource.data.goldComponents[0].type == resource.data.goldType
-          && request.resource.data.goldComponents[0].purity == resource.data.goldPurity);
+    function nonRepairPickupUnchanged() {
+      return (('repair' in resource.data) && resource.data.repair is map)
+        || ((!request.resource.data.diff(resource.data).affectedKeys().hasAny(['date_picked_up']))
+          && (!('status' in request.resource.data)
+            || request.resource.data.status != 'Closed'
+            || (('status' in resource.data) && resource.data.status == 'Closed')));
+    }
+
+    function validProjectServiceOnCreate() {
+      return request.resource.data.services is list
+        && request.resource.data.services.size() == 1
+        && request.resource.data.services[0] is map
+        && request.resource.data.services[0].keys().hasOnly(['code', 'status', 'updatedAt', 'updatedBy'])
+        && request.resource.data.services[0].code in ['CUSTOM_MAKE', 'ENGAGEMENT', 'REPAIR']
+        && request.resource.data.services[0].status in ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
+    }
+
+    function projectServiceIdentityUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['services'])
+        || (resource.data.services is list
+          && request.resource.data.services is list
+          && resource.data.services.size() == 1
+          && request.resource.data.services.size() == 1
+          && resource.data.services[0] is map
+          && request.resource.data.services[0] is map
+          && (('code' in resource.data.services[0])
+            && request.resource.data.services[0].code == resource.data.services[0].code)
+          && request.resource.data.services[0].diff(resource.data.services[0]).affectedKeys()
+            .hasOnly(['status', 'updatedAt', 'updatedBy']));
     }
 
     function directProjectUpdateIsSafe() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'workDetails', 'goldType', 'goldPurity', 'instructionRevisionVersion',
-          'metalRevisionVersion', 'projectRevisionUpdatedAt'
+          'metalRevisionVersion', 'projectRevisionUpdatedAt', 'goldComponents', 'primaryGoldComponentId',
+          'pickupPricingSnapshot', 'projectEndGoldPriceSnapshot',
+          'projectEndGoldPriceCapturedAt', 'finalGoldCostCalculated', 'serviceMigration'
         ])
-        && primaryComponentMetalUnchanged()
+        && projectServiceIdentityUnchanged()
+        && nonRepairPickupUnchanged()
         && !pickedUp();
     }
 
     function appendedOnly(oldList, newList) {
       return oldList is list && newList is list
         && newList.size() == oldList.size() + 1
-        && newList.toSet().hasAll(oldList.toSet());
+        && newList[0:oldList.size()] == oldList;
     }
 
     function productionProjectUpdateIsSafe() {
@@ -93,7 +112,7 @@ service cloud.firestore {
           'progress', 'currentStageName', 'currentPercentComplete',
           'services', 'designLogs', 'projectPhotos', 'projectPhotoIds',
           'repair', 'status', 'date_completed', 'date_picked_up',
-          'last_status_change_at', 'last_status_change_by'
+          'last_status_change_at', 'last_status_change_by', 'castingEvents'
         ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['progress'])
           || ((!('progress' in resource.data)
@@ -139,7 +158,9 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow read: if signedIn();
-      allow create: if managerOrDesigner();
+      // Project creation may contain component scaffolding. Keep creation
+      // Manager-only so a Designer cannot inject pre-locked financial fields.
+      allow create: if manager() && validProjectServiceOnCreate();
       allow update: if directProjectUpdateIsSafe()
         && (manager() || assignedDesigner()
           || (assignedProductionStaff() && productionProjectUpdateIsSafe()));
@@ -147,6 +168,16 @@ service cloud.firestore {
 
       match /revisions/{revisionId} {
         allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
+    match /system_migrations/{migrationId} {
+      allow read: if manager();
+      allow write: if false;
+
+      match /backups/{projectId} {
+        allow read: if manager();
         allow write: if false;
       }
     }

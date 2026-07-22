@@ -94,6 +94,9 @@ export const generateProjectPDF = async (project: Project, cost: ProjectCostSumm
         drawMeta("Repair Type", repair.type, MARGIN + 40, y);
         drawMeta("Repair Status", repair.status, MARGIN + 95, y);
         y += 15;
+    } else {
+        drawMeta("Service Type", store.getServiceNames(project)[0] || "Manager Review Required", MARGIN, y);
+        y += 15;
     }
 
     // Right Column: Image
@@ -170,7 +173,7 @@ export const generateProjectPDF = async (project: Project, cost: ProjectCostSumm
 
     doc.setFontSize(9);
     doc.setTextColor(C_GRAY[0], C_GRAY[1], C_GRAY[2]);
-    doc.text("FINAL GOLD COST (CAD)", MARGIN + 5, y + 8);
+    doc.text(project.pickupPricingSnapshot ? "CLIENT GOLD CHARGE (CAD)" : "LEGACY GOLD COST (CAD)", MARGIN + 5, y + 8);
 
     // Total Value
     doc.setFontSize(14);
@@ -182,7 +185,9 @@ export const generateProjectPDF = async (project: Project, cost: ProjectCostSumm
     doc.setFontSize(8);
     doc.setTextColor(isLocked ? 0 : 180, isLocked ? 100 : 100, isLocked ? 0 : 0); // Dark Green or Dark Orange
     const statusText = isLocked
-        ? `LOCKED • ${project.projectEndGoldPriceCapturedAt ? new Date(project.projectEndGoldPriceCapturedAt).toLocaleString() : ''}`
+        ? project.pickupPricingSnapshot
+          ? `LOCKED • Pickup ${project.pickupPricingSnapshot.actualPickupDate} • ${project.pickupPricingSnapshot.source}`
+          : `LOCKED • ${project.projectEndGoldPriceCapturedAt ? new Date(project.projectEndGoldPriceCapturedAt).toLocaleString() : ''}`
         : `ESTIMATED (LIVE) • ${liveGoldPriceTimestamp ? new Date(liveGoldPriceTimestamp).toLocaleTimeString() : 'Just now'}`;
     doc.text(statusText, MARGIN + 5, y + 22);
 
@@ -212,6 +217,14 @@ export const generateProjectPDF = async (project: Project, cost: ProjectCostSumm
     }
 
     y += goldSectionHeight + 5;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(C_GRAY[0], C_GRAY[1], C_GRAY[2]);
+    doc.text("INTERNAL CASTING COST", MARGIN + 5, y + 5);
+    doc.setTextColor(C_BLACK[0], C_BLACK[1], C_BLACK[2]);
+    doc.text(cost.internalCastingCostCad ? `$${cost.internalCastingCostCad.toFixed(2)} CAD` : "Pending", PAGE_WIDTH - MARGIN - 5, y + 5, { align: "right" });
+    y += 12;
 
     // 2. Diamond Cost Section
     doc.setDrawColor(200);
@@ -439,4 +452,3 @@ export const generateEvidenceAppendixPDF = async (
 
     doc.save(`${safeCode}_${safeClient}_Evidence_Appendix.pdf`);
 };
-
