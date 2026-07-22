@@ -9,10 +9,10 @@ test('Phase 6 maps known legacy service evidence without guessing', () => {
   assert.equal(classifyLegacyProjectServices({ services: [{ name: 'Repair', status: 'COMPLETED' }] }).code, 'REPAIR');
 });
 
-test('Phase 6 leaves Setting-only and unsupported records for Manager review', () => {
+test('Phase 6 applies the owner-approved pre-settings rule and leaves unsupported records for Manager review', () => {
   const setting = classifyLegacyProjectServices({ services: [{ name: 'Setting', status: 'IN_PROGRESS' }] });
-  assert.equal(setting.code, 'MANAGER_REVIEW_REQUIRED');
-  assert.equal(setting.ruleId, 'AMBIGUOUS_SETTING');
+  assert.equal(setting.code, 'CUSTOM_MAKE');
+  assert.equal(setting.ruleId, 'OWNER_CONFIRMED_LEGACY_SETTING_TO_CUSTOM_MAKE');
   assert.equal(setting.status, 'IN_PROGRESS');
   assert.equal(classifyLegacyProjectServices({ services: [] }).code, 'MANAGER_REVIEW_REQUIRED');
   assert.equal(classifyLegacyProjectServices({ services: [{ name: 'Mystery', status: 'PENDING' }] }).code, 'MANAGER_REVIEW_REQUIRED');

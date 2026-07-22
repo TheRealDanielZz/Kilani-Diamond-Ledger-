@@ -45,6 +45,8 @@ export function getCanonicalServiceCode(project: Pick<Project, 'services' | 'rep
   const repairEvidence = !!project.repair || !!project.repairDetails || !!project.isQuickRepair || names.has('repair');
   if (names.has('resize') || (names.has('setting') && repairEvidence)) return 'REPAIR';
   if (names.has('custom make')) return 'CUSTOM_MAKE';
+  // Owner-approved one-time interpretation for pre-Phase-6 Setting-only records.
+  if (names.size === 1 && names.has('setting')) return 'CUSTOM_MAKE';
   if (names.has('engagement')) return 'ENGAGEMENT';
   if (names.has('other')) return 'OTHER';
   if (names.size === 1 && names.has('repair')) return 'REPAIR';

@@ -31,6 +31,9 @@ const SERVICE_CODES = new Set<CanonicalServiceCode>([
   'CUSTOM_MAKE', 'ENGAGEMENT', 'REPAIR', 'OTHER', 'MANAGER_REVIEW_REQUIRED',
 ]);
 
+export const LEGACY_SETTING_OWNER_NOTE =
+  'Created before the new project service settings; legacy Setting was classified as Custom Make by owner approval.';
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') {
@@ -101,6 +104,15 @@ export function classifyLegacyProjectServices(project: Record<string, unknown>):
   if (names.has('setting') && names.has('custom make')) {
     return { code: 'CUSTOM_MAKE', ruleId: 'NEW_MANUFACTURE_SETTING_TO_CUSTOM_MAKE', status: serviceStatus(sourceWithName(originalServices, 'custom make')), originalServices, originalServicesHash };
   }
+  if (names.size === 1 && names.has('setting')) {
+    return {
+      code: 'CUSTOM_MAKE',
+      ruleId: 'OWNER_CONFIRMED_LEGACY_SETTING_TO_CUSTOM_MAKE',
+      status: serviceStatus(originalServices[0]),
+      originalServices,
+      originalServicesHash,
+    };
+  }
   if (names.size === 1 && names.has('custom make')) {
     return { code: 'CUSTOM_MAKE', ruleId: 'LEGACY_CUSTOM_MAKE', status: serviceStatus(originalServices[0]), originalServices, originalServicesHash };
   }
@@ -115,11 +127,17 @@ export function classifyLegacyProjectServices(project: Record<string, unknown>):
   }
   return {
     code: 'MANAGER_REVIEW_REQUIRED',
-    ruleId: names.size === 1 && names.has('setting') ? 'AMBIGUOUS_SETTING' : 'UNSUPPORTED_OR_CONFLICTING_LEGACY_VALUE',
+    ruleId: 'UNSUPPORTED_OR_CONFLICTING_LEGACY_VALUE',
     status: serviceStatus(originalServices[0]),
     originalServices,
     originalServicesHash,
   };
+}
+
+function migrationReason(ruleId: string): string {
+  return ruleId === 'OWNER_CONFIRMED_LEGACY_SETTING_TO_CUSTOM_MAKE'
+    ? LEGACY_SETTING_OWNER_NOTE
+    : ruleId;
 }
 
 async function buildDryRun(db: Firestore): Promise<{ rows: DryRunRow[]; dryRunHash: string }> {
@@ -274,7 +292,7 @@ export const applyPhase6ServiceMigration = onCall(CALLABLE_OPTIONS, async reques
           projectId: row.projectId,
           projectCode: row.projectCode,
           kind: 'SERVICE_MIGRATION',
-          reason: current.ruleId,
+          reason: migrationReason(current.ruleId),
           editor: { uid: actor.uid, name: actor.profile.name || actor.profile.email || actor.uid, role: 'Manager' },
           before: { services: current.originalServices },
           after: { services: [{ code: current.code, status: current.status }], classification: current.code },

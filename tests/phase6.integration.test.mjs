@@ -51,9 +51,9 @@ test('dry run is Manager-only, classifies exact mappings, and performs no writes
   await assert.rejects(call(designer, 'getPhase6ServiceMigrationDryRun'));
   const result = await call(manager, 'getPhase6ServiceMigrationDryRun');
   assert.equal(result.projectCount, 5);
-  assert.equal(result.classificationCounts.CUSTOM_MAKE, 2);
+  assert.equal(result.classificationCounts.CUSTOM_MAKE, 3);
   assert.equal(result.classificationCounts.REPAIR, 2);
-  assert.equal(result.classificationCounts.MANAGER_REVIEW_REQUIRED, 1);
+  assert.equal(result.classificationCounts.MANAGER_REVIEW_REQUIRED, 0);
   assert.equal(result.writesPerformed, 0);
   assert.equal(await read('system_migrations/phase6-service-canonical-v1'), null);
   assert.equal((await read('projects/b-ambiguous')).services[0].name, 'Setting');
@@ -80,9 +80,12 @@ test('migration keeps unrelated project data and creates one immutable history p
   const custom = await read('projects/a-new-setting');
   assert.deepEqual(custom.services, [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }]);
   assert.equal(custom.serviceMigration.ruleId, 'NEW_MANUFACTURE_SETTING_TO_CUSTOM_MAKE');
-  const ambiguous = await read('projects/b-ambiguous');
-  assert.deepEqual(ambiguous.services, [{ code: 'MANAGER_REVIEW_REQUIRED', status: 'IN_PROGRESS' }]);
-  assert.equal(ambiguous.serviceMigration.status, 'MANAGER_REVIEW_REQUIRED');
+  const legacySetting = await read('projects/b-ambiguous');
+  assert.deepEqual(legacySetting.services, [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }]);
+  assert.equal(legacySetting.serviceMigration.status, 'MIGRATED');
+  assert.equal(legacySetting.serviceMigration.ruleId, 'OWNER_CONFIRMED_LEGACY_SETTING_TO_CUSTOM_MAKE');
+  const legacySettingHistory = await read('projects/b-ambiguous/revisions/service-migration-phase6-service-canonical-v1');
+  assert.equal(legacySettingHistory.reason, 'Created before the new project service settings; legacy Setting was classified as Custom Make by owner approval.');
   for (const field of ['status', 'currentStageName', 'currentPercentComplete', 'cost', 'bags', 'projectPhotos', 'assignments']) {
     assert.deepEqual(custom[field], unchanged[field]);
   }
