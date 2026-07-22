@@ -302,14 +302,14 @@ export const applyPhase6ServiceMigration = onCall(CALLABLE_OPTIONS, async reques
     if (result === 'processed') processed += 1;
     else skipped += 1;
   }
+  const remaining = Math.max(0, dryRun.rows.filter(row => !row.alreadyMigrated).length - processed - skipped);
   await db.doc(`system_migrations/${PHASE6_SERVICE_MIGRATION_VERSION}`).set({
     version: PHASE6_SERVICE_MIGRATION_VERSION,
     dryRunHash: dryRun.dryRunHash,
     lastBatchAt: FieldValue.serverTimestamp(),
     lastBatchBy: actor.uid,
-    state: pending.length < requestedBatchSize ? 'COMPLETED' : 'IN_PROGRESS',
+    state: remaining === 0 ? 'COMPLETED' : 'IN_PROGRESS',
   }, { merge: true });
-  const remaining = Math.max(0, dryRun.rows.filter(row => !row.alreadyMigrated).length - processed - skipped);
   return { version: PHASE6_SERVICE_MIGRATION_VERSION, processed, skipped, remaining, complete: remaining === 0 };
 });
 

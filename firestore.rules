@@ -25,23 +25,27 @@ service cloud.firestore {
       return manager() || designer();
     }
 
-    function assignedProjectMember() {
-      return signedIn() && profile().active != false
+    function assignedProjectMemberFor(userProfile) {
+      return signedIn() && userProfile.active != false
         && ((resource.data.activeAssignees is list
               && (request.auth.uid in resource.data.activeAssignees
-                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.activeAssignees.hasAny(profile().legacyProfileIds))))
+                || (('legacyProfileIds' in userProfile) && userProfile.legacyProfileIds is list && resource.data.activeAssignees.hasAny(userProfile.legacyProfileIds))))
           || (('assignedSetterId' in resource.data)
               && (request.auth.uid == resource.data.assignedSetterId
-                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedSetterId in profile().legacyProfileIds)))
+                || (('legacyProfileIds' in userProfile) && userProfile.legacyProfileIds is list && resource.data.assignedSetterId in userProfile.legacyProfileIds)))
           || (('assignedJewellerId' in resource.data)
               && (request.auth.uid == resource.data.assignedJewellerId
-                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedJewellerId in profile().legacyProfileIds)))
+                || (('legacyProfileIds' in userProfile) && userProfile.legacyProfileIds is list && resource.data.assignedJewellerId in userProfile.legacyProfileIds)))
           || (('assignedDesignerId' in resource.data)
               && (request.auth.uid == resource.data.assignedDesignerId
-                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.assignedDesignerId in profile().legacyProfileIds)))
+                || (('legacyProfileIds' in userProfile) && userProfile.legacyProfileIds is list && resource.data.assignedDesignerId in userProfile.legacyProfileIds)))
           || (('createdById' in resource.data)
               && (request.auth.uid == resource.data.createdById
-                || (('legacyProfileIds' in profile()) && profile().legacyProfileIds is list && resource.data.createdById in profile().legacyProfileIds))));
+                || (('legacyProfileIds' in userProfile) && userProfile.legacyProfileIds is list && resource.data.createdById in userProfile.legacyProfileIds))));
+    }
+
+    function assignedProjectMember() {
+      return assignedProjectMemberFor(profile());
     }
 
     function assignedDesigner() {
@@ -51,6 +55,16 @@ service cloud.firestore {
     function assignedProductionStaff() {
       return assignedProjectMember()
         && (profile().role == 'Setter' || profile().role == 'Jeweller');
+    }
+
+    function projectUpdateAuthorized() {
+      let userProfile = profile();
+      return signedIn() && userProfile.active != false
+        && (userProfile.role == 'Manager'
+          || (userProfile.role == 'Designer' && assignedProjectMemberFor(userProfile))
+          || ((userProfile.role == 'Setter' || userProfile.role == 'Jeweller')
+            && assignedProjectMemberFor(userProfile)
+            && productionProjectUpdateIsSafe()));
     }
 
     function pickedUp() {
@@ -104,7 +118,7 @@ service cloud.firestore {
     function appendedOnly(oldList, newList) {
       return oldList is list && newList is list
         && newList.size() == oldList.size() + 1
-        && newList[0:oldList.size()] == oldList;
+        && (oldList.size() == 0 || newList[0:oldList.size()] == oldList);
     }
 
     function productionProjectUpdateIsSafe() {
@@ -161,9 +175,7 @@ service cloud.firestore {
       // Project creation may contain component scaffolding. Keep creation
       // Manager-only so a Designer cannot inject pre-locked financial fields.
       allow create: if manager() && validProjectServiceOnCreate();
-      allow update: if directProjectUpdateIsSafe()
-        && (manager() || assignedDesigner()
-          || (assignedProductionStaff() && productionProjectUpdateIsSafe()));
+      allow update: if directProjectUpdateIsSafe() && projectUpdateAuthorized();
       allow delete: if manager() && !pickedUp();
 
       match /revisions/{revisionId} {

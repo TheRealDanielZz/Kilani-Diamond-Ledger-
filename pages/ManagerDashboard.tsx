@@ -8,6 +8,7 @@ import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
 import { RepairProjectModal } from '../components/RepairProjectModal';
+import { IssueDiamondsModal } from '../components/IssueDiamondsModal';
 import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 
 const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
@@ -1094,166 +1095,22 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          )}
 
          {fulfillReq && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-               <Card className="w-full max-w-lg p-6 max-h-[90vh] flex flex-col overflow-hidden">
-                  <h3 className="font-bold text-theme-text-primary text-lg mb-4">Issue Diamonds</h3>
-
-                  <div className="bg-lux-gold/10 border border-lux-gold/30 p-4 rounded-xl mb-4 text-center shrink-0">
-                     <div className="text-[10px] text-lux-gold font-bold uppercase tracking-widest mb-1">Job Number</div>
-                     <div className="text-2xl font-black text-white font-mono tracking-wider">{fulfillReq.jobNumberSnapshot || store.getProject(fulfillReq.projectId)?.code || 'Unknown'}</div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto pr-1 mb-6 border border-white/5 rounded-xl bg-zinc-900/50 p-4 space-y-4">
-                     {editedLines.map((l, i) => {
-                        const spec = fulfillmentSpecs.find(s => s.id === l.specId);
-                        const available = spec?.availablePcs ?? 0;
-
-                        const isLowStock = available > 0 && available < l.requestedPcs;
-                        const isOutOfStock = available <= 0;
-                        const recommended = Math.min(l.requestedPcs, available);
-
-                        const originalReqLine = fulfillReq.lines[l.sourceLineIndex];
-
-                        const isChanged = originalReqLine
-                           ? (l.issuedPcs !== originalReqLine.requestedPcs || l.specId !== originalReqLine.specId)
-                           : true;
-
-                        const explanationRequired = isChanged && !l.explanation.trim();
-
-                        return (
-                           <div key={i} className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-3 relative">
-                              <button
-                                 onClick={() => setEditedLines(prev => prev.map((item, idx) => idx === i ? { ...item, issuedPcs: 0 } : item))}
-                                 className="absolute top-3 right-3 text-zinc-500 hover:text-white transition-colors"
-                                 title="Remove line"
-                              >
-                                 <X size={16} />
-                              </button>
-
-                              {/* Spec Selection */}
-                              <div>
-                                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">Diamond Specification</label>
-                                 <select
-                                    className="w-full bg-zinc-950 border border-white/10 rounded-xl p-2.5 text-sm text-theme-text-primary focus:border-lux-gold focus:ring-1 focus:ring-lux-gold transition-all"
-                                    value={l.specId}
-                                    onChange={e => {
-                                       const newSpecId = e.target.value;
-                                       const newSpec = fulfillmentSpecs.find(s => s.id === newSpecId);
-                                       const newAvailable = newSpec?.availablePcs ?? 0;
-                                       setEditedLines(prev => prev.map((item, idx) => idx === i ? {
-                                          ...item,
-                                          specId: newSpecId,
-                                          issuedPcs: Math.min(item.requestedPcs, newAvailable)
-                                       } : item));
-                                    }}
-                                 >
-                                    {fulfillmentSpecs.map(s => (
-                                       <option key={s.id} value={s.id}>{s.label}</option>
-                                    ))}
-                                 </select>
-                              </div>
-
-                              {/* Stats Row */}
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                 <div className="bg-zinc-950/40 p-2.5 rounded-lg border border-white/5">
-                                    <span className="text-zinc-500 block mb-0.5">Requested</span>
-                                    <span className="font-mono text-lux-cream font-bold text-sm">{l.requestedPcs} pcs</span>
-                                 </div>
-                                 <div className="bg-zinc-950/40 p-2.5 rounded-lg border border-white/5 flex flex-col justify-between">
-                                    <span className="text-zinc-500 block mb-0.5">Available Stock</span>
-                                    <div className="flex items-center gap-1.5">
-                                       <span className="font-mono text-white font-bold text-sm">{available} pcs</span>
-                                       {isOutOfStock ? (
-                                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Out of Stock" />
-                                       ) : isLowStock ? (
-                                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-500" title="Low Stock" />
-                                       ) : (
-                                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" title="Available" />
-                                       )}
-                                    </div>
-                                 </div>
-                              </div>
-
-                              {/* Issue Qty & Recommended */}
-                              <div className="flex items-center justify-between gap-4 pt-1">
-                                 <div className="text-xs text-zinc-500">
-                                    Recommended Qty: <span className="font-mono font-bold text-lux-gold">{recommended} pcs</span>
-                                 </div>
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs text-zinc-400">Issue:</span>
-                                    <input
-                                       type="number"
-                                       min="0"
-                                       max={available}
-                                       value={l.issuedPcs}
-                                       onChange={e => {
-                                          const val = parseInt(e.target.value) || 0;
-                                          setEditedLines(prev => prev.map((item, idx) => idx === i ? {
-                                             ...item,
-                                             issuedPcs: Math.max(0, Math.min(val, available))
-                                          } : item));
-                                       }}
-                                       className="w-24 bg-zinc-950 border border-white/10 rounded-xl p-2 font-mono text-sm text-lux-gold focus:border-lux-gold focus:ring-1 focus:ring-lux-gold transition-all text-center"
-                                    />
-                                 </div>
-                              </div>
-
-                              {/* Explanation Field (if changed) */}
-                              {isChanged && (
-                                 <div className="pt-1">
-                                    <input
-                                       type="text"
-                                       placeholder="Explain variation (required)"
-                                       value={l.explanation}
-                                       onChange={e => setEditedLines(prev => prev.map((item, idx) => idx === i ? {
-                                          ...item,
-                                          explanation: e.target.value
-                                       } : item))}
-                                       className={`w-full bg-zinc-950 border rounded-xl p-2 text-xs focus:ring-1 transition-all ${explanationRequired
-                                             ? 'border-red-500/50 focus:border-red-500 focus:ring-red-500/30'
-                                             : 'border-white/10 focus:border-lux-gold focus:ring-lux-gold'
-                                          }`}
-                                    />
-                                    {explanationRequired && (
-                                       <p className="text-[10px] text-red-400 mt-1 font-bold">Please provide an explanation for this deviation.</p>
-                                    )}
-                                 </div>
-                              )}
-                           </div>
-                        );
-                     })}
-                  </div>
-
-                  <div className="shrink-0 space-y-4">
-                     <Input label="Assign Bag Number" value={bagNum} onChange={e => setBagNum(e.target.value)} className="font-mono text-xl text-center" />
-                     <div><ImageUpload label="Bag Photo" required value={issuedPhoto} onChange={(base64, src) => { setIssuedPhoto(base64); setIssuedPhotoSource(src); }} /></div>
-
-                     <div className="flex justify-end gap-3 pt-2">
-                        <Button variant="secondary" onClick={() => setFulfillReq(null)}>Cancel</Button>
-                        <Button
-                           onClick={handleFulfill}
-                           loading={loading}
-                           disabled={previewLoading || !bagNum.trim() || (editedLines.some(line => line.issuedPcs > 0) && !issuedPhoto) || (() => {
-                              if (editedLines.length === 0) return true;
-                              for (let i = 0; i < editedLines.length; i++) {
-                                 const el = editedLines[i];
-                                 const orig = fulfillReq.lines[el.sourceLineIndex];
-                                 const isChanged = orig ? (el.issuedPcs !== orig.requestedPcs || el.specId !== orig.specId) : true;
-                                 if (isChanged && !el.explanation.trim()) return true;
-
-                                 const spec = fulfillmentSpecs.find(s => s.id === el.specId);
-                                 const available = spec?.availablePcs ?? 0;
-                                 if (el.issuedPcs > available || el.issuedPcs < 0) return true;
-                              }
-                              return false;
-                           })()}
-                        >
-                           Confirm Issue
-                        </Button>
-                     </div>
-                  </div>
-               </Card>
-            </div>
+            <IssueDiamondsModal
+               fulfillReq={fulfillReq}
+               jobNumber={fulfillReq.jobNumberSnapshot || store.getProject(fulfillReq.projectId)?.code || 'Unknown'}
+               editedLines={editedLines}
+               setEditedLines={setEditedLines}
+               fulfillmentSpecs={fulfillmentSpecs}
+               previewLoading={previewLoading}
+               bagNum={bagNum}
+               setBagNum={setBagNum}
+               issuedPhoto={issuedPhoto}
+               setIssuedPhoto={setIssuedPhoto}
+               setIssuedPhotoSource={setIssuedPhotoSource}
+               onClose={() => setFulfillReq(null)}
+               onConfirm={handleFulfill}
+               loading={loading}
+            />
          )}
 
          {countBag && (

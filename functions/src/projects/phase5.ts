@@ -418,7 +418,10 @@ export const recordFinalComponentWeights = onCall(CALLABLE_OPTIONS, async reques
     const project = snap.data() || {};
     assertUnlocked(project);
     const assigned = isAssignedToProject(project, actor);
-    if (!(actor.profile.role === 'Manager' || assigned)) throw new HttpsError('permission-denied', 'Only Managers and assigned project members may record final weights.');
+    const assignedProductionRole = assigned && (actor.profile.role === 'Setter' || actor.profile.role === 'Jeweller');
+    if (!(actor.profile.role === 'Manager' || assignedProductionRole)) {
+      throw new HttpsError('permission-denied', 'Only Managers and assigned Setters or Jewellers may record final weights.');
+    }
     const components = normalizeComponents(project);
     const after: Data[] = [];
     for (const row of weights) {
