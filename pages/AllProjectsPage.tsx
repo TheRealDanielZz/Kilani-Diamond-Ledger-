@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, User, Role, Priority } from '../types';
 import { Card, StatusPill, SetterAvatar, Input, Badge, Button } from '../components/UI';
-import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X, LayoutGrid, List, Image as ImageIcon } from 'lucide-react';
+import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X, LayoutGrid, List, Image as ImageIcon, Maximize2 } from 'lucide-react';
 import { useToast } from '../App';
 import ProjectDetail from './ProjectDetail';
 
@@ -70,6 +70,9 @@ const AllProjectsPage: React.FC = () => {
 
   const toggleViewMode = (mode: 'LIST' | 'GRID') => {
     setViewMode(mode);
+    if (mode === 'GRID') {
+      setSelectedProjectId(null);
+    }
     localStorage.setItem('kilani_all_projects_view_mode', mode);
   };
 
@@ -82,6 +85,9 @@ const AllProjectsPage: React.FC = () => {
   const [pickupModalOpen, setPickupModalOpen] = useState(false);
   const [projectToPickup, setProjectToPickup] = useState<string | null>(null);
   const [pickupConfirmation, setPickupConfirmation] = useState('');
+  const [actualPickupDate, setActualPickupDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }));
+  const [latePickupReason, setLatePickupReason] = useState('');
+  const [pickupSubmitting, setPickupSubmitting] = useState(false);
 
   // Master-Detail Split View State
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -118,19 +124,24 @@ const AllProjectsPage: React.FC = () => {
       
       setProjectToPickup(projectId);
       setPickupConfirmation('');
+      setActualPickupDate(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }));
+      setLatePickupReason('');
       setPickupModalOpen(true);
   };
 
   const confirmPickupAction = async () => {
       if (projectToPickup && pickupConfirmation === 'DONE' && currentUser) {
           try {
-              await store.confirmProjectPickup(projectToPickup, currentUser.id);
+              setPickupSubmitting(true);
+              await store.confirmProjectPickup(projectToPickup, currentUser.id, actualPickupDate, latePickupReason);
               showToast("Project Closed (Picked Up)");
               setPickupModalOpen(false);
               setProjectToPickup(null);
           } catch (error: any) {
               console.error("Pickup failed:", error);
               alert("Error updating project status: " + (error.message || "Unknown error"));
+          } finally {
+              setPickupSubmitting(false);
           }
       }
   };
@@ -182,11 +193,10 @@ const AllProjectsPage: React.FC = () => {
   });
 
   const handleProjectClick = (projectId: string) => {
-    // On large screens, set selected project for split view. On small screens, navigate.
-    if (window.innerWidth >= 1024) {
-      setSelectedProjectId(projectId);
-    } else {
+    if (viewMode === 'GRID' || window.innerWidth < 1024) {
       navigate(`/project/${projectId}`);
+    } else {
+      setSelectedProjectId(projectId);
     }
   };
 
@@ -560,10 +570,18 @@ const AllProjectsPage: React.FC = () => {
       {/* Detail View (iPad/Desktop Split View) */}
       {selectedProjectId && (
         <div className="hidden lg:flex flex-col w-2/3 bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden relative">
-          <div className="absolute top-6 right-6 z-50">
+          <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
+            <button 
+              onClick={() => navigate(`/project/${selectedProjectId}`)}
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              title="Open Fullscreen"
+            >
+              <Maximize2 size={18} />
+            </button>
             <button 
               onClick={() => setSelectedProjectId(null)}
               className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              title="Close Quick Peek"
             >
               <X size={20} />
             </button>
@@ -588,6 +606,19 @@ const AllProjectsPage: React.FC = () => {
                  </p>
                  
                  <div className="w-full mb-6 text-left">
+                    <Input
+                      label="Actual Pickup Date"
+                      type="date"
+                      value={actualPickupDate}
+                      max={new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' })}
+                      onChange={e => setActualPickupDate(e.target.value)}
+                    />
+                    {actualPickupDate < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }) && (
+                      <div className="mt-3">
+                        <Input label="Late-entry reason" value={latePickupReason} onChange={e => setLatePickupReason(e.target.value)} placeholder="Why is pickup being entered later?" />
+                      </div>
+                    )}
+                    <p className="text-[11px] text-zinc-500 mt-3 mb-4">The historical CAD gold rate for this date will be snapshotted. Pickup will stop if the rate is unavailable.</p>
                     <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">
                        Type <span className="text-white select-none">DONE</span> to confirm
                     </label>
@@ -605,7 +636,8 @@ const AllProjectsPage: React.FC = () => {
                     <Button variant="secondary" onClick={() => setPickupModalOpen(false)} className="flex-1">Cancel</Button>
                     <Button 
                       className="flex-1 bg-amber-500 text-black hover:bg-amber-400 border-none"
-                      disabled={pickupConfirmation !== 'DONE'} 
+                      disabled={pickupConfirmation !== 'DONE' || !actualPickupDate || (actualPickupDate < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }) && !latePickupReason.trim()) || pickupSubmitting}
+                      loading={pickupSubmitting}
                       onClick={confirmPickupAction}
                     >
                        Confirm Pickup
