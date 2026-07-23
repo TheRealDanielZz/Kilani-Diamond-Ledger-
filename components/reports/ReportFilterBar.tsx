@@ -17,9 +17,9 @@ interface MultiSelectFilterProps {
 }
 
 const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ definition, selected, onToggle }) => (
-  <details className="relative group">
+  <details className="relative group open:z-50">
     <summary
-      className="list-none min-h-11 px-4 py-2.5 rounded-2xl border border-theme-border bg-theme-surface-elevated text-sm text-theme-text-primary cursor-pointer flex items-center justify-between gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+      className="list-none min-h-11 px-4 py-2.5 rounded-2xl border border-theme-border bg-theme-input-bg text-sm text-theme-text-primary cursor-pointer flex items-center justify-between gap-3 transition-colors hover:bg-theme-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
       aria-label={`${definition.label} filter`}
     >
       <span className="truncate">
@@ -27,7 +27,7 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ definition, selec
       </span>
       <ChevronDown size={15} className="shrink-0 transition-transform group-open:rotate-180" />
     </summary>
-    <div className="absolute z-50 mt-2 min-w-56 max-h-72 overflow-y-auto rounded-2xl border border-theme-border bg-theme-surface shadow-2xl p-2">
+    <div className="absolute inset-x-0 z-[70] mt-2 min-w-56 max-h-72 overflow-y-auto overscroll-contain rounded-2xl border border-theme-border bg-surface-raised shadow-[0_18px_50px_rgba(0,0,0,0.45)] p-2">
       {definition.options.map(option => {
         const active = selected.includes(option.value);
         return (
@@ -35,7 +35,7 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ definition, selec
             key={option.value}
             type="button"
             onClick={() => onToggle(option.value)}
-            className="w-full min-h-11 px-3 py-2 rounded-xl flex items-center gap-3 text-left text-sm hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+            className="w-full min-h-11 px-3 py-2 rounded-xl flex items-center gap-3 text-left text-sm hover:bg-theme-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
             aria-pressed={active}
           >
             <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${active ? 'bg-lux-gold border-lux-gold text-black' : 'border-theme-border text-transparent'}`}>
@@ -79,7 +79,7 @@ export const ReportFilterBar: React.FC<ReportFilterBarProps> = ({
             value={state.search}
             onChange={event => onChange({ ...state, search: event.target.value, cursor: null })}
             placeholder={searchPlaceholder}
-            className="w-full min-h-11 bg-theme-surface-elevated border border-theme-border rounded-2xl pl-10 pr-4 text-sm text-theme-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+            className="w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl pl-10 pr-4 text-sm text-theme-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
           />
         </label>
         {definitions.map(definition => (
@@ -98,7 +98,7 @@ export const ReportFilterBar: React.FC<ReportFilterBarProps> = ({
                 type="date"
                 value={state.from}
                 onChange={event => onChange({ ...state, from: event.target.value, cursor: null })}
-                className="mt-1 w-full min-h-11 bg-theme-surface-elevated border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
+                className="mt-1 w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
               />
             </label>
             <label className="text-[10px] uppercase tracking-wider text-theme-text-muted">
@@ -107,7 +107,7 @@ export const ReportFilterBar: React.FC<ReportFilterBarProps> = ({
                 type="date"
                 value={state.to}
                 onChange={event => onChange({ ...state, to: event.target.value, cursor: null })}
-                className="mt-1 w-full min-h-11 bg-theme-surface-elevated border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
+                className="mt-1 w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
               />
             </label>
           </>
