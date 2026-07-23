@@ -56,7 +56,11 @@ function normalizeComponents(project: Data): Data[] {
       componentId,
       revisionId,
       revisionVersion: Number.isSafeInteger(component.revisionVersion) ? Number(component.revisionVersion) : 0,
-      state: component.state === 'SUPERSEDED' ? 'SUPERSEDED' : 'ACTIVE',
+      state: component.state === 'SUPERSEDED'
+        ? 'SUPERSEDED'
+        : component.state === 'REMOVED'
+          ? 'REMOVED'
+          : 'ACTIVE',
       purityRatioPpm: Number.isSafeInteger(component.purityRatioPpm)
         ? Number(component.purityRatioPpm)
         : (typeof component.ratioSnapshot === 'number' ? Math.round(component.ratioSnapshot * 1_000_000) : (PURITY_PPM[purity] || 0)),
@@ -65,11 +69,16 @@ function normalizeComponents(project: Data): Data[] {
 }
 
 function activeComponentIndex(components: Data[], revisionId: string): number {
-  return components.findIndex(component => component.revisionId === revisionId && component.state !== 'SUPERSEDED');
+  return components.findIndex(component => component.revisionId === revisionId && component.state === 'ACTIVE');
 }
 
 function actorSummary(actor: Awaited<ReturnType<typeof requireActor>>): Data {
   return { uid: actor.uid, name: actor.profile.name || actor.profile.email || actor.uid, role: actor.profile.role || '' };
+}
+
+function canManageCasting(project: Data, actor: Awaited<ReturnType<typeof requireActor>>): boolean {
+  return actor.profile.role === 'Manager'
+    || (actor.profile.role === 'Designer' && isAssignedToProject(project, actor));
 }
 
 async function revisionRecipientUids(db: Firestore, project: Data, actorUid: string): Promise<string[]> {
@@ -157,8 +166,8 @@ export const reviseMetalComponent = onCall(CALLABLE_OPTIONS, async request => {
     if (!snap.exists) throw new HttpsError('not-found', 'Project not found.');
     const project = snap.data() || {};
     assertUnlocked(project);
-    if (!(actor.profile.role === 'Manager' || isAssignedToProject(project, actor))) {
-      throw new HttpsError('permission-denied', 'Only Managers and assigned project members may revise metal components.');
+    if (!canManageCasting(project, actor)) {
+      throw new HttpsError('permission-denied', 'Only Managers and assigned Designers may revise metal components.');
     }
     const components = normalizeComponents(project);
     const index = activeComponentIndex(components, revisionId);
@@ -219,13 +228,32 @@ export const recordCastingReceipt = onCall(CALLABLE_OPTIONS, async request => {
   const condition = requireString(input.condition, 'condition', 30);
   if (!['CORRECT', 'DAMAGED', 'INCORRECT'].includes(condition)) throw new HttpsError('invalid-argument', 'Invalid casting condition.');
   const notes = typeof input.notes === 'string' ? input.notes.trim().slice(0, 1000) : '';
-  if (!Array.isArray(input.weights) || input.weights.length === 0 || input.weights.length > 50) throw new HttpsError('invalid-argument', 'Component weights are required.');
+  if (!Array.isArray(input.weights) || input.weights.length === 0 || input.weights.length > 50) throw new HttpsError('invalid-argument', 'Component receipt lines are required.');
   const weights = input.weights.map((value, index) => {
     const row = dataOf(value);
-    return { revisionId: requireString(row.revisionId, `weights[${index}].revisionId`, 200), weightMg: requireInteger(row.weightMg, `weights[${index}].weightMg`, condition === 'CORRECT' ? 1 : 0, 100_000_000) };
+    return {
+      revisionId: requireString(row.revisionId, `weights[${index}].revisionId`, 200),
+      weightMg: requireInteger(row.weightMg, `weights[${index}].weightMg`, condition === 'CORRECT' ? 1 : 0, 100_000_000),
+      supplierRateCentsPerGram: condition === 'CORRECT'
+        ? requireInteger(row.supplierRateCentsPerGram, `weights[${index}].supplierRateCentsPerGram`, 1, 10_000_000)
+        : undefined,
+    };
   });
   if (new Set(weights.map(row => row.revisionId)).size !== weights.length) throw new HttpsError('invalid-argument', 'Component weights must be unique.');
-  const hash = payloadHash({ operationId, projectId, condition, notes, weights });
+  const removedComponents = Array.isArray(input.removedComponents)
+    ? input.removedComponents.map((value, index) => {
+      const row = dataOf(value);
+      return {
+        revisionId: requireString(row.revisionId, `removedComponents[${index}].revisionId`, 200),
+        reason: requireString(row.reason, `removedComponents[${index}].reason`, 500),
+      };
+    })
+    : [];
+  if (new Set(removedComponents.map(row => row.revisionId)).size !== removedComponents.length) throw new HttpsError('invalid-argument', 'Removed components must be unique.');
+  if (removedComponents.some(removed => weights.some(weight => weight.revisionId === removed.revisionId))) {
+    throw new HttpsError('invalid-argument', 'A component cannot be both received and removed.');
+  }
+  const hash = payloadHash({ operationId, projectId, condition, notes, weights, removedComponents });
   const db = getFirestore();
   const projectRef = db.doc(`projects/${projectId}`);
   const operationRef = db.doc(`project_workflow_operations/${operationId}`);
@@ -236,23 +264,132 @@ export const recordCastingReceipt = onCall(CALLABLE_OPTIONS, async request => {
     if (!snap.exists) throw new HttpsError('not-found', 'Project not found.');
     const project = snap.data() || {};
     assertUnlocked(project);
-    if (!(actor.profile.role === 'Manager' || isAssignedToProject(project, actor))) throw new HttpsError('permission-denied', 'Only Managers and assigned project members may receive casting.');
+    if (!canManageCasting(project, actor)) throw new HttpsError('permission-denied', 'Only Managers and assigned Designers may receive casting.');
     const components = normalizeComponents(project);
-    for (const row of weights) {
-      const index = activeComponentIndex(components, row.revisionId);
-      if (index < 0) throw new HttpsError('not-found', `Component ${row.revisionId} was not found.`);
-      if (components[index].internalCastingCost) throw new HttpsError('failed-precondition', 'Casting weight is locked by a confirmed internal cost. Use a correction transaction.');
-      components[index] = { ...components[index], castingWeightMg: row.weightMg, weightG: row.weightMg / 1000 };
-    }
     const events = Array.isArray(project.castingEvents) ? [...project.castingEvents] as Data[] : [];
     if (events.length === 0 || events[events.length - 1]?.receivedAt) throw new HttpsError('failed-precondition', 'No open casting dispatch was found.');
     const last = { ...events[events.length - 1] };
+    const activeRevisionIds = components.filter(component => component.state === 'ACTIVE').map(component => String(component.revisionId));
+    const dispatchedRevisionIds = Array.isArray(last.goldComponentIds) && last.goldComponentIds.length > 0
+      ? last.goldComponentIds.map(String)
+      : activeRevisionIds;
+    const submittedRevisionIds = [...weights.map(row => row.revisionId), ...removedComponents.map(row => row.revisionId)].sort();
+    if (submittedRevisionIds.length !== dispatchedRevisionIds.length
+      || submittedRevisionIds.some((revisionId, index) => revisionId !== [...dispatchedRevisionIds].sort()[index])) {
+      throw new HttpsError('invalid-argument', 'Every dispatched component must be received or removed.');
+    }
+
     const createdAt = serverIso();
+    const editor = actorSummary(actor);
+    const removedHistory: Data[] = [];
+    for (const removed of removedComponents) {
+      const index = activeComponentIndex(components, removed.revisionId);
+      if (index < 0) throw new HttpsError('not-found', `Component ${removed.revisionId} was not found.`);
+      const current = components[index];
+      if (current.internalCastingCost) throw new HttpsError('failed-precondition', 'A component with a locked casting cost cannot be removed. Use the correction workflow.');
+      removedHistory.push({
+        componentId: current.componentId,
+        revisionId: current.revisionId,
+        label: current.label || 'Component',
+        reason: removed.reason,
+      });
+      components[index] = {
+        ...current,
+        state: 'REMOVED',
+        removedAt: createdAt,
+        removedBy: editor,
+        removalReason: removed.reason,
+        removedDuringCastingEventId: last.id,
+      };
+    }
+    if (components.filter(component => component.state === 'ACTIVE').length === 0) {
+      throw new HttpsError('failed-precondition', 'At least one active metal component must remain on the project.');
+    }
+
+    const componentCosts: Data[] = [];
+    for (const row of weights) {
+      const index = activeComponentIndex(components, row.revisionId);
+      if (index < 0) throw new HttpsError('not-found', `Component ${row.revisionId} was not found.`);
+      const current = components[index];
+      if (current.internalCastingCost) throw new HttpsError('failed-precondition', 'Casting weight is locked by a confirmed internal cost. Use a correction transaction.');
+      if (condition === 'CORRECT') {
+        const supplierRateCentsPerGram = row.supplierRateCentsPerGram!;
+        const amountCents = roundInternalCostCents(row.weightMg, supplierRateCentsPerGram);
+        const draft = {
+          status: 'DRAFT',
+          castingEventId: String(last.id),
+          castingWeightMg: row.weightMg,
+          supplierRateCentsPerGram,
+          amountCents,
+          enteredAt: createdAt,
+          enteredBy: editor,
+          costingMode: 'REPLACEMENT_LATEST_ONLY',
+        };
+        componentCosts.push({
+          componentId: current.componentId,
+          revisionId: current.revisionId,
+          label: current.label || 'Component',
+          castingWeightMg: row.weightMg,
+          supplierRateCentsPerGram,
+          amountCents,
+        });
+        components[index] = { ...current, castingWeightMg: row.weightMg, weightG: row.weightMg / 1000, pendingInternalCastingCost: draft };
+      } else {
+        const { pendingInternalCastingCost: _discardedDraft, ...withoutDraft } = current;
+        components[index] = { ...withoutDraft, castingWeightMg: row.weightMg, weightG: row.weightMg / 1000 };
+      }
+    }
+
     const componentWeightsMg = Object.fromEntries(weights.map(row => [row.revisionId, row.weightMg]));
-    events[events.length - 1] = { ...last, receivedAt: createdAt, condition, notes, componentWeightsMg, receivedWeightG: weights.reduce((sum, row) => sum + row.weightMg, 0) / 1000, receivedById: actor.uid };
-    const result = { projectId, castingEventId: last.id, componentWeightsMg };
-    transaction.update(projectRef, { goldComponents: components, castingEvents: events, designStage: condition === 'CORRECT' ? 'Ready for Production' : 'Casting Received (Issue)' });
-    createRevision(transaction, projectRef, operationId, { operationId, projectCode: project.code || projectId, kind: 'CASTING_RECEIVED', reason: notes || condition, editor: actorSummary(actor), before: {}, after: { condition, componentWeightsMg }, version: 1, createdAt, result });
+    const overallCastingCostCents = componentCosts.reduce((sum, row) => sum + Number(row.amountCents || 0), 0);
+    events[events.length - 1] = {
+      ...last,
+      receivedAt: createdAt,
+      condition,
+      notes,
+      componentWeightsMg,
+      receivedWeightG: weights.reduce((sum, row) => sum + row.weightMg, 0) / 1000,
+      receivedById: actor.uid,
+      ...(condition === 'CORRECT' ? {
+        componentCosts,
+        overallCastingCostCents,
+        costingMode: 'REPLACEMENT_LATEST_ONLY',
+      } : {}),
+      ...(removedHistory.length > 0 ? { removedComponents: removedHistory } : {}),
+    };
+    const result = { projectId, castingEventId: last.id, componentWeightsMg, overallCastingCostCents };
+    const activeComponents = components.filter(component => component.state === 'ACTIVE');
+    const primaryStillActive = activeComponents.some(component => component.componentId === project.primaryGoldComponentId);
+    const replacementPrimary = primaryStillActive ? undefined : activeComponents[0];
+    transaction.update(projectRef, {
+      goldComponents: components,
+      castingEvents: events,
+      designStage: condition === 'CORRECT' ? 'Ready for Production' : 'Casting Received (Issue)',
+      ...(replacementPrimary ? {
+        primaryGoldComponentId: replacementPrimary.componentId,
+        goldType: replacementPrimary.type,
+        goldPurity: replacementPrimary.purity,
+      } : {}),
+    });
+    createRevision(transaction, projectRef, operationId, {
+      operationId,
+      projectCode: project.code || projectId,
+      kind: 'CASTING_RECEIVED',
+      reason: notes || condition,
+      editor,
+      before: {},
+      after: {
+        condition,
+        componentWeightsMg,
+        componentCosts,
+        overallCastingCostCents,
+        costingMode: condition === 'CORRECT' ? 'REPLACEMENT_LATEST_ONLY' : undefined,
+        removedComponents: removedHistory,
+      },
+      version: 1,
+      createdAt,
+      result,
+    });
     transaction.create(operationRef, { type: 'PHASE5_CASTING_RECEIPT', projectId, actorUid: actor.uid, payloadHash: hash, result, createdAt: FieldValue.serverTimestamp() });
     return result;
   });
@@ -275,8 +412,8 @@ export const dispatchCastingPhase5 = onCall(CALLABLE_OPTIONS, async request => {
     if (!snap.exists) throw new HttpsError('not-found', 'Project not found.');
     const project = snap.data() || {};
     assertUnlocked(project);
-    if (!(actor.profile.role === 'Manager' || isAssignedToProject(project, actor))) throw new HttpsError('permission-denied', 'Only Managers and assigned project members may dispatch casting.');
-    const active = normalizeComponents(project).filter(component => component.state !== 'SUPERSEDED');
+    if (!canManageCasting(project, actor)) throw new HttpsError('permission-denied', 'Only Managers and assigned Designers may dispatch casting.');
+    const active = normalizeComponents(project).filter(component => component.state === 'ACTIVE');
     const revisionIds = requestedIds.length ? requestedIds : active.map(component => String(component.revisionId));
     if (revisionIds.length === 0 || revisionIds.some(id => activeComponentIndex(active, id) < 0)) throw new HttpsError('invalid-argument', 'Choose only active component revisions.');
     const events = Array.isArray(project.castingEvents) ? [...project.castingEvents] : [];
@@ -349,7 +486,8 @@ export const confirmInternalCastingCost = onCall(CALLABLE_OPTIONS, async request
     const createdAt = serverIso();
     const recordId = `internal-cost-${operationId}`;
     const record = { recordId, status: 'LOCKED', castingWeightMg: weightMg, supplierRateCentsPerGram: rate, amountCents, enteredAt: createdAt, enteredBy: { uid: actor.uid, name: actor.profile.name || actor.uid } };
-    components[index] = { ...component, internalCostRecordId: recordId, internalCastingCost: record };
+    const { pendingInternalCastingCost: _draft, ...componentWithoutDraft } = component;
+    components[index] = { ...componentWithoutDraft, internalCostRecordId: recordId, internalCastingCost: record };
     const result = { projectId, revisionId, recordId, amountCents };
     transaction.update(projectRef, { goldComponents: components });
     createRevision(transaction, projectRef, recordId, { operationId, projectCode: project.code || projectId, kind: 'INTERNAL_COST_CONFIRMED', reason: 'Manager confirmed casting weight and supplier rate.', editor: actorSummary(actor), before: {}, after: { componentId: component.componentId, revisionId, ...record }, version: 1, createdAt, result });
@@ -389,7 +527,8 @@ export const correctInternalCastingCost = onCall(CALLABLE_OPTIONS, async request
     const replacementId = `internal-cost-replacement-${operationId}`;
     const replacementAmount = roundInternalCostCents(weightMg, rate);
     const replacement = { recordId: replacementId, status: 'LOCKED', castingWeightMg: weightMg, supplierRateCentsPerGram: rate, amountCents: replacementAmount, enteredAt: createdAt, enteredBy: { uid: actor.uid, name: actor.profile.name || actor.uid }, correctionOfRecordId: original.recordId };
-    components[index] = { ...component, castingWeightMg: weightMg, weightG: weightMg / 1000, internalCostRecordId: replacementId, internalCastingCost: replacement };
+    const { pendingInternalCastingCost: _draft, ...componentWithoutDraft } = component;
+    components[index] = { ...componentWithoutDraft, castingWeightMg: weightMg, weightG: weightMg / 1000, internalCostRecordId: replacementId, internalCastingCost: replacement };
     const result = { projectId, revisionId, reversalId, replacementId, amountCents: replacementAmount };
     transaction.update(projectRef, { goldComponents: components });
     createRevision(transaction, projectRef, reversalId, { operationId, projectCode: project.code || projectId, kind: 'INTERNAL_COST_REVERSAL', reason, editor: actorSummary(actor), before: original, after: { reversedRecordId: original.recordId, amountCents: -Number(original.amountCents || 0) }, version: 1, createdAt, result });
@@ -417,10 +556,8 @@ export const recordFinalComponentWeights = onCall(CALLABLE_OPTIONS, async reques
     if (!snap.exists) throw new HttpsError('not-found', 'Project not found.');
     const project = snap.data() || {};
     assertUnlocked(project);
-    const assigned = isAssignedToProject(project, actor);
-    const assignedProductionRole = assigned && (actor.profile.role === 'Setter' || actor.profile.role === 'Jeweller');
-    if (!(actor.profile.role === 'Manager' || assignedProductionRole)) {
-      throw new HttpsError('permission-denied', 'Only Managers and assigned Setters or Jewellers may record final weights.');
+    if (!canManageCasting(project, actor)) {
+      throw new HttpsError('permission-denied', 'Only Managers and assigned Designers may record final component weights.');
     }
     const components = normalizeComponents(project);
     const after: Data[] = [];
@@ -490,7 +627,7 @@ export const confirmProjectPickupPhase5 = onCall(CALLABLE_OPTIONS, async request
     const project = snap.data() || {};
     assertUnlocked(project);
     if (project.status !== 'Review') throw new HttpsError('failed-precondition', 'Only a project in Review can be marked Picked Up.');
-    const components = normalizeComponents(project).filter(component => component.state !== 'SUPERSEDED');
+    const components = normalizeComponents(project).filter(component => component.state === 'ACTIVE');
     if (components.length === 0) throw new HttpsError('failed-precondition', 'At least one active metal component is required.');
     const pricedComponents = components.map(component => {
       const finalWeightMg = requireInteger(component.finalWeightMg, `${component.label || 'Component'} final weight`, 1, 100_000_000);

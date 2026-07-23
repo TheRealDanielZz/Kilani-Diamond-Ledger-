@@ -1995,7 +1995,7 @@ class StoreService {
         const p = this.getProject(projectId);
         if (!p) return;
         if (!this.isDemoMode) {
-            const active = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
+            const active = this.normalizeGoldComponents(p).filter(component => component.state === 'ACTIVE');
             const revisionIds = (goldComponentIds?.length ? goldComponentIds : active.map(component => component.id)).map(id => {
                 const component = active.find(candidate => candidate.id === id || candidate.revisionId === id);
                 return component?.revisionId || component?.id || id;
@@ -2013,56 +2013,110 @@ class StoreService {
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
     }
 
-    async receiveCasting(projectId: string, condition: any, weight: number, notes: string, userId: string, componentWeights?: Record<string, number>) {
+    async receiveCasting(
+        projectId: string,
+        condition: 'CORRECT' | 'DAMAGED' | 'INCORRECT',
+        notes: string,
+        receiptLines: Array<{
+            revisionId: string;
+            weightMg: number;
+            supplierRateCentsPerGram?: number;
+        }>,
+        removedComponents: Array<{ revisionId: string; reason: string }> = []
+    ) {
         const p = this.getProject(projectId);
         if (!p || !p.castingEvents?.length) return;
 
         if (!this.isDemoMode) {
-            const activeComponents = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
-            const selectedIds = p.castingEvents[p.castingEvents.length - 1]?.goldComponentIds || activeComponents.map(component => component.revisionId || component.id);
-            const weights = selectedIds.map(id => {
-                const component = activeComponents.find(candidate => (candidate.revisionId || candidate.id) === id || candidate.id === id);
-                const grams = componentWeights?.[id] ?? (selectedIds.length === 1 ? weight : 0);
-                return { revisionId: component?.revisionId || component?.id || id, weightMg: Math.round((grams || 0) * 1000) };
-            });
             return phase5Api.recordCastingReceipt({
-                operationId: newOperationId(), projectId, condition, notes, weights
+                operationId: newOperationId(),
+                projectId,
+                condition,
+                notes,
+                weights: receiptLines,
+                removedComponents
             });
         }
 
         const events = [...p.castingEvents];
         const last = { ...events[events.length - 1] };
-
-        let receivedWeight = weight;
-        if (componentWeights && Object.keys(componentWeights).length > 0) {
-            receivedWeight = Object.values(componentWeights).reduce((sum, w) => sum + (w || 0), 0);
-        }
+        const componentWeightsMg = Object.fromEntries(
+            receiptLines.map(line => [line.revisionId, line.weightMg])
+        );
+        const componentCosts = condition === 'CORRECT'
+            ? receiptLines.map(line => {
+                const component = this.normalizeGoldComponents(p).find(
+                    candidate => (candidate.revisionId || candidate.id) === line.revisionId
+                );
+                const supplierRateCentsPerGram = line.supplierRateCentsPerGram || 0;
+                return {
+                    componentId: component?.id || line.revisionId,
+                    revisionId: line.revisionId,
+                    label: component?.label || 'Component',
+                    receivedWeightMg: line.weightMg,
+                    supplierRateCentsPerGram,
+                    componentCastingCostCents: Math.round(
+                        (line.weightMg * supplierRateCentsPerGram) / 1000
+                    )
+                };
+            })
+            : [];
+        const overallCastingCostCents = componentCosts.reduce(
+            (sum, line) => sum + line.componentCastingCostCents,
+            0
+        );
 
         last.receivedAt = now();
         last.condition = condition;
-        last.receivedWeightG = receivedWeight;
+        last.receivedWeightG = receiptLines.reduce((sum, line) => sum + line.weightMg, 0) / 1000;
+        last.componentWeightsMg = componentWeightsMg;
+        last.componentCosts = componentCosts;
+        last.overallCastingCostCents = overallCastingCostCents;
+        last.costingMode = 'REPLACEMENT';
+        last.removedComponents = removedComponents.map(removed => ({
+            ...removed,
+            removedAt: now()
+        }));
         last.notes = notes;
 
         events[events.length - 1] = last;
 
-        let updatedGoldComponents = p.goldComponents;
-        if (componentWeights && updatedGoldComponents) {
-            updatedGoldComponents = updatedGoldComponents.map(c => {
-                if (componentWeights[c.id] !== undefined) {
-                    return { ...c, weightG: componentWeights[c.id] };
-                }
-                return c;
-            });
-        }
+        const removedIds = new Set(removedComponents.map(component => component.revisionId));
+        const updatedGoldComponents = p.goldComponents?.map(component => {
+            const revisionId = component.revisionId || component.id;
+            if (removedIds.has(revisionId)) {
+                const removal = removedComponents.find(candidate => candidate.revisionId === revisionId);
+                return {
+                    ...component,
+                    state: 'REMOVED' as const,
+                    removedAt: now(),
+                    removalReason: removal?.reason
+                };
+            }
+            const receiptLine = receiptLines.find(line => line.revisionId === revisionId);
+            if (!receiptLine) return component;
+            const componentCost = componentCosts.find(line => line.revisionId === revisionId);
+            return {
+                ...component,
+                castingReceivedWeightG: receiptLine.weightMg / 1000,
+                weightG: receiptLine.weightMg / 1000,
+                ...(componentCost ? {
+                    pendingInternalCastingCost: {
+                        receiptEventId: last.id,
+                        supplierRateCentsPerGram: componentCost.supplierRateCentsPerGram,
+                        receivedWeightMg: componentCost.receivedWeightMg,
+                        componentCastingCostCents: componentCost.componentCastingCostCents,
+                        capturedAt: now()
+                    }
+                } : {})
+            };
+        });
 
         const safeUpdates = deepCopySafe({
             castingEvents: events,
             ...(updatedGoldComponents ? { goldComponents: updatedGoldComponents } : {})
         });
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
-
-        if (condition === 'CORRECT') await this.updateDesignStage(projectId, 'Ready for Production', userId);
-        else await this.updateDesignStage(projectId, 'Casting Received (Issue)', userId);
     }
 
     // --- Bags & Inventory ---
@@ -4271,7 +4325,7 @@ class StoreService {
             ? p.pickupPricingSnapshot.priceCentsPerGram / 100
             : (isLocked ? (p.projectEndGoldPriceSnapshot || 0) : (this.liveGoldPrice?.price || 0));
 
-        const components = this.normalizeGoldComponents(p).filter(component => component.state !== 'SUPERSEDED');
+        const components = this.normalizeGoldComponents(p).filter(component => component.state === 'ACTIVE');
         const goldBreakdown: GoldCostBreakdownItem[] = [];
         let totalGoldCost = 0;
         let totalInitialWeightG = 0;

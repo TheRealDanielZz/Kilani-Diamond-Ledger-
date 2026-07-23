@@ -1,7 +1,16 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
 
-export interface ComponentWeightInput { revisionId: string; weightMg: number }
+export interface ComponentWeightInput {
+  revisionId: string;
+  weightMg: number;
+  supplierRateCentsPerGram?: number;
+}
+
+export interface RemovedCastingComponentInput {
+  revisionId: string;
+  reason: string;
+}
 
 async function call<TInput, TResult>(name: string, payload: TInput): Promise<TResult> {
   return (await httpsCallable<TInput, TResult>(functions, name)(payload)).data;
@@ -16,9 +25,9 @@ export function reviseMetalComponent(payload: {
 
 export function recordCastingReceipt(payload: {
   operationId: string; projectId: string; condition: 'CORRECT' | 'DAMAGED' | 'INCORRECT';
-  notes: string; weights: ComponentWeightInput[];
+  notes: string; weights: ComponentWeightInput[]; removedComponents?: RemovedCastingComponentInput[];
 }) {
-  return call<typeof payload, { projectId: string; castingEventId: string }>('recordCastingReceipt', payload);
+  return call<typeof payload, { projectId: string; castingEventId: string; overallCastingCostCents: number }>('recordCastingReceipt', payload);
 }
 
 export function dispatchCastingPhase5(payload: { operationId: string; projectId: string; revisionIds: string[] }) {

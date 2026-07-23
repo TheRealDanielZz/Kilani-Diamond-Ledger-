@@ -127,7 +127,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ label, value, onChange
   return (
     <div className={`w-full ${className}`}>
       {label && (
-        <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase tracking-wide">
+        <label className="block text-xs font-bold text-zinc-500 [data-theme=light]:text-zinc-700 mb-2 uppercase tracking-wide">
           {label} {required && <span className="text-red-400">*</span>}
         </label>
       )}
@@ -142,7 +142,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ label, value, onChange
         }}
         className={`
           relative w-full rounded-2xl border-2 border-dashed transition-all cursor-pointer overflow-hidden
-          ${value ? 'border-lux-gold bg-black' : 'border-zinc-700 bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-500'}
+          ${value ? 'border-lux-gold bg-black [data-theme=light]:bg-zinc-100' : 'border-zinc-700 [data-theme=light]:border-zinc-300 bg-zinc-900/50 [data-theme=light]:bg-white hover:bg-zinc-900 [data-theme=light]:hover:bg-zinc-50 hover:border-zinc-500'}
           h-48 flex flex-col items-center justify-center
         `}
       >
@@ -184,10 +184,10 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ label, value, onChange
                        fileInputRef.current.click();
                      }
                    }}
-                   className="flex flex-col items-center bg-zinc-800/80 hover:bg-zinc-700 p-4 rounded-2xl transition-all border border-zinc-700"
+                   className="flex flex-col items-center bg-zinc-800/80 [data-theme=light]:bg-zinc-100 hover:bg-zinc-700 [data-theme=light]:hover:bg-zinc-200 p-4 rounded-2xl transition-all border border-zinc-700 [data-theme=light]:border-zinc-300 shadow-sm cursor-pointer"
                  >
                     <Camera size={24} className="text-lux-gold mb-1" />
-                    <span className="text-xs font-bold text-white">Camera</span>
+                    <span className="text-xs font-bold text-white [data-theme=light]:text-zinc-900">Camera</span>
                  </button>
                  <button 
                    onClick={(e) => {
@@ -198,13 +198,13 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({ label, value, onChange
                        fileInputRef.current.click();
                      }
                    }}
-                   className="flex flex-col items-center bg-zinc-800/80 hover:bg-zinc-700 p-4 rounded-2xl transition-all border border-zinc-700"
+                   className="flex flex-col items-center bg-zinc-800/80 [data-theme=light]:bg-zinc-100 hover:bg-zinc-700 [data-theme=light]:hover:bg-zinc-200 p-4 rounded-2xl transition-all border border-zinc-700 [data-theme=light]:border-zinc-300 shadow-sm cursor-pointer"
                  >
                     <ImageIcon size={24} className="text-blue-400 mb-1" />
-                    <span className="text-xs font-bold text-white">Gallery</span>
+                    <span className="text-xs font-bold text-white [data-theme=light]:text-zinc-900">Gallery</span>
                  </button>
              </div>
-             <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">Select Source</span>
+             <span className="text-[10px] text-zinc-500 [data-theme=light]:text-zinc-600 uppercase font-bold tracking-widest">Select Source</span>
           </div>
         )}
       </div>

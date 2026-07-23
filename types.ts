@@ -9,7 +9,34 @@ export interface GoldPriceCache {
   isManual?: boolean; // New: true if set by user, false if from API
 }
 
-export type MetalComponentState = 'ACTIVE' | 'SUPERSEDED';
+export type MetalComponentState = 'ACTIVE' | 'SUPERSEDED' | 'REMOVED';
+
+export interface CastingCostDraft {
+  status: 'DRAFT';
+  castingEventId: string;
+  castingWeightMg: number;
+  supplierRateCentsPerGram: number;
+  amountCents: number;
+  enteredAt: string;
+  enteredBy: { uid: string; name: string };
+  costingMode: 'REPLACEMENT_LATEST_ONLY';
+}
+
+export interface CastingReceiptCostLine {
+  componentId: string;
+  revisionId: string;
+  label: string;
+  castingWeightMg: number;
+  supplierRateCentsPerGram: number;
+  amountCents: number;
+}
+
+export interface RemovedCastingComponent {
+  componentId: string;
+  revisionId: string;
+  label: string;
+  reason: string;
+}
 
 export interface InternalCastingCostSnapshot {
   recordId: string;
@@ -238,8 +265,13 @@ export interface GoldComponent {
   castingWeightMg?: number; // Phase 5 authoritative fixed-precision casting weight
   finalWeightMg?: number; // Phase 5 authoritative fixed-precision finished weight
   purityRatioPpm?: number;
+  pendingInternalCastingCost?: CastingCostDraft;
   internalCostRecordId?: string;
   internalCastingCost?: InternalCastingCostSnapshot;
+  removedAt?: string;
+  removedBy?: { uid: string; name: string };
+  removalReason?: string;
+  removedDuringCastingEventId?: string;
   ratioSnapshot?: number; // Snapshot on project complete
   goldPriceSnapshot?: number; // Snapshot on project complete
 }
@@ -253,6 +285,12 @@ export interface CastingEvent {
   receivedAt?: string;
   condition?: 'CORRECT' | 'DAMAGED' | 'INCORRECT';
   receivedWeightG?: number;
+  componentWeightsMg?: Record<string, number>;
+  componentCosts?: CastingReceiptCostLine[];
+  overallCastingCostCents?: number;
+  costingMode?: 'REPLACEMENT_LATEST_ONLY';
+  removedComponents?: RemovedCastingComponent[];
+  receivedById?: string;
   notes?: string;
 }
 

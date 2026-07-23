@@ -7,6 +7,7 @@ import { Card, StatusPill, Badge, ProgressBar, Button, Input, SetterAvatar } fro
 import { Briefcase, Calendar, PenTool, Image as ImageIcon, Plus, X, ChevronRight } from 'lucide-react';
 import { useToast } from '../App';
 import { RepairProjectModal } from '../components/RepairProjectModal';
+import { QuickRepairModal } from '../components/QuickRepairModal';
 import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 
 const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
@@ -28,6 +29,7 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   // Create Project Modal State
   const [isCreating, setIsCreating] = useState(false);
   const [isRepairing, setIsRepairing] = useState(false);
+  const [isQuickRepairing, setIsQuickRepairing] = useState(false);
   const [selectedServices, setSelectedServices] = useState<CanonicalProjectServiceCode[]>(['CUSTOM_MAKE']);
   const [newAssignees, setNewAssignees] = useState<string[]>([]);
   const [newProject, setNewProject] = useState<Partial<Project>>({
@@ -115,19 +117,30 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 pb-32">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-theme-text-primary tracking-tight">Design Workspace</h1>
           <p className="text-xs text-zinc-500 font-medium uppercase tracking-[0.2em] mt-1">Active Projects</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            onClick={() => setIsQuickRepairing(true)}
+            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 text-xs flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Repair Project</span>
+          </Button>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-[#23262F] border border-[#2D313A]">
             <PenTool className="text-lux-gold w-5 h-5" />
           </div>
-          <span className="text-xs text-zinc-500">Managers create projects; assigned Designers can edit project details.</span>
         </div>
       </div>
 
+      <QuickRepairModal
+        isOpen={isQuickRepairing}
+        onClose={() => setIsQuickRepairing(false)}
+        currentUser={currentUser}
+      />
       <RepairProjectModal isOpen={false} onClose={() => setIsRepairing(false)} currentUser={currentUser} />
 
       {/* My Assigned Projects */}

@@ -469,6 +469,10 @@ html[data-transition-active] *::after {
 [data-theme="light"] .bg-\[\#1C1E24\]\/60,
 [data-theme="light"] .bg-\[\#121318\]  { background-color: var(--lux-surface); color: var(--text-primary); }
 [data-theme="light"] .bg-\[\#23262F\]  { background-color: var(--color-surface-base); color: var(--text-primary); }
+[data-theme="light"] .bg-\[\#0b0b0d\],
+[data-theme="light"] .bg-\[\#0a0a0c\]  { background-color: #FFFFFF; color: var(--text-primary); }
+[data-theme="light"] .bg-\[\#121217\],
+[data-theme="light"] .bg-\[\#131317\]  { background-color: #F4F4F9; color: var(--text-primary); }
 
 /* ── bg-black standalone (image placeholders) ── */
 [data-theme="light"] .bg-black:not(.bg-black\/60):not(.bg-black\/80):not(.bg-black\/70) {
@@ -482,6 +486,7 @@ html[data-transition-active] *::after {
 [data-theme="light"] .border-zinc-700,
 [data-theme="light"] .border-white\/5,
 [data-theme="light"] .border-white\/10,
+[data-theme="light"] .border-white\/15,
 [data-theme="light"] .border-\[\#2D313A\] { border-color: var(--border-color); }
 
 /* ── Hover states ── */
