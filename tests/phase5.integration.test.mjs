@@ -40,13 +40,13 @@ before(async () => {
     seed(`users/${setter.uid}`, { authUid: setter.uid, name: 'Setter', role: 'Setter', active: true, legacyProfileIds: [] }),
     seed(`users/${jeweller.uid}`, { authUid: jeweller.uid, name: 'Jeweller', role: 'Jeweller', active: true, legacyProfileIds: [] }),
     seed('projects/main', {
-      code: 'P5-MAIN', status: 'Active', designStage: 'Casting Sent', activeAssignees: [designer.uid, setter.uid, jeweller.uid],
+      code: 'P5-MAIN', status: 'Active', designStage: 'Approved', activeAssignees: [designer.uid, setter.uid, jeweller.uid],
       assignments: [{ userId: designer.uid, active: true }, { userId: setter.uid, active: true }, { userId: jeweller.uid, active: true }],
       goldComponents: [
         { id: 'pendant-r1', componentId: 'pendant', revisionId: 'pendant-r1', revisionVersion: 0, state: 'ACTIVE', label: 'Pendant', type: 'Yellow', purity: '10k', purityRatioPpm: 417000 },
         { id: 'accent-r1', componentId: 'accent', revisionId: 'accent-r1', revisionVersion: 0, state: 'ACTIVE', label: 'Accent', type: 'White', purity: '14k', purityRatioPpm: 585000 },
       ],
-      castingEvents: [{ id: 'casting-1', projectId: 'main', cycleNumber: 1, sentAt: new Date().toISOString(), goldComponentIds: ['pendant-r1', 'accent-r1'] }], progress: [],
+      castingEvents: [], progress: [],
     }),
     seed('projects/legacy-closed', { code: 'OLD', status: 'Closed', date_picked_up: '2025-01-01T12:00:00.000Z', finalGoldCostCalculated: 123.45, projectEndGoldPriceSnapshot: 88.88 }),
   ]);
@@ -72,6 +72,11 @@ test('only an assigned Designer or Manager can receive casting and each receipt 
     { revisionId: 'pendant-r1', weightMg: 12400, supplierRateCentsPerGram: 4000 },
     { revisionId: accent.revisionId, weightMg: 1000, supplierRateCentsPerGram: 5000 },
   ];
+  await call(designer, 'dispatchCastingPhase5', {
+    operationId: operation('main-dispatch'),
+    projectId: 'main',
+    revisionIds: ['pendant-r1', accent.revisionId],
+  });
   await assert.rejects(call(setter, 'recordCastingReceipt', { operationId: operation('setter-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));
   await assert.rejects(call(jeweller, 'recordCastingReceipt', { operationId: operation('jeweller-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));
   await assert.rejects(call(otherDesigner, 'recordCastingReceipt', { operationId: operation('other-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));

@@ -305,18 +305,20 @@ class StoreService {
             }
             const userEmail = u.email ? u.email.toLowerCase().trim() : '';
             const authName = u.displayName ? u.displayName.toLowerCase().trim() : '';
-            const usersRef = collection(db, 'users');
+            const emailPrefix = userEmail ? userEmail.split('@')[0].toLowerCase().trim() : '';
 
+            const usersRef = collection(db, 'users');
             const directDocRef = doc(db, 'users', u.uid);
             const directDocSnap = await getDoc(directDocRef);
             let directData: User | null = directDocSnap.exists() ? (directDocSnap.data() as User) : null;
 
-            // Query all users in collection to find any matching legacy profile by email, name, authUid, or legacy IDs
+            // Query all users in collection to find any matching legacy profile by email, name, authUid, prefix, or legacy IDs
             const allUsersSnap = await getDocs(usersRef);
             const matchingLegacyDocs: Array<{ id: string; data: User }> = [];
 
             allUsersSnap.docs.forEach(docSnap => {
                 const d = docSnap.data() as User;
+                const docIdLower = docSnap.id.toLowerCase();
                 const docEmail = (d.email || '').toLowerCase().trim();
                 const docName = (d.name || '').toLowerCase().trim();
 
@@ -324,37 +326,48 @@ class StoreService {
                 const isUidMatch = d.authUid === u.uid;
                 const isLegacyIdMatch = Boolean(directData?.legacyProfileIds?.includes(docSnap.id) || d.legacyProfileIds?.includes(u.uid));
                 const isNameMatch = Boolean(authName && docName && (docName === authName || docName.includes(authName) || authName.includes(docName)));
+                const isPrefixMatch = Boolean(emailPrefix && emailPrefix.length > 2 && (docName.includes(emailPrefix) || emailPrefix.includes(docName) || docIdLower.includes(emailPrefix)));
 
-                if (isEmailMatch || isUidMatch || isLegacyIdMatch || isNameMatch) {
+                if (isEmailMatch || isUidMatch || isLegacyIdMatch || isNameMatch || isPrefixMatch) {
                     matchingLegacyDocs.push({ id: docSnap.id, data: d });
                 }
             });
 
-            // Find best legacy data (prefer doc with profilePhoto or setterColor)
-            const legacyDoc = matchingLegacyDocs.find(m => m.data.profilePhoto || m.data.setterColor || (m.data.legacyProfileIds && m.data.legacyProfileIds.length > 0)) || matchingLegacyDocs[0];
-            const legacyData = legacyDoc?.data;
+            // Extract best profile photo & setter color across ALL candidate docs (direct + matching legacy)
+            const allCandidates = [
+                ...(directData ? [directData] : []),
+                ...matchingLegacyDocs.map(m => m.data)
+            ];
+
+            const foundPhotoCandidate = allCandidates.find(c => Boolean((c as any).profilePhoto || (c as any).profileImage || (c as any).photo || (c as any).avatar)) as any;
+            const bestPhoto = foundPhotoCandidate ? (foundPhotoCandidate.profilePhoto || foundPhotoCandidate.profileImage || foundPhotoCandidate.photo || foundPhotoCandidate.avatar) : undefined;
+
+            const foundColorCandidate = allCandidates.find(c => Boolean((c as any).setterColor || (c as any).color)) as any;
+            const bestColor = foundColorCandidate ? (foundColorCandidate.setterColor || foundColorCandidate.color) : undefined;
+
+            const foundName = allCandidates.find(c => c.name && !c.name.includes('@'))?.name;
+            const bestName = foundName || directData?.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User');
 
             const allLegacyIds = Array.from(new Set([
                 ...(directData?.legacyProfileIds || []),
-                ...(legacyData?.legacyProfileIds || []),
-                ...matchingLegacyDocs.map(m => m.id),
+                ...matchingLegacyDocs.flatMap(m => [m.id, ...(m.data.legacyProfileIds || [])]),
             ])).filter(id => id !== u.uid);
 
             const isOwnerEmail = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
-            const finalRole = directData?.role || legacyData?.role || (isOwnerEmail ? Role.MANAGER : Role.SETTER);
+            const finalRole = directData?.role || matchingLegacyDocs.find(m => m.data.role)?.data.role || (isOwnerEmail ? Role.MANAGER : Role.SETTER);
 
             const mergedProfile: User = {
-                ...(legacyData || {}),
+                ...(matchingLegacyDocs[0]?.data || {}),
                 ...(directData || {}),
                 id: u.uid,
                 authUid: u.uid,
                 legacyProfileIds: allLegacyIds,
-                email: u.email || directData?.email || legacyData?.email || '',
-                name: (directData?.name && !directData.name.includes('@')) ? directData.name : (legacyData?.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User')),
-                profilePhoto: directData?.profilePhoto || legacyData?.profilePhoto || undefined,
-                setterColor: directData?.setterColor || legacyData?.setterColor || undefined,
+                email: u.email || directData?.email || matchingLegacyDocs[0]?.data.email || '',
+                name: bestName,
+                profilePhoto: bestPhoto || directData?.profilePhoto || undefined,
+                setterColor: bestColor || directData?.setterColor || undefined,
                 role: finalRole,
-                active: directData?.active !== undefined ? directData.active : (legacyData?.active !== undefined ? legacyData.active : true)
+                active: directData?.active !== undefined ? directData.active : (matchingLegacyDocs[0]?.data.active !== undefined ? matchingLegacyDocs[0]?.data.active : true)
             };
 
             await setDoc(directDocRef, deepCopySafe(mergedProfile), { merge: true });
@@ -744,7 +757,27 @@ class StoreService {
 
     getCurrentUser() { return this.currentUser; }
     getUsers() { return this.users; }
-    getUser(id: string) { return this.users.find(u => u.id === id); }
+    getUser(id: string) {
+        const u = this.users.find(user => user.id === id || user.authUid === id || user.legacyProfileIds?.includes(id));
+        if (!u) return undefined;
+        if (!u.profilePhoto) {
+            const fallbackDoc = this.users.find(other =>
+                other.id !== u.id &&
+                Boolean((other as any).profilePhoto || (other as any).photo || (other as any).profileImage || (other as any).avatar) &&
+                (
+                    u.legacyProfileIds?.includes(other.id) ||
+                    other.legacyProfileIds?.includes(u.id) ||
+                    (u.name && other.name && u.name.toLowerCase() === other.name.toLowerCase()) ||
+                    (u.email && other.email && u.email.toLowerCase().split('@')[0] === other.email.toLowerCase().split('@')[0])
+                )
+            ) as any;
+            if (fallbackDoc) {
+                const photo = fallbackDoc.profilePhoto || fallbackDoc.photo || fallbackDoc.profileImage || fallbackDoc.avatar;
+                return { ...u, profilePhoto: photo };
+            }
+        }
+        return u;
+    }
 
     async createUser(user: User) {
         // Handle Sales Reps separately (No Auth)
