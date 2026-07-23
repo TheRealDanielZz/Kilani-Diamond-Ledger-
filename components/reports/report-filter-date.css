@@ -1,0 +1,11 @@
+.report-filter-date-input {
+  color-scheme: dark;
+}
+
+.report-filter-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+
+[data-theme="light"] .report-filter-date-input {
+  color-scheme: light;
+}

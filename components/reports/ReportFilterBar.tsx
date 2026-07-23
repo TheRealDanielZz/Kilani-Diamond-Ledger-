@@ -1,5 +1,6 @@
-import React from 'react';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import React, { useRef } from 'react';
+import { CalendarDays, Check, ChevronDown, Search, X } from 'lucide-react';
+import './report-filter-date.css';
 import {
   ReportFilterDefinition,
   ReportFilterState,
@@ -49,6 +50,52 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ definition, selec
   </details>
 );
 
+interface DateFilterProps {
+  label: 'From' | 'To';
+  value: string;
+  onChange: (value: string) => void;
+}
+
+const DateFilter: React.FC<DateFilterProps> = ({ label, value, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    try {
+      input.showPicker?.();
+    } catch {
+      // Browsers that do not expose showPicker still open their native picker on click.
+      input.focus();
+      input.click();
+    }
+  };
+
+  return (
+    <label className="text-[10px] uppercase tracking-wider text-theme-text-muted">
+      {label}
+      <div className="relative mt-1">
+        <input
+          ref={inputRef}
+          type="date"
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          aria-label={`${label} date`}
+          className="report-filter-date-input w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl pl-3 pr-12 text-sm text-theme-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+        />
+        <button
+          type="button"
+          onClick={openPicker}
+          className="absolute right-1 top-1 min-w-9 min-h-9 rounded-xl text-lux-gold hover:bg-lux-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold flex items-center justify-center"
+          aria-label={`Open ${label.toLowerCase()} date calendar`}
+          title={`Open ${label.toLowerCase()} date calendar`}
+        >
+          <CalendarDays size={17} aria-hidden="true" />
+        </button>
+      </div>
+    </label>
+  );
+};
+
 interface ReportFilterBarProps {
   state: ReportFilterState;
   onChange: (state: ReportFilterState) => void;
@@ -92,24 +139,16 @@ export const ReportFilterBar: React.FC<ReportFilterBarProps> = ({
         ))}
         {showDates && (
           <>
-            <label className="text-[10px] uppercase tracking-wider text-theme-text-muted">
-              From
-              <input
-                type="date"
-                value={state.from}
-                onChange={event => onChange({ ...state, from: event.target.value, cursor: null })}
-                className="mt-1 w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
-              />
-            </label>
-            <label className="text-[10px] uppercase tracking-wider text-theme-text-muted">
-              To
-              <input
-                type="date"
-                value={state.to}
-                onChange={event => onChange({ ...state, to: event.target.value, cursor: null })}
-                className="mt-1 w-full min-h-11 bg-theme-input-bg border border-theme-border rounded-2xl px-3 text-sm text-theme-text-primary"
-              />
-            </label>
+            <DateFilter
+              label="From"
+              value={state.from}
+              onChange={from => onChange({ ...state, from, cursor: null })}
+            />
+            <DateFilter
+              label="To"
+              value={state.to}
+              onChange={to => onChange({ ...state, to, cursor: null })}
+            />
           </>
         )}
       </div>
