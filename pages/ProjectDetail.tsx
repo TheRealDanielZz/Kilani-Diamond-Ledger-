@@ -2234,7 +2234,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                       <div className="flex flex-wrap gap-2">
                                           {event.goldComponentIds && event.goldComponentIds.length > 0 ? (
                                               event.goldComponentIds.map(cid => {
-                                                  const comp = project.goldComponents?.find(c => c.id === cid);
+                                                  const comp = project.goldComponents?.find(c => c.id === cid || c.revisionId === cid);
                                                   return (
                                                       <div key={cid} className="text-[10px] bg-white/5 border border-white/5 px-2 py-1 rounded-lg text-zinc-400 flex items-center gap-1.5">
                                                           <div className="w-1.5 h-1.5 rounded-full bg-lux-gold/50"></div>
@@ -2246,6 +2246,34 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                               <div className="text-[10px] text-zinc-600 italic">All components</div>
                                           )}
                                       </div>
+
+                                      {event.componentCosts && event.componentCosts.length > 0 && (
+                                          <div className="mt-3 space-y-2 rounded-xl border border-white/5 bg-black/25 p-3">
+                                              {event.componentCosts.map(line => (
+                                                  <div key={line.revisionId} className="flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between">
+                                                      <span className="text-zinc-400">{line.label}</span>
+                                                      <span className="font-mono text-zinc-300">
+                                                          {(line.castingWeightMg / 1000).toFixed(3)} g × ${(line.supplierRateCentsPerGram / 100).toFixed(2)}/g = <strong className="text-lux-gold">${(line.amountCents / 100).toFixed(2)}</strong>
+                                                      </span>
+                                                  </div>
+                                              ))}
+                                              <div className="flex items-center justify-between border-t border-white/5 pt-2 text-xs font-bold">
+                                                  <span className="text-zinc-400">Receipt total</span>
+                                                  <span className="font-mono text-white">${((event.overallCastingCostCents || 0) / 100).toFixed(2)} CAD</span>
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      {event.removedComponents && event.removedComponents.length > 0 && (
+                                          <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/5 p-3">
+                                              <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-red-300">Removed components</div>
+                                              {event.removedComponents.map(component => (
+                                                  <div key={component.revisionId} className="text-xs text-red-100">
+                                                      {component.label}: {component.reason}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      )}
                                       
                                       {event.notes && (
                                           <div className="mt-2 text-[10px] text-zinc-500 italic bg-black/40 p-2 rounded-xl border border-white/5">
@@ -3274,10 +3302,13 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       {/* Casting Receive Modal */}
       {isCastingReceive && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-end md:items-center justify-center p-4 sm:p-0">
-              <Card className="w-full max-w-sm p-6 mb-safe md:mb-0 animate-in slide-in-from-bottom-4 md:zoom-in-95">
+              <Card className="w-full max-w-2xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 mb-safe md:mb-0 animate-in slide-in-from-bottom-4 md:zoom-in-95">
                   <div className="flex items-center gap-3 mb-4">
                       <Box className="text-lux-gold" size={24}/>
-                      <h3 className="font-bold text-white text-lg">Receive Casting</h3>
+                      <div>
+                          <h3 className="font-bold text-white text-lg">Receive Casting</h3>
+                          <p className="text-xs text-zinc-500">Enter the weight and supplier rate for each component.</p>
+                      </div>
                   </div>
                   
                   <div className="space-y-4 mb-6">
@@ -3299,37 +3330,134 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                       {(() => {
                           const lastCastingEvent = project?.castingEvents?.[(project.castingEvents?.length || 1) - 1];
                           const receivedComponentIds = lastCastingEvent?.goldComponentIds || [];
-                          const componentsToReceive = receivedComponentIds.length === 0 
-                              ? (project?.goldComponents || []) 
-                              : (project?.goldComponents?.filter(c => receivedComponentIds.includes(c.id)) || []);
-                          const isMultiComponent = componentsToReceive.length > 1;
+                          const componentsToReceive = (project?.goldComponents || []).filter(component => {
+                              if (component.state && component.state !== 'ACTIVE') return false;
+                              const revisionId = component.revisionId || component.id;
+                              return receivedComponentIds.length === 0
+                                  || receivedComponentIds.includes(revisionId)
+                                  || receivedComponentIds.includes(component.id);
+                          });
+                          const removedCount = componentsToReceive.filter(
+                              component => castingRemovedComponents[component.revisionId || component.id] !== undefined
+                          ).length;
+                          const totalCostCents = castingCondition === 'CORRECT'
+                              ? componentsToReceive.reduce((sum, component) => {
+                                  const revisionId = component.revisionId || component.id;
+                                  if (castingRemovedComponents[revisionId] !== undefined) return sum;
+                                  const weightMg = decimalToMinor(castingComponentWeights[revisionId] || '', 3);
+                                  const rateCents = decimalToMinor(castingComponentRates[revisionId] || '', 2);
+                                  return weightMg && rateCents
+                                      ? sum + Math.round((weightMg * rateCents) / 1000)
+                                      : sum;
+                              }, 0)
+                              : 0;
 
-                          return isMultiComponent ? (
+                          return (
                               <div className="space-y-3">
-                                  <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase">Received Weights (g)</label>
-                                  <div className="space-y-3 bg-zinc-900/50 p-3 rounded-xl border border-zinc-800">
-                                      {componentsToReceive.map(c => (
-                                          <Input 
-                                              key={c.id}
-                                              label={`${c.label || 'Component'} (${c.purity} ${c.type})`}
-                                              type="number" 
-                                              step="0.01"
-                                              value={castingComponentWeights[c.id] || ''} 
-                                              onChange={e => setCastingComponentWeights(prev => ({ ...prev, [c.id]: e.target.value }))} 
-                                              placeholder="0.00"
-                                          />
-                                      ))}
+                                  <div className="flex items-center justify-between">
+                                      <label className="block text-xs font-bold text-zinc-500 uppercase">Components</label>
+                                      <span className="text-[11px] text-zinc-600">{componentsToReceive.length - removedCount} kept · {removedCount} removed</span>
                                   </div>
+                                  {componentsToReceive.map(component => {
+                                      const revisionId = component.revisionId || component.id;
+                                      const isRemoved = castingRemovedComponents[revisionId] !== undefined;
+                                      const weightMg = decimalToMinor(castingComponentWeights[revisionId] || '', 3);
+                                      const rateCents = decimalToMinor(castingComponentRates[revisionId] || '', 2);
+                                      const componentCostCents = weightMg && rateCents
+                                          ? Math.round((weightMg * rateCents) / 1000)
+                                          : 0;
+                                      const cannotRemove = !!component.internalCastingCost || (!isRemoved && componentsToReceive.length - removedCount <= 1);
+
+                                      return (
+                                          <div key={revisionId} className={`rounded-2xl border p-4 ${isRemoved ? 'border-red-500/25 bg-red-500/5' : 'border-zinc-800 bg-zinc-900/50'}`}>
+                                              <div className="mb-3 flex items-start justify-between gap-3">
+                                                  <div>
+                                                      <div className="font-bold text-white">{component.label || 'Component'}</div>
+                                                      <div className="text-xs text-zinc-500">{component.purity} {component.type}</div>
+                                                  </div>
+                                                  {isRemoved ? (
+                                                      <Button size="sm" variant="ghost" onClick={() => setCastingRemovedComponents(current => {
+                                                          const next = { ...current };
+                                                          delete next[revisionId];
+                                                          return next;
+                                                      })}>Keep component</Button>
+                                                  ) : (
+                                                      <Button
+                                                          size="sm"
+                                                          variant="danger"
+                                                          disabled={cannotRemove}
+                                                          onClick={() => setCastingRemovedComponents(current => ({ ...current, [revisionId]: '' }))}
+                                                      >
+                                                          Remove
+                                                      </Button>
+                                                  )}
+                                              </div>
+
+                                              {isRemoved ? (
+                                                  <div>
+                                                      <Input
+                                                          label="Why is this component no longer needed?"
+                                                          value={castingRemovedComponents[revisionId]}
+                                                          onChange={event => setCastingRemovedComponents(current => ({ ...current, [revisionId]: event.target.value }))}
+                                                          placeholder="Reason is required"
+                                                      />
+                                                      <p className="mt-2 text-[11px] text-zinc-500">The component stays in project history and is removed from future weight and cost totals.</p>
+                                                  </div>
+                                              ) : (
+                                                  <div className={`grid grid-cols-1 ${castingCondition === 'CORRECT' ? 'sm:grid-cols-2' : ''} gap-3`}>
+                                                      <Input
+                                                          label="Received weight (g)"
+                                                          type="number"
+                                                          min="0"
+                                                          step="0.001"
+                                                          value={castingComponentWeights[revisionId] || ''}
+                                                          onChange={event => setCastingComponentWeights(current => ({ ...current, [revisionId]: event.target.value }))}
+                                                          placeholder="0.000"
+                                                      />
+                                                      {castingCondition === 'CORRECT' && (
+                                                          <Input
+                                                              label="Casting cost per gram (CAD/g)"
+                                                              type="number"
+                                                              min="0"
+                                                              step="0.01"
+                                                              value={castingComponentRates[revisionId] || ''}
+                                                              onChange={event => setCastingComponentRates(current => ({ ...current, [revisionId]: event.target.value }))}
+                                                              placeholder="0.00"
+                                                          />
+                                                      )}
+                                                      {castingCondition === 'CORRECT' && (
+                                                          <div className="sm:col-span-2 flex items-center justify-between rounded-xl border border-white/5 bg-black/25 px-3 py-2 text-xs">
+                                                              <span className="text-zinc-500">Component casting cost</span>
+                                                              <span className="font-mono font-bold text-lux-gold">${(componentCostCents / 100).toFixed(2)} CAD</span>
+                                                          </div>
+                                                      )}
+                                                  </div>
+                                              )}
+                                              {cannotRemove && !isRemoved && (
+                                                  <p className="mt-2 text-[11px] text-zinc-600">
+                                                      {component.internalCastingCost
+                                                          ? 'This component already has a locked cost. Use the correction process.'
+                                                          : 'At least one active component must stay on the project.'}
+                                                  </p>
+                                              )}
+                                          </div>
+                                      );
+                                  })}
+
+                                  {castingCondition === 'CORRECT' ? (
+                                      <div className="flex items-center justify-between rounded-2xl border border-lux-gold/25 bg-lux-gold/5 p-4">
+                                          <div>
+                                              <div className="text-xs font-bold uppercase tracking-wide text-lux-gold">Overall casting cost</div>
+                                              <div className="mt-1 text-[11px] text-zinc-500">The total of all component costs in this receipt.</div>
+                                          </div>
+                                          <div className="font-mono text-xl font-bold text-white">${(totalCostCents / 100).toFixed(2)}</div>
+                                      </div>
+                                  ) : (
+                                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
+                                          Supplier rates and casting costs are not recorded for damaged or incorrect receipts.
+                                      </div>
+                                  )}
                               </div>
-                          ) : (
-                              <Input 
-                                 label="Received Weight (g)" 
-                                 type="number" 
-                                 step="0.01"
-                                 value={castingWeight} 
-                                 onChange={e => setCastingWeight(e.target.value)} 
-                                 placeholder="0.00"
-                              />
                           );
                       })()}
 
@@ -3342,8 +3470,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                   </div>
 
                   <div className="flex justify-end gap-3">
-                      <Button variant="ghost" onClick={() => setIsCastingReceive(false)}>Cancel</Button>
-                      <Button onClick={handleReceiveCasting}>Confirm Receipt</Button>
+                      <Button variant="ghost" onClick={() => setIsCastingReceive(false)} disabled={loadingAction}>Cancel</Button>
+                      <Button onClick={handleReceiveCasting} loading={loadingAction}>Confirm Receipt</Button>
                   </div>
               </Card>
           </div>

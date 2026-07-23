@@ -107,6 +107,7 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'workDetails', 'goldType', 'goldPurity', 'instructionRevisionVersion',
           'metalRevisionVersion', 'projectRevisionUpdatedAt', 'goldComponents', 'primaryGoldComponentId',
+          'castingEvents',
           'pickupPricingSnapshot', 'projectEndGoldPriceSnapshot',
           'projectEndGoldPriceCapturedAt', 'finalGoldCostCalculated', 'serviceMigration'
         ])
@@ -126,7 +127,7 @@ service cloud.firestore {
           'progress', 'currentStageName', 'currentPercentComplete',
           'services', 'designLogs', 'projectPhotos', 'projectPhotoIds',
           'repair', 'status', 'date_completed', 'date_picked_up',
-          'last_status_change_at', 'last_status_change_by', 'castingEvents'
+          'last_status_change_at', 'last_status_change_by'
         ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['progress'])
           || ((!('progress' in resource.data)

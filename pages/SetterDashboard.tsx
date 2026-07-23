@@ -11,11 +11,34 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
 
   useEffect(() => {
     const loadProjects = () => {
-      // Use assignments[] array (not legacy assignedSetterId) to find projects
-      const acceptedProfileIds = new Set([currentUser.id, ...(currentUser.legacyProfileIds || [])]);
-      const all = store.getProjects().filter(p =>
-        (p.assignments || []).some(a => acceptedProfileIds.has(a.userId) && a.active)
-      );
+      // Comprehensive profile matching for UID, AuthUID, Legacy Profile IDs, Name, and Email
+      const acceptedProfileIds = new Set([
+        currentUser.id,
+        currentUser.authUid,
+        ...(currentUser.legacyProfileIds || []),
+        currentUser.name?.toLowerCase(),
+        currentUser.email?.toLowerCase()
+      ].filter(Boolean));
+
+      const all = store.getProjects().filter(p => {
+        const hasAssignment = (p.assignments || []).some(a => {
+          if (!a.active) return false;
+          const user = store.getUser(a.userId);
+          const userName = user?.name?.toLowerCase() || '';
+          const userEmail = user?.email?.toLowerCase() || '';
+          return acceptedProfileIds.has(a.userId) ||
+                 (userName && acceptedProfileIds.has(userName)) ||
+                 (userEmail && acceptedProfileIds.has(userEmail));
+        });
+        const isSetterAssigned = Boolean(p.assignedSetterId && (
+          acceptedProfileIds.has(p.assignedSetterId) ||
+          acceptedProfileIds.has(store.getUser(p.assignedSetterId)?.name?.toLowerCase())
+        ));
+        const isActiveAssignee = Boolean(p.activeAssignees && p.activeAssignees.some(uid =>
+          acceptedProfileIds.has(uid) || acceptedProfileIds.has(store.getUser(uid)?.name?.toLowerCase())
+        ));
+        return hasAssignment || isSetterAssigned || isActiveAssignee;
+      });
       // Sort: Active/Rush first, then by date
       all.sort((a, b) => {
          if (a.status === ProjectStatus.CLOSED && b.status !== ProjectStatus.CLOSED) return 1;

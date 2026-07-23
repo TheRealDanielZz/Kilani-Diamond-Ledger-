@@ -304,91 +304,69 @@ class StoreService {
                 console.warn('Trusted UID profile bootstrap was unavailable; checking existing profile compatibility.', profileBootstrapError);
             }
             const userEmail = u.email ? u.email.toLowerCase().trim() : '';
+            const authName = u.displayName ? u.displayName.toLowerCase().trim() : '';
             const usersRef = collection(db, 'users');
 
-            // 1. Check if user document already exists at users/{u.uid}
             const directDocRef = doc(db, 'users', u.uid);
             const directDocSnap = await getDoc(directDocRef);
+            let directData: User | null = directDocSnap.exists() ? (directDocSnap.data() as User) : null;
 
-            if (directDocSnap.exists()) {
-                const data = directDocSnap.data() as User;
-                const isOwnerEmail = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
+            // Query all users in collection to find any matching legacy profile by email, name, authUid, or legacy IDs
+            const allUsersSnap = await getDocs(usersRef);
+            const matchingLegacyDocs: Array<{ id: string; data: User }> = [];
 
-                // Use role from Firestore (Team Management), or fallback to Manager for owner emails if missing/invalid
-                const finalRole = data.role || (isOwnerEmail ? Role.MANAGER : Role.SETTER);
+            allUsersSnap.docs.forEach(docSnap => {
+                const d = docSnap.data() as User;
+                const docEmail = (d.email || '').toLowerCase().trim();
+                const docName = (d.name || '').toLowerCase().trim();
 
-                const updatedProfile: User = {
-                    ...data,
-                    id: u.uid,
-                    authUid: u.uid,
-                    email: u.email || data.email || '',
-                    name: data.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
-                    role: finalRole,
-                    active: data.active !== undefined ? data.active : true
-                };
+                const isEmailMatch = Boolean(userEmail && docEmail === userEmail);
+                const isUidMatch = d.authUid === u.uid;
+                const isLegacyIdMatch = Boolean(directData?.legacyProfileIds?.includes(docSnap.id) || d.legacyProfileIds?.includes(u.uid));
+                const isNameMatch = Boolean(authName && docName && (docName === authName || docName.includes(authName) || authName.includes(docName)));
 
-                // Ensure ID and role consistency in Firestore if needed
-                if (data.id !== u.uid || data.authUid !== u.uid || data.role !== finalRole || !data.email) {
-                    await setDoc(directDocRef, deepCopySafe(updatedProfile), { merge: true });
+                if (isEmailMatch || isUidMatch || isLegacyIdMatch || isNameMatch) {
+                    matchingLegacyDocs.push({ id: docSnap.id, data: d });
                 }
+            });
 
-                this.currentUser = updatedProfile;
-                return;
-            }
+            // Find best legacy data (prefer doc with profilePhoto or setterColor)
+            const legacyDoc = matchingLegacyDocs.find(m => m.data.profilePhoto || m.data.setterColor || (m.data.legacyProfileIds && m.data.legacyProfileIds.length > 0)) || matchingLegacyDocs[0];
+            const legacyData = legacyDoc?.data;
 
-            // 2. If no direct doc at u.uid, query by email to check for legacy or un-linked profile
-            if (userEmail) {
-                const q = query(usersRef, where('email', '==', u.email));
-                const querySnapshot = await getDocs(q);
+            const allLegacyIds = Array.from(new Set([
+                ...(directData?.legacyProfileIds || []),
+                ...(legacyData?.legacyProfileIds || []),
+                ...matchingLegacyDocs.map(m => m.id),
+            ])).filter(id => id !== u.uid);
 
-                if (!querySnapshot.empty) {
-                    // Prefer doc with matching role/data if multiple exist
-                    const selectedDoc = querySnapshot.docs[0];
-                    const legacyData = selectedDoc.data() as User;
-                    const isOwnerEmail = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
-                    const finalRole = legacyData.role || (isOwnerEmail ? Role.MANAGER : Role.SETTER);
+            const isOwnerEmail = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
+            const finalRole = directData?.role || legacyData?.role || (isOwnerEmail ? Role.MANAGER : Role.SETTER);
 
-                    const migratedProfile: User = {
-                        ...legacyData,
-                        id: u.uid,
-                        authUid: u.uid,
-                        legacyProfileIds: Array.from(new Set([...(legacyData.legacyProfileIds || []), selectedDoc.id])),
-                        email: u.email || legacyData.email || '',
-                        name: legacyData.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
-                        role: finalRole,
-                        active: legacyData.active !== undefined ? legacyData.active : true
-                    };
-
-                    // Write authoritative profile to users/{u.uid}
-                    await setDoc(directDocRef, deepCopySafe(migratedProfile));
-
-                    // Preserve legacy profile documents because historical projects,
-                    // assignments and ledger actors may still reference their IDs.
-                    // Add only a canonical UID link; never delete the historical record.
-                    for (const d of querySnapshot.docs) {
-                        if (d.id !== u.uid) {
-                            await setDoc(doc(db, 'users', d.id), { authUid: u.uid }, { merge: true }).catch(console.error);
-                        }
-                    }
-
-                    this.currentUser = migratedProfile;
-                    return;
-                }
-            }
-
-            // 3. Auto-create missing profile at users/{u.uid}
-            const isOwner = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
-            const newUser: User = {
+            const mergedProfile: User = {
+                ...(legacyData || {}),
+                ...(directData || {}),
                 id: u.uid,
                 authUid: u.uid,
-                name: u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
-                email: u.email || '',
-                role: isOwner ? Role.MANAGER : Role.SETTER,
-                active: true
+                legacyProfileIds: allLegacyIds,
+                email: u.email || directData?.email || legacyData?.email || '',
+                name: (directData?.name && !directData.name.includes('@')) ? directData.name : (legacyData?.name || u.displayName || (u.email ? u.email.split('@')[0] : 'User')),
+                profilePhoto: directData?.profilePhoto || legacyData?.profilePhoto || undefined,
+                setterColor: directData?.setterColor || legacyData?.setterColor || undefined,
+                role: finalRole,
+                active: directData?.active !== undefined ? directData.active : (legacyData?.active !== undefined ? legacyData.active : true)
             };
-            const safeNewUser = deepCopySafe(newUser);
-            await setDoc(directDocRef, safeNewUser);
-            this.currentUser = newUser;
+
+            await setDoc(directDocRef, deepCopySafe(mergedProfile), { merge: true });
+
+            // Ensure legacy profile docs maintain authUid link
+            for (const m of matchingLegacyDocs) {
+                if (m.id !== u.uid) {
+                    await setDoc(doc(db, 'users', m.id), { authUid: u.uid }, { merge: true }).catch(console.error);
+                }
+            }
+
+            this.currentUser = mergedProfile;
         } catch (e) {
             console.error("Error fetching/creating user profile", e);
             if (!this.currentUser) {
@@ -396,6 +374,7 @@ class StoreService {
                 const isOwner = userEmail === 'kilanimedia@gmail.com' || userEmail === 'harout@kilani.com';
                 this.currentUser = {
                     id: u.uid,
+                    authUid: u.uid,
                     name: u.displayName || (u.email ? u.email.split('@')[0] : 'User'),
                     email: u.email || '',
                     role: isOwner ? Role.MANAGER : Role.SETTER,
