@@ -13,6 +13,7 @@ interface Props {
   onClose: () => void;
   currentUser: User;
   onSuccess?: () => void;
+  onProjectCreated?: (project: Project) => void;
 }
 
 interface CategoryOption {
@@ -43,7 +44,7 @@ export const generateRepairCode = (type: RepairType): string => {
   return `REP-${dateStr}-${slug}`;
 };
 
-export const QuickRepairModal: React.FC<Props> = ({ isOpen, onClose, currentUser, onSuccess }) => {
+export const QuickRepairModal: React.FC<Props> = ({ isOpen, onClose, currentUser, onSuccess, onProjectCreated }) => {
   const showToast = useToast();
   const { theme } = useTheme();
   const [loading, setLoading] = useState(false);
@@ -134,6 +135,7 @@ export const QuickRepairModal: React.FC<Props> = ({ isOpen, onClose, currentUser
       if (created) {
         showToast(`Quick Repair ${created.code} created successfully!`);
         if (onSuccess) onSuccess();
+        if (onProjectCreated) onProjectCreated(created);
         onClose();
       }
     } catch (err: any) {

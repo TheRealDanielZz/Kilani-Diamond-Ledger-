@@ -111,6 +111,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       <QuickRepairModal
         isOpen={isQuickRepairOpen}
         onClose={() => setIsQuickRepairOpen(false)}
+        currentUser={currentUser}
         onProjectCreated={(created) => navigate(`/project/${created.id}`)}
       />
     </div>
