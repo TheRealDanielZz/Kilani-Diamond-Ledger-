@@ -84,10 +84,11 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const [isCastingSend, setIsCastingSend] = useState(false);
   const [isCastingReceive, setIsCastingReceive] = useState(false);
   const [castingCondition, setCastingCondition] = useState<'CORRECT' | 'DAMAGED' | 'INCORRECT'>('CORRECT');
-  const [castingWeight, setCastingWeight] = useState('');
   const [castingNotes, setCastingNotes] = useState('');
   const [selectedCastingComponents, setSelectedCastingComponents] = useState<string[]>([]);
   const [castingComponentWeights, setCastingComponentWeights] = useState<Record<string, string>>({});
+  const [castingComponentRates, setCastingComponentRates] = useState<Record<string, string>>({});
+  const [castingRemovedComponents, setCastingRemovedComponents] = useState<Record<string, string>>({});
 
   // Evidence States
   const [evidenceFilterType, setEvidenceFilterType] = useState<'ALL' | 'ISSUE' | 'RETURN'>('ALL');
@@ -363,6 +364,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleConfirmSendToCasting = async () => {
+      if (!canModifyCastingDesign) return showToast('Only Managers and assigned Designers may send casting.');
       setLoadingAction(true);
       try {
         await store.sendToCasting(project!.id, currentUser.id, selectedCastingComponents.length > 0 ? selectedCastingComponents : undefined);
@@ -380,60 +382,100 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleReceiveCasting = async () => {
+      if (!canModifyCastingDesign) return showToast('Only Managers and assigned Designers may receive casting.');
       const lastCastingEvent = project?.castingEvents?.[(project.castingEvents?.length || 1) - 1];
       const receivedComponentIds = lastCastingEvent?.goldComponentIds || [];
-      const componentsToReceive = receivedComponentIds.length === 0 
-          ? (project?.goldComponents || []) 
-          : (project?.goldComponents?.filter(c => receivedComponentIds.includes(c.id)) || []);
+      const componentsToReceive = (project?.goldComponents || []).filter(component => {
+          if (component.state && component.state !== 'ACTIVE') return false;
+          const revisionId = component.revisionId || component.id;
+          return receivedComponentIds.length === 0
+              || receivedComponentIds.includes(revisionId)
+              || receivedComponentIds.includes(component.id);
+      });
+      const removedComponents = componentsToReceive
+          .filter(component => castingRemovedComponents[component.revisionId || component.id] !== undefined)
+          .map(component => ({
+              revisionId: component.revisionId || component.id,
+              reason: castingRemovedComponents[component.revisionId || component.id]?.trim() || ''
+          }));
+      const receivedComponents = componentsToReceive.filter(
+          component => castingRemovedComponents[component.revisionId || component.id] === undefined
+      );
 
-      const isMultiComponent = componentsToReceive.length > 1;
+      if (receivedComponents.length === 0) {
+          showToast('At least one active component must remain.');
+          return;
+      }
+      if (removedComponents.some(component => !component.reason)) {
+          showToast('Enter a reason for every removed component.');
+          return;
+      }
 
-      if (castingCondition === 'CORRECT') {
-          if (isMultiComponent) {
-              const hasEmptyWeights = componentsToReceive.some(c => !castingComponentWeights[c.id] || parseFloat(castingComponentWeights[c.id]) <= 0);
-              if (hasEmptyWeights) {
-                  alert("Weight is required for all received components.");
-                  return;
-              }
-          } else {
-              if (!castingWeight || parseFloat(castingWeight) <= 0) {
-                  alert("Weight is required for correct casting.");
-                  return;
-              }
-          }
+      const receiptLines = receivedComponents.map(component => {
+          const revisionId = component.revisionId || component.id;
+          const weightMg = castingCondition === 'CORRECT'
+              ? decimalToMinor(castingComponentWeights[revisionId] || '', 3)
+              : decimalToMinor(castingComponentWeights[revisionId] || '0', 3);
+          const supplierRateCentsPerGram = castingCondition === 'CORRECT'
+              ? decimalToMinor(castingComponentRates[revisionId] || '', 2)
+              : undefined;
+          return { component, revisionId, weightMg, supplierRateCentsPerGram };
+      });
+
+      if (receiptLines.some(line => line.weightMg === null || (castingCondition === 'CORRECT' && line.weightMg <= 0))) {
+          showToast(castingCondition === 'CORRECT'
+              ? 'Enter a positive weight for every received component, using no more than three decimals.'
+              : 'Use no more than three decimals for component weights.');
+          return;
       }
-      
-      const parsedWeights: Record<string, number> = {};
-      const hasComponents = componentsToReceive.length > 0;
-      
-      if (hasComponents) {
-          componentsToReceive.forEach(c => {
-              // If only one component, use castingWeight if castingComponentWeights[c.id] is empty
-              const w = castingComponentWeights[c.id] 
-                  ? parseFloat(castingComponentWeights[c.id]) 
-                  : (!isMultiComponent ? parseFloat(castingWeight) : 0);
-              parsedWeights[c.id] = w || 0;
-          });
+      if (castingCondition === 'CORRECT' && receiptLines.some(line => !line.supplierRateCentsPerGram || line.supplierRateCentsPerGram <= 0)) {
+          showToast('Enter a positive casting cost per gram for every received component, using no more than two decimals.');
+          return;
       }
+
+      const overallCastingCostCents = receiptLines.reduce((sum, line) => {
+          if (castingCondition !== 'CORRECT') return sum;
+          return sum + Math.round((line.weightMg! * line.supplierRateCentsPerGram!) / 1000);
+      }, 0);
+      const receiptSummary = castingCondition === 'CORRECT'
+          ? receiptLines.map(line => {
+              const amountCents = Math.round((line.weightMg! * line.supplierRateCentsPerGram!) / 1000);
+              return `${line.component.label}: ${(line.weightMg! / 1000).toFixed(3)} g × $${(line.supplierRateCentsPerGram! / 100).toFixed(2)}/g = $${(amountCents / 100).toFixed(2)}`;
+          }).join('\n')
+          : `${castingCondition.toLowerCase()} casting receipt`;
+      const removalSummary = removedComponents.length
+          ? `\n\nRemoved:\n${removedComponents.map(component => `${component.revisionId}: ${component.reason}`).join('\n')}`
+          : '';
+      if (!window.confirm(
+          `${receiptSummary}${castingCondition === 'CORRECT' ? `\n\nOverall casting cost: $${(overallCastingCostCents / 100).toFixed(2)} CAD` : ''}${removalSummary}\n\nConfirm this casting receipt?`
+      )) return;
 
       setLoadingAction(true);
       try {
         await store.receiveCasting(
-            project!.id, 
-            castingCondition, 
-            parseFloat(castingWeight) || 0, 
-            castingNotes, 
-            currentUser.id,
-            hasComponents ? parsedWeights : undefined
+            project!.id,
+            castingCondition,
+            castingNotes,
+            receiptLines.map(line => ({
+                revisionId: line.revisionId,
+                weightMg: line.weightMg!,
+                ...(line.supplierRateCentsPerGram
+                    ? { supplierRateCentsPerGram: line.supplierRateCentsPerGram }
+                    : {})
+            })),
+            removedComponents
         );
         
         setIsCastingReceive(false);
         setCastingCondition('CORRECT');
-        setCastingWeight('');
         setCastingNotes('');
         setCastingComponentWeights({});
+        setCastingComponentRates({});
+        setCastingRemovedComponents({});
         
-        showToast(castingCondition === 'CORRECT' ? "Casting Approved" : "Casting Issues Logged");
+        showToast(castingCondition === 'CORRECT'
+            ? `Casting received. Draft supplier cost: $${(overallCastingCostCents / 100).toFixed(2)} CAD.`
+            : 'Casting issues logged.');
       } catch (e: any) {
         console.error(e);
         showToast(e.message || "Failed to receive casting");
@@ -910,8 +952,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleSaveFinalWeights = async () => {
-      if (!project) return;
-      const active = (project.goldComponents || []).filter(component => component.state !== 'SUPERSEDED');
+      if (!project || !canModifyCastingDesign) return;
+      const active = (project.goldComponents || []).filter(component => !component.state || component.state === 'ACTIVE');
       const weights = active.map(component => ({
           revisionId: component.revisionId || component.id,
           weightMg: decimalToMinor(phase5FinalWeights[component.revisionId || component.id] || '', 3)
@@ -1038,8 +1080,11 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const canModifyProject = !isPickedUp && (isManager || assignedToProject);
   const canEditRepairFinancials = !isPickedUp && (isManager || (isDesigner && assignedToProject));
   const canEditProjectDetails = !isPickedUp && (isManager || (isDesigner && assignedToProject));
-  const primaryMetal = project.goldType || project.goldComponents?.[0]?.type;
-  const primaryPurity = project.goldPurity || project.goldComponents?.[0]?.purity;
+  const canViewCastingDesign = isManager || (isDesigner && assignedToProject);
+  const canModifyCastingDesign = !isPickedUp && project.status === ProjectStatus.ACTIVE && canViewCastingDesign;
+  const primaryComponent = project.goldComponents?.find(component => !component.state || component.state === 'ACTIVE');
+  const primaryMetal = project.goldType || primaryComponent?.type;
+  const primaryPurity = project.goldPurity || primaryComponent?.purity;
   // Locked if not ready OR if already completed (Review/Closed)
   const isLocked = !canModifyProject || (!repair && project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
   const lastWeight = project.progress?.filter(p => p.weightG).pop()?.weightG;
@@ -1325,7 +1370,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                     const isCurrent = idx === currentStageIdx;
  
                     return (
-                        <div key={step} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => canModifyProject && handleDesignStageUpdate(step)}>
+                        <div key={step} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => canModifyCastingDesign && handleDesignStageUpdate(step)}>
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-xl backdrop-blur-md ${isCompleted ? 'bg-lux-gold border-lux-gold text-black shadow-glow' : 'bg-[#16171D] border-zinc-700 text-zinc-500 group-hover:border-lux-gold/50'}`}>
                             {isCompleted ? <Check size={16} strokeWidth={3} /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
                             </div>
@@ -1346,7 +1391,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                             <div className="text-xs text-zinc-500">Current Cycle: #{project.castingEvents?.length ? project.castingEvents.length + ((project.designStage === 'Casting Sent' || project.designStage === 'Recasting Sent') ? 0 : 1) : 1}</div>
                         </div>
                     </div>
-                    {canModifyProject && <div className="flex gap-2">
+                    {canModifyCastingDesign && <div className="flex gap-2">
                         {project.designStage === 'Approved' && <Button size="sm" onClick={() => handleDesignStageUpdate('Casting Sent')}>Send to Casting</Button>}
                         {(project.designStage === 'Casting Sent' || project.designStage === 'Recasting Sent') && <Button size="sm" onClick={() => setIsCastingReceive(true)}>Receive Casting</Button>}
                         {project.designStage === 'Casting Received (Issue)' && <Button size="sm" onClick={handleSendRecast} variant="danger">Send for Recasting</Button>}
@@ -2005,7 +2050,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       {/* TAB CONTENT: ACTIVITY & NOTES */}
       {activeTab === 'design' && (
           <div className="space-y-6 animate-enter">
-              {!repair && (project.goldComponents?.length || 0) > 0 && (
+              {!repair && canViewCastingDesign && (project.goldComponents?.length || 0) > 0 && (
                 <Card className="mb-6 p-5 md:p-6 relative z-20">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
                     <div>
@@ -2021,26 +2066,37 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                       const finalMg = component.finalWeightMg || 0;
                       const varianceMg = castingMg && finalMg ? castingMg - finalMg : null;
                       const superseded = component.state === 'SUPERSEDED';
+                      const removed = component.state === 'REMOVED';
+                      const inactive = superseded || removed;
+                      const draftCost = component.pendingInternalCastingCost;
+                      const draftRateValue = draftCost
+                          ? (draftCost.supplierRateCentsPerGram / 100).toFixed(2)
+                          : '';
                       return (
-                        <div key={revisionId} className={`rounded-2xl border p-4 ${superseded ? 'border-zinc-800 bg-black/20 opacity-65' : 'border-white/10 bg-white/[0.03]'}`}>
+                        <div key={revisionId} className={`rounded-2xl border p-4 ${inactive ? 'border-zinc-800 bg-black/20 opacity-65' : 'border-white/10 bg-white/[0.03]'}`}>
                           <div className="flex items-start justify-between gap-3 mb-3">
                             <div>
                               <div className="font-bold text-white">{component.label}</div>
                               <div className="text-xs text-zinc-500">{component.type} {component.purity} · Ratio {((component.purityRatioPpm || Math.round((component.ratioSnapshot || 0) * 1_000_000)) / 1_000_000).toFixed(3)}</div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Badge color={superseded ? 'gray' : 'green'}>{superseded ? 'Superseded' : 'Active'}</Badge>
-                              {!superseded && canEditProjectDetails && <Button size="sm" variant="ghost" loading={phase5Busy === revisionId} onClick={() => handleReviseComponent(component)}>Revise</Button>}
+                              <Badge color={inactive ? 'gray' : 'green'}>{removed ? 'Removed' : superseded ? 'Superseded' : 'Active'}</Badge>
+                              {!inactive && canEditProjectDetails && <Button size="sm" variant="ghost" loading={phase5Busy === revisionId} onClick={() => handleReviseComponent(component)}>Revise</Button>}
                             </div>
                           </div>
+                          {removed && component.removalReason && (
+                            <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-200">
+                              Removed during casting: {component.removalReason}
+                            </div>
+                          )}
                           <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                             <div className="rounded-xl bg-black/30 p-3"><span className="block text-zinc-600 text-[9px] uppercase">Casting received</span><span className="text-white font-mono">{castingMg ? `${(castingMg / 1000).toFixed(3)}g` : 'Pending'}</span></div>
                             <div className="rounded-xl bg-black/30 p-3"><span className="block text-zinc-600 text-[9px] uppercase">Final / variance</span><span className="text-white font-mono">{finalMg ? `${(finalMg / 1000).toFixed(3)}g` : 'Pending'}{varianceMg !== null ? ` / ${(varianceMg / 1000).toFixed(3)}g` : ''}</span></div>
                           </div>
-                          {!superseded && !isPickedUp && (isManager || (assignedToProject && (currentUser.role === Role.SETTER || currentUser.role === Role.JEWELLER))) && castingMg > 0 && (
+                          {!inactive && canModifyCastingDesign && castingMg > 0 && (
                             <Input label="Final finished weight (g)" type="number" step="0.001" value={phase5FinalWeights[revisionId] ?? (finalMg ? (finalMg / 1000).toFixed(3) : '')} onChange={event => setPhase5FinalWeights(current => ({ ...current, [revisionId]: event.target.value }))} />
                           )}
-                          {isManager && !superseded && (
+                          {isManager && !inactive && (
                             <div className="mt-3 pt-3 border-t border-white/5">
                               {component.internalCastingCost ? (
                                 <div className="flex items-center justify-between gap-3">
@@ -2049,17 +2105,30 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                 </div>
                               ) : castingMg > 0 ? (
                                 <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                                  <div className="flex-1"><Input label="Supplier cost (CAD/g)" type="number" step="0.01" value={phase5Rates[revisionId] || ''} onChange={event => setPhase5Rates(current => ({ ...current, [revisionId]: event.target.value }))} placeholder="Internal casting cost pending" /></div>
+                                  <div className="flex-1"><Input label="Supplier cost (CAD/g)" type="number" step="0.01" value={phase5Rates[revisionId] ?? draftRateValue} onChange={event => setPhase5Rates(current => ({ ...current, [revisionId]: event.target.value }))} placeholder="Internal casting cost pending" /></div>
                                   <Button loading={phase5Busy === revisionId} onClick={() => handleConfirmInternalCost(component)}>Confirm & Lock</Button>
                                 </div>
                               ) : <div className="text-xs text-amber-500">Internal casting cost pending — receive casting first.</div>}
+                              {draftCost && !component.internalCastingCost && (
+                                <div className="mt-2 text-[11px] text-zinc-500">
+                                  Receipt draft: ${(draftCost.amountCents / 100).toFixed(2)} CAD. A Manager must confirm and lock it before it changes the project total.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {!isManager && !inactive && draftCost && !component.internalCastingCost && (
+                            <div className="mt-3 border-t border-white/5 pt-3 text-xs text-zinc-400">
+                              Supplier draft: ${(draftCost.supplierRateCentsPerGram / 100).toFixed(2)} CAD/g · ${(draftCost.amountCents / 100).toFixed(2)} CAD. Waiting for a Manager to confirm and lock.
                             </div>
                           )}
                         </div>
                       );
                     })}
                   </div>
-                  {!isPickedUp && (isManager || (assignedToProject && (currentUser.role === Role.SETTER || currentUser.role === Role.JEWELLER))) && (project.goldComponents || []).some(component => component.state !== 'SUPERSEDED' && (component.castingWeightMg || component.weightG)) && (
+                  <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 p-3 text-xs text-zinc-400">
+                    We only use the newest casting cost. We do not add the old and new costs together. If you need to add the cost of every casting attempt, ask the developer to change this setup.
+                  </div>
+                  {canModifyCastingDesign && (project.goldComponents || []).some(component => (!component.state || component.state === 'ACTIVE') && (component.castingWeightMg || component.weightG)) && (
                     <div className="flex justify-end mt-4"><Button loading={phase5Busy === 'final-weights'} onClick={handleSaveFinalWeights}>Save Final Weights</Button></div>
                   )}
                   {isManager && project.pickupPricingSnapshot && (
@@ -2136,7 +2205,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
               </div>}
 
               {/* Casting History Timeline */}
-              {project.castingEvents && project.castingEvents.length > 0 && (
+              {canViewCastingDesign && project.castingEvents && project.castingEvents.length > 0 && (
                   <div className="space-y-6 mt-8">
                       <h4 className="text-xs font-bold text-lux-gold uppercase tracking-widest px-2 flex items-center gap-2">
                           <Box size={14}/> Casting History

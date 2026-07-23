@@ -2053,16 +2053,16 @@ class StoreService {
                     componentId: component?.id || line.revisionId,
                     revisionId: line.revisionId,
                     label: component?.label || 'Component',
-                    receivedWeightMg: line.weightMg,
+                    castingWeightMg: line.weightMg,
                     supplierRateCentsPerGram,
-                    componentCastingCostCents: Math.round(
+                    amountCents: Math.round(
                         (line.weightMg * supplierRateCentsPerGram) / 1000
                     )
                 };
             })
             : [];
         const overallCastingCostCents = componentCosts.reduce(
-            (sum, line) => sum + line.componentCastingCostCents,
+            (sum, line) => sum + line.amountCents,
             0
         );
 
@@ -2074,8 +2074,11 @@ class StoreService {
         last.overallCastingCostCents = overallCastingCostCents;
         last.costingMode = 'REPLACEMENT';
         last.removedComponents = removedComponents.map(removed => ({
+            componentId: removed.revisionId,
+            label: this.normalizeGoldComponents(p).find(
+                candidate => (candidate.revisionId || candidate.id) === removed.revisionId
+            )?.label || 'Component',
             ...removed,
-            removedAt: now()
         }));
         last.notes = notes;
 
@@ -2102,11 +2105,14 @@ class StoreService {
                 weightG: receiptLine.weightMg / 1000,
                 ...(componentCost ? {
                     pendingInternalCastingCost: {
-                        receiptEventId: last.id,
+                        status: 'DRAFT' as const,
+                        castingEventId: last.id,
                         supplierRateCentsPerGram: componentCost.supplierRateCentsPerGram,
-                        receivedWeightMg: componentCost.receivedWeightMg,
-                        componentCastingCostCents: componentCost.componentCastingCostCents,
-                        capturedAt: now()
+                        castingWeightMg: componentCost.castingWeightMg,
+                        amountCents: componentCost.amountCents,
+                        enteredAt: now(),
+                        enteredBy: { uid: 'demo-user', name: 'Demo User' },
+                        costingMode: 'REPLACEMENT_LATEST_ONLY' as const
                     }
                 } : {})
             };
