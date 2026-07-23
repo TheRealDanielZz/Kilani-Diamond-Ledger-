@@ -5,6 +5,7 @@ import {
   Phase7FilterRequest,
   Phase7NormalizedRow,
   Phase7ReportSection,
+  comparePhase8Projects,
   filterPhase7Rows,
   isPhase7ReportSection,
   paginatePhase7Rows,
@@ -150,6 +151,26 @@ function projectRows(documents: Array<{ id: string; data: Record<string, unknown
     ].filter(Boolean);
     const salesRepName = userName(maps, data.salesRepId);
     const createdAt = dateOf(data.createdAt, data.last_status_change_at, data.dueDate);
+    const assignments = Array.isArray(data.assignments) ? data.assignments.map(dataOf) : [];
+    const activeAssignmentIds = assignments
+      .filter(assignment => assignment.active !== false)
+      .map(assignment => stringOf(assignment.userId))
+      .filter(Boolean);
+    const activeAssigneeIds = activeAssignmentIds.length
+      ? activeAssignmentIds
+      : Array.isArray(data.activeAssignees)
+        ? data.activeAssignees.map(stringOf).filter(Boolean)
+        : [];
+    const assignees = [...new Set(activeAssigneeIds)].map(userId => {
+      const user = maps.users.get(userId) || {};
+      return {
+        id: userId,
+        name: stringOf(user.name || user.email) || 'Team member',
+        color: stringOf(user.setterColor),
+        image: stringOf(user.profilePhoto),
+      };
+    });
+    const photos = Array.isArray(data.projectPhotos) ? data.projectPhotos.map(stringOf).filter(Boolean) : [];
     return row(id, [
       data.code, data.clientName, data.clientPhone, data.pieceName, salesRepName,
       serviceLabel(code), repair.type, repair.status,
@@ -174,11 +195,15 @@ function projectRows(documents: Array<{ id: string; data: Record<string, unknown
       repairStatus: repair.status || '',
       repairFlags,
       progress: Number(data.currentPercentComplete || 0),
+      currentStageName: stringOf(data.currentStageName) || 'Intake',
       priority: data.priority || '',
       createdAt,
       dueDate: stringOf(data.dueDate),
       updatedAt: dateOf(data.last_status_change_at, data.updatedAt, data.createdAt),
-      previewImage: repair.beforeImage || (Array.isArray(data.projectPhotos) ? data.projectPhotos[0] : '') || '',
+      previewImage: photos.at(-1) || stringOf(repair.beforeImage),
+      assignees,
+      isQuickRepair: Boolean(data.isQuickRepair),
+      datePickedUp: dateOf(data.date_picked_up),
     });
   });
 }
@@ -412,11 +437,18 @@ async function loadRows(
   request: Phase7FilterRequest,
 ): Promise<Phase7NormalizedRow[]> {
   const db = getFirestore();
+  const projectSection = section === 'PROJECT_HISTORY' || section === 'ALL_PROJECTS';
+  const needsProjectMap = !projectSection;
+  const needsSpecMap = section === 'WEEKLY_MOVEMENT'
+    || section === 'INVENTORY_LEDGER'
+    || section === 'BROKEN_STONES'
+    || section === 'REQUESTS'
+    || section === 'RETURNS';
   const [primary, users, projects, specs] = await Promise.all([
     indexedCandidateQuery(section, request).get(),
     db.collection('users').get(),
-    db.collection('projects').get(),
-    db.collection('specs').get(),
+    needsProjectMap ? db.collection('projects').get() : Promise.resolve(null),
+    needsSpecMap ? db.collection('specs').get() : Promise.resolve(null),
   ]);
   if (primary.size > MAX_REPORT_CANDIDATES) {
     throw new HttpsError(
@@ -426,8 +458,8 @@ async function loadRows(
   }
   const maps: ReferenceMaps = {
     users: new Map(users.docs.map(document => [document.id, document.data()])),
-    projects: new Map(projects.docs.map(document => [document.id, document.data()])),
-    specs: new Map(specs.docs.map(document => [document.id, document.data()])),
+    projects: new Map((projects?.docs || []).map(document => [document.id, document.data()])),
+    specs: new Map((specs?.docs || []).map(document => [document.id, document.data()])),
   };
   const documents = primary.docs.map(document => ({ id: document.id, data: document.data() }));
   if (section === 'PROJECT_HISTORY' || section === 'ALL_PROJECTS') return projectRows(documents, maps);
@@ -472,21 +504,19 @@ async function authorize(section: Phase7ReportSection, request: Parameters<typeo
 async function evaluate(request: Phase7FilterRequest, actorLocation: unknown): Promise<Phase7NormalizedRow[]> {
   const filtered = filterPhase7Rows(await loadRows(request.section, actorLocation, request), request);
   if (request.section === 'ALL_PROJECTS') {
-    return [...filtered].sort((left, right) => {
-      const leftData = left.data;
-      const rightData = right.data;
-      const leftRush = stringOf(leftData.priority) === 'Rush' ? 1 : 0;
-      const rightRush = stringOf(rightData.priority) === 'Rush' ? 1 : 0;
-      if (leftRush !== rightRush) return rightRush - leftRush;
-      const leftDue = new Date(stringOf(leftData.dueDate)).getTime();
-      const rightDue = new Date(stringOf(rightData.dueDate)).getTime();
-      if (Number.isFinite(leftDue) && Number.isFinite(rightDue) && leftDue !== rightDue) return rightDue - leftDue;
-      if (Number.isFinite(leftDue) !== Number.isFinite(rightDue)) return Number.isFinite(leftDue) ? -1 : 1;
-      const leftUpdated = new Date(stringOf(leftData.updatedAt)).getTime() || 0;
-      const rightUpdated = new Date(stringOf(rightData.updatedAt)).getTime() || 0;
-      if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
-      return left.id.localeCompare(right.id);
-    });
+    return [...filtered].sort((left, right) => comparePhase8Projects({
+      id: left.id,
+      priority: left.data.priority,
+      dueDate: left.data.dueDate,
+      updatedAt: left.data.updatedAt,
+      createdAt: left.data.createdAt,
+    }, {
+      id: right.id,
+      priority: right.data.priority,
+      dueDate: right.data.dueDate,
+      updatedAt: right.data.updatedAt,
+      createdAt: right.data.createdAt,
+    }));
   }
   return sortPhase7Rows(filtered);
 }

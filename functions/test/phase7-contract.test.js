@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   escapePhase7CsvCell,
+  comparePhase8Projects,
   filterPhase7Rows,
   matchesPhase7Search,
   paginatePhase7Rows,
@@ -83,4 +84,15 @@ test('untrusted selection input is normalized and bounded', () => {
     service: ['REPAIR', 'REPAIR', 7],
     bad: 'CUSTOM_MAKE',
   }), { service: ['REPAIR'] });
+});
+
+test('Phase 8 project sorting is Rush, nearest due date, newest update, then ID', () => {
+  const projects = [
+    { id: 'z', priority: 'Normal', dueDate: '2026-07-25', updatedAt: '2026-07-23' },
+    { id: 'c', priority: 'Rush', dueDate: '', updatedAt: '2026-07-24' },
+    { id: 'b', priority: 'Rush', dueDate: '2026-07-26', updatedAt: '2026-07-20' },
+    { id: 'a', priority: 'Rush', dueDate: '2026-07-26', updatedAt: '2026-07-21' },
+    { id: 'x', priority: 'Normal', dueDate: 'not-a-date', updatedAt: '2026-07-25' },
+  ];
+  assert.deepEqual(projects.sort(comparePhase8Projects).map(project => project.id), ['a', 'b', 'c', 'z', 'x']);
 });

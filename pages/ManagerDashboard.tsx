@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
 import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones } from '../components/UI';
-import { Inbox, PackageCheck, Plus, LayoutGrid, List as ListIcon, Image as ImageIcon, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
@@ -14,6 +14,14 @@ import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/
 import { ReportFilterDefinition, ReportFilterState, newReportFilterState, toPhase7Request } from '../services/reportFilters';
 import { usePhase7Report } from '../services/usePhase7Report';
 import { downloadPhase7Csv, exportPhase7ReportCsv } from '../services/reportsApi';
+import { useProjectViewPreference } from '../hooks/useProjectViewPreference';
+import {
+   ProjectCollectionMessage,
+   ProjectGridCard,
+   ProjectListRow,
+   ProjectViewToggle,
+} from '../components/projects/ProjectViews';
+import { normalizeProjectSummary, ProjectSummary } from '../services/projectPresentation';
 
 const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
    { code: 'CUSTOM_MAKE' },
@@ -22,12 +30,16 @@ const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boo
    { code: 'OTHER', disabled: true },
 ];
 
+const OVERVIEW_PROJECT_FILTERS: ReportFilterState = {
+   ...newReportFilterState(),
+   selections: { status: [ProjectStatus.ACTIVE] },
+};
+
 const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const navigate = useNavigate();
    const showToast = useToast();
 
    // Data
-   const [activeProjects, setActiveProjects] = useState<Project[]>([]);
    const [requests, setRequests] = useState<IssueRequest[]>([]);
    const [returnBags, setReturnBags] = useState<{ bag: DiamondBag; tx?: BagReturnTransaction }[]>([]);
    const [inventorySummary, setInventorySummary] = useState(store.getInventorySummary());
@@ -48,7 +60,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       }
    });
    const [loading, setLoading] = useState(false);
-   const [viewMode, setViewMode] = useState<'LIST' | 'GRID'>('LIST');
+   const { viewMode, setViewMode } = useProjectViewPreference(currentUser.id, 'overview', 'LIST');
    const [showAllRequests, setShowAllRequests] = useState(false);
    const [showAllReturns, setShowAllReturns] = useState(false);
    const [requestFilters, setRequestFilters] = useState<ReportFilterState>(newReportFilterState);
@@ -176,7 +188,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    };
 
    const refresh = () => {
-      setActiveProjects(store.getProjects().filter(p => p.status === ProjectStatus.ACTIVE));
       const openRequests = store.getRequests().filter(r => r.status === 'OPEN');
       openRequests.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
       setRequests(openRequests);
@@ -239,6 +250,11 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       page: returnPage,
       pageSize: 20,
    });
+   const overviewProjectReport = usePhase7Report<ProjectSummary>('ALL_PROJECTS', OVERVIEW_PROJECT_FILTERS, {
+      page: 1,
+      pageSize: 7,
+   });
+   const overviewProjects = overviewProjectReport.rows.slice(0, 6).map(normalizeProjectSummary);
    const visibleRequests = requestReport.rows
       .map(row => requests.find(request => request.id === row.id))
       .filter((request): request is IssueRequest => Boolean(request));
@@ -579,10 +595,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             </div>
 
             <div className="flex flex-wrap items-center gap-8 md:gap-10">
-               <div className="flex bg-white/5 rounded-2xl p-1 border border-white/5 h-12 items-center">
-                  <button onClick={() => setViewMode('LIST')} className={`px-4 py-2 rounded-xl transition-all h-full flex items-center ${viewMode === 'LIST' ? 'bg-lux-gold text-black shadow-lg scale-[1.05]' : 'text-zinc-500 hover:text-theme-text-primary'}`}><ListIcon size={18} /></button>
-                  <button onClick={() => setViewMode('GRID')} className={`px-4 py-2 rounded-xl transition-all h-full flex items-center ${viewMode === 'GRID' ? 'bg-lux-gold text-black shadow-lg scale-[1.05]' : 'text-zinc-500 hover:text-theme-text-primary'}`}><LayoutGrid size={18} /></button>
-               </div>
                <div data-tour="manager-new-project">
                   <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={20} />}>New Project</Button>
                </div>
@@ -889,115 +901,39 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             </div>
          )}
 
-         <div className="mb-4 flex items-center gap-2">
-            <h2 className="text-xl font-bold text-theme-text-primary">Active Projects</h2>
-            <Badge color="green">{activeProjects.length}</Badge>
+         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+               <h2 className="text-xl font-bold text-theme-text-primary">Active Projects</h2>
+               <Badge color="green">{overviewProjectReport.total}</Badge>
+            </div>
+            <ProjectViewToggle value={viewMode} onChange={setViewMode} label="Overview project view" />
          </div>
 
-         <div className={viewMode === 'LIST' ? 'space-y-4' : 'modular-grid'}>
-            {(() => {
-               const sorted = [...activeProjects].sort((a, b) => {
-                  if (a.priority === Priority.RUSH && b.priority !== Priority.RUSH) return -1;
-                  if (b.priority === Priority.RUSH && a.priority !== Priority.RUSH) return 1;
-                  const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 9999999999999;
-                  const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 9999999999999;
-                  if (dateA !== dateB) return dateA - dateB;
-                  const updatedA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                  const updatedB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                  return updatedB - updatedA;
-               });
-               const overviewProjects = sorted.slice(0, 6);
-               return (
-                  <>
-                     {overviewProjects.map(p => (
-                        viewMode === 'LIST' ? (
-                           <Card key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="group p-5 flex flex-col md:flex-row md:items-center gap-4 border-zinc-800 bg-transparent">
-                              <div className="flex-1 w-full min-w-0">
-                                 <div className="flex items-center justify-between md:justify-start gap-3 mb-1">
-                                    <h3 className="font-bold text-lg text-theme-text-primary group-hover:text-lux-gold transition-colors truncate">{p.code}</h3>
-                                    {p.priority === Priority.RUSH && <Badge color="red">RUSH</Badge>}
-                                 </div>
-                                 <p className="text-sm text-zinc-500 font-medium truncate">{p.clientName ? `${p.clientName} ` : ''}{p.clientPhone ? `(${p.clientPhone}) - ` : (p.clientName ? '- ' : '')}{p.pieceName}</p>
-                              </div>
-                              <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto">
-                                 <div className="flex -space-x-3 pl-1">
-                                    {p.assignments.filter(a => a.active).map(a => {
-                                       const u = store.getUser(a.userId);
-                                       return u ? <div key={u.id} className="ring-2 ring-[#1F2128] rounded-full"><SetterAvatar name={u.name} color={u.setterColor} image={u.profilePhoto} size="sm" /></div> : null;
-                                    })}
-                                 </div>
-                                 <div className="flex items-center gap-8">
-                                    <div className="text-right">
-                                       <div className="font-bold text-theme-text-primary text-sm">{p.currentStageName || 'Intake'}</div>
-                                       <div className="text-[9px] text-zinc-500 font-semibold tracking-wide mt-0.5">{p.currentPercentComplete || 0}% complete</div>
-                                    </div>
-                                    <div className="w-40">
-                                       {store.isRepairProject(p) ? (
-                                          <ProgressBar progress={p.currentPercentComplete || 0} className="my-1.5" />
-                                       ) : (
-                                          <ProjectMilestones currentPercent={p.currentPercentComplete || 0} currentStage={p.currentStageName} />
-                                       )}
-                                    </div>
-                                    <ChevronRight className="text-zinc-700 group-hover:text-theme-text-primary hidden md:block transition-all group-hover:translate-x-1" />
-                                 </div>
-                              </div>
-                           </Card>
-                        ) : (
-                           <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="group border border-theme-border rounded-3xl overflow-hidden cursor-pointer hover:border-lux-gold/30 transition-all shadow-subtle hover:shadow-glow flex flex-col h-full relative bg-black/20">
-                              <div className="h-32 bg-black relative flex items-center justify-center border-b border-theme-border">
-                                 {p.projectPhotos && p.projectPhotos.length > 0 ? (
-                                    <img src={p.projectPhotos[p.projectPhotos.length - 1]} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                                 ) : (
-                                    <div className="text-zinc-700 flex flex-col items-center"><ImageIcon size={32} strokeWidth={1.5} /><span className="text-[10px] mt-2 font-medium uppercase tracking-wider">No Preview</span></div>
-                                 )}
-                                 <div className="absolute top-3 right-3">{p.priority === Priority.RUSH && <Badge color="red">RUSH</Badge>}</div>
-                                 <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10 text-xs font-bold text-white shadow-lg">{p.currentStageName || 'Intake'}</div>
-                              </div>
-                              <div className="p-5 flex-1 flex flex-col justify-between">
-                                 <div className="mb-4">
-                                    <h3 className="font-bold text-lg text-theme-text-primary group-hover:text-lux-gold transition-colors">{p.code}</h3>
-                                    <p className="text-sm text-zinc-400 font-medium truncate">{p.clientName ? `${p.clientName} ` : ''}{p.clientPhone ? `(${p.clientPhone}) - ` : (p.clientName ? '- ' : '')}{p.pieceName}</p>
-                                 </div>
-                                 <div className="mt-auto">
-                                    <div className="flex justify-between items-center mb-3">
-                                       <div className="flex -space-x-2">
-                                          {p.assignments.filter(a => a.active).map(a => {
-                                             const u = store.getUser(a.userId);
-                                             return u ? <div key={u.id} className="ring-2 ring-[#1F2128] rounded-full"><SetterAvatar name={u.name} color={u.setterColor} image={u.profilePhoto} size="sm" /></div> : null;
-                                          })}
-                                       </div>
-                                       <span className="text-xs font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
-                                    </div>
-                                    <div className="bg-black/30 p-2.5 rounded-2xl border border-white/5 shadow-inner">
-                                       {store.isRepairProject(p) ? (
-                                          <ProgressBar progress={p.currentPercentComplete || 0} className="my-1" />
-                                       ) : (
-                                          <ProjectMilestones currentPercent={p.currentPercentComplete || 0} currentStage={p.currentStageName} />
-                                       )}
-                                    </div>
-                                 </div>
-                              </div>
-                           </div>
-                        )
-                     ))}
-                     {activeProjects.length > 6 && (
-                        <div
-                           onClick={() => navigate('/projects')}
-                           className="group border border-dashed border-theme-border hover:border-lux-gold/50 rounded-3xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:bg-lux-gold/5 space-y-3 min-h-[220px]"
-                        >
-                           <div className="w-12 h-12 rounded-2xl bg-lux-gold/10 border border-lux-gold/20 flex items-center justify-center text-lux-gold group-hover:scale-110 transition-transform">
-                              <Layers size={24} />
-                           </div>
-                           <div>
-                              <div className="font-bold text-white text-base group-hover:text-lux-gold transition-colors">View All Projects</div>
-                              <div className="text-xs text-zinc-500 font-mono mt-1">+{activeProjects.length - 6} more active projects</div>
-                           </div>
-                        </div>
-                     )}
-                  </>
-               );
-            })()}
+         <div className={viewMode === 'LIST' ? 'space-y-3' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4'}>
+            {overviewProjectReport.loading ? (
+               <ProjectCollectionMessage title="Loading active projects" detail="Fetching the latest authorized project summaries…" />
+            ) : overviewProjectReport.error ? (
+               <ProjectCollectionMessage title="Projects unavailable" detail={overviewProjectReport.error} />
+            ) : overviewProjects.length ? (
+               overviewProjects.map(project => viewMode === 'LIST'
+                  ? <ProjectListRow key={project.id} project={project} onOpen={() => navigate(`/project/${project.id}`)} />
+                  : <ProjectGridCard key={project.id} project={project} onOpen={() => navigate(`/project/${project.id}`)} />
+               )
+            ) : (
+               <ProjectCollectionMessage title="No active projects" detail="New active projects will appear here." />
+            )}
          </div>
+         {overviewProjectReport.total > 6 && (
+            <button
+               type="button"
+               onClick={() => navigate('/projects')}
+               className="mt-4 w-full min-h-14 rounded-2xl border border-dashed border-theme-border bg-theme-input-bg px-5 flex items-center justify-center gap-3 text-theme-text-secondary hover:text-lux-gold hover:border-lux-gold/45 hover:bg-lux-gold/5 transition-all duration-300 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+            >
+               <Layers size={20} aria-hidden="true" />
+               <span className="font-bold">View All Projects</span>
+               <span className="text-xs font-mono">+{overviewProjectReport.total - 6} more</span>
+            </button>
+         )}
 
          {isCreating && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-6">

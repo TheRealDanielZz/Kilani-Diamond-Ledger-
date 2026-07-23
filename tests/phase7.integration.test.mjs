@@ -37,11 +37,16 @@ before(async () => {
     seed('projects/custom-active', {
       code: 'CUSTOM-1', clientName: 'Amiyah', pieceName: 'Necklace', status: 'Active',
       priority: 'Rush', dueDate: '2026-07-25', createdAt: '2026-07-20T10:00:00.000Z',
+      last_status_change_at: '2026-07-23T10:00:00.000Z',
+      currentStageName: 'Casting', currentPercentComplete: 40,
+      projectPhotos: ['https://example.test/old.jpg', 'https://example.test/latest.jpg'],
+      assignments: [{ userId: designer.uid, active: true }],
       salesRepId: designer.uid, services: [{ code: 'CUSTOM_MAKE', status: 'IN_PROGRESS' }],
     }),
     seed('projects/repair-active', {
       code: 'REPAIR-1', clientName: 'Alayah', pieceName: 'Ring', status: 'Active',
-      createdAt: '2026-07-21T10:00:00.000Z', salesRepId: designer.uid,
+      priority: 'Normal', dueDate: '2026-07-24', createdAt: '2026-07-21T10:00:00.000Z',
+      last_status_change_at: '2026-07-24T10:00:00.000Z', salesRepId: designer.uid,
       services: [{ code: 'REPAIR', status: 'IN_PROGRESS' }],
       repair: { type: 'Resize', status: 'Intake', financials: { noCharge: true } },
     }),
@@ -135,8 +140,33 @@ test('Designer may query reporting data; Setter is blocked from private reports 
 });
 
 test('All Projects stays readable for authenticated staff while Requests and Returns remain Manager-only', async () => {
-  const projects = await call(setter, 'queryPhase7Report', { section: 'ALL_PROJECTS', selections: { status: ['Active'] } });
+  const projects = await call(setter, 'queryPhase7Report', {
+    section: 'ALL_PROJECTS',
+    selections: { status: ['Active'] },
+    pageSize: 1,
+  });
   assert.equal(projects.total, 2);
+  assert.equal(projects.rows.length, 1);
+  assert.equal(projects.rows[0].id, 'custom-active');
+  assert.equal(projects.rows[0].previewImage, 'https://example.test/latest.jpg');
+  assert.equal(projects.rows[0].currentStageName, 'Casting');
+  assert.equal(projects.rows[0].progress, 40);
+  assert.deepEqual(projects.rows[0].assignees, [{
+    id: designer.uid,
+    name: 'Designer',
+    color: '',
+    image: '',
+  }]);
+  assert.equal(projects.nextCursor, 'p7:1');
+
+  const nextProjects = await call(setter, 'queryPhase7Report', {
+    section: 'ALL_PROJECTS',
+    selections: { status: ['Active'] },
+    pageSize: 1,
+    cursor: projects.nextCursor,
+  });
+  assert.equal(nextProjects.rows[0].id, 'repair-active');
+  assert.equal(nextProjects.nextCursor, null);
   const requests = await call(manager, 'queryPhase7Report', { section: 'REQUESTS', selections: { status: ['OPEN'] } });
   const returns = await call(manager, 'queryPhase7Report', { section: 'RETURNS', selections: { status: ['PENDING'] } });
   assert.equal(requests.total, 1);

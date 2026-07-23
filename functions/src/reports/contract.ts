@@ -162,6 +162,41 @@ export function sortPhase7Rows(rows: Phase7NormalizedRow[]): Phase7NormalizedRow
   });
 }
 
+export interface Phase8SortableProject {
+  id: string;
+  priority?: unknown;
+  dueDate?: unknown;
+  updatedAt?: unknown;
+  createdAt?: unknown;
+}
+
+function validDateTime(value: unknown): number | null {
+  const time = new Date(String(value || '')).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+/**
+ * Phase 8 project order:
+ * Rush first, nearest valid due date, newest update, then stable project ID.
+ * Legacy projects without a trustworthy due date remain after dated projects.
+ */
+export function comparePhase8Projects(left: Phase8SortableProject, right: Phase8SortableProject): number {
+  const leftRush = String(left.priority || '').toLowerCase() === 'rush';
+  const rightRush = String(right.priority || '').toLowerCase() === 'rush';
+  if (leftRush !== rightRush) return leftRush ? -1 : 1;
+
+  const leftDue = validDateTime(left.dueDate);
+  const rightDue = validDateTime(right.dueDate);
+  if (leftDue !== null && rightDue !== null && leftDue !== rightDue) return leftDue - rightDue;
+  if ((leftDue !== null) !== (rightDue !== null)) return leftDue !== null ? -1 : 1;
+
+  const leftUpdated = validDateTime(left.updatedAt) ?? validDateTime(left.createdAt) ?? 0;
+  const rightUpdated = validDateTime(right.updatedAt) ?? validDateTime(right.createdAt) ?? 0;
+  if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
+
+  return String(left.id || '').localeCompare(String(right.id || ''));
+}
+
 export function encodePhase7Cursor(offset: number): string {
   return `p7:${offset}`;
 }
