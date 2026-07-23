@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, Priority } from '../types';
-import { Card, StatusPill } from '../components/UI';
-import { Calendar, ChevronRight } from 'lucide-react';
+import { Card, StatusPill, Button } from '../components/UI';
+import { Calendar, ChevronRight, Wrench } from 'lucide-react';
+import { QuickRepairModal } from '../components/QuickRepairModal';
 
 const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isQuickRepairOpen, setIsQuickRepairOpen] = useState(false);
 
   useEffect(() => {
     const loadProjects = () => {
@@ -54,13 +56,23 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   }, [currentUser]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
-           <h1 className="text-2xl font-bold text-lux-cream">My Assignments</h1>
+           <h1 className="text-2xl font-bold text-lux-cream tracking-tight">My Assignments</h1>
            <p className="text-sm text-zinc-500">Current Work Queue</p>
         </div>
-        <div className="w-4 h-4 rounded-full shadow-glow ring-2 ring-lux-black" style={{background: currentUser.setterColor}}></div>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <Button
+            variant="primary"
+            icon={<Wrench size={18} />}
+            onClick={() => setIsQuickRepairOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            New Repair Project
+          </Button>
+          <div className="w-4 h-4 rounded-full shadow-glow ring-2 ring-lux-black shrink-0" style={{background: currentUser.setterColor || '#52525B'}}></div>
+        </div>
       </div>
 
       <div className="modular-grid">
@@ -94,6 +106,13 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           ))
         )}
       </div>
+
+      {/* Quick Repair Modal for Walk-in Intake */}
+      <QuickRepairModal
+        isOpen={isQuickRepairOpen}
+        onClose={() => setIsQuickRepairOpen(false)}
+        onProjectCreated={(created) => navigate(`/project/${created.id}`)}
+      />
     </div>
   );
 };
