@@ -2051,7 +2051,7 @@ class StoreService {
         last.componentWeightsMg = componentWeightsMg;
         last.componentCosts = componentCosts;
         last.overallCastingCostCents = overallCastingCostCents;
-        last.costingMode = 'REPLACEMENT';
+        last.costingMode = 'REPLACEMENT_LATEST_ONLY';
         last.removedComponents = removedComponents.map(removed => ({
             componentId: removed.revisionId,
             label: this.normalizeGoldComponents(p).find(

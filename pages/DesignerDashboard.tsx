@@ -110,9 +110,23 @@ const DesignerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
     }
   };
 
-  const acceptedProfileIds = new Set([currentUser.id, ...(currentUser.legacyProfileIds || [])]);
-  const myProjects = projects.filter(p => p.assignments.some(a => acceptedProfileIds.has(a.userId) && a.active));
-  const otherProjects = projects.filter(p => !p.assignments.some(a => acceptedProfileIds.has(a.userId) && a.active));
+  const acceptedProfileIds = new Set([
+    currentUser.id,
+    currentUser.authUid,
+    ...(currentUser.legacyProfileIds || []),
+    currentUser.name?.toLowerCase(),
+    currentUser.email?.toLowerCase()
+  ].filter(Boolean));
+  const myProjects = projects.filter(p => (p.assignments || []).some(a => {
+    if (!a.active) return false;
+    const user = store.getUser(a.userId);
+    const userName = user?.name?.toLowerCase() || '';
+    const userEmail = user?.email?.toLowerCase() || '';
+    return acceptedProfileIds.has(a.userId) ||
+           (userName && acceptedProfileIds.has(userName)) ||
+           (userEmail && acceptedProfileIds.has(userEmail));
+  }));
+  const otherProjects = projects.filter(p => !myProjects.some(my => my.id === p.id));
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 pb-32">

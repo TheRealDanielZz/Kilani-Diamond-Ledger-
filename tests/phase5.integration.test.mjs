@@ -65,14 +65,34 @@ test('one component changes independently and creates a linked superseded revisi
   await assert.rejects(call(otherDesigner, 'reviseMetalComponent', { operationId: operation('unauthorized-change'), projectId: 'main', revisionId: replacement.revisionId, reason: 'No access', expectedVersion: 1, label: 'Accent', metal: 'White', purity: '14k' }));
 });
 
-test('multiple casting weights are recorded independently and pending cost has no estimate', async () => {
+test('only an assigned Designer or Manager can receive casting and each receipt rate creates an independent draft', async () => {
   const project = await read('projects/main');
   const accent = project.goldComponents.find(c => c.state === 'ACTIVE' && c.componentId === 'accent');
-  await call(designer, 'recordCastingReceipt', { operationId: operation('casting-receipt'), projectId: 'main', condition: 'CORRECT', notes: 'Confirmed by casting slip.', weights: [{ revisionId: 'pendant-r1', weightMg: 12400 }, { revisionId: accent.revisionId, weightMg: 1000 }] });
+  const weights = [
+    { revisionId: 'pendant-r1', weightMg: 12400, supplierRateCentsPerGram: 4000 },
+    { revisionId: accent.revisionId, weightMg: 1000, supplierRateCentsPerGram: 5000 },
+  ];
+  await assert.rejects(call(setter, 'recordCastingReceipt', { operationId: operation('setter-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));
+  await assert.rejects(call(jeweller, 'recordCastingReceipt', { operationId: operation('jeweller-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));
+  await assert.rejects(call(otherDesigner, 'recordCastingReceipt', { operationId: operation('other-receipt'), projectId: 'main', condition: 'CORRECT', notes: '', weights }));
+  await assert.rejects(updateDoc(doc(setter.db, 'projects/main'), { castingEvents: [{ forged: true }] }));
+  const result = await call(designer, 'recordCastingReceipt', {
+    operationId: operation('casting-receipt'),
+    projectId: 'main',
+    condition: 'CORRECT',
+    notes: 'Confirmed by casting slip.',
+    weights
+  });
+  assert.equal(result.overallCastingCostCents, 54600);
   const updated = await read('projects/main');
-  assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').castingWeightMg, 12400);
+  const pendant = updated.goldComponents.find(c => c.revisionId === 'pendant-r1');
+  assert.equal(pendant.castingWeightMg, 12400);
+  assert.equal(pendant.pendingInternalCastingCost.supplierRateCentsPerGram, 4000);
+  assert.equal(pendant.pendingInternalCastingCost.amountCents, 49600);
   assert.equal(updated.goldComponents.find(c => c.revisionId === accent.revisionId).castingWeightMg, 1000);
-  assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').internalCastingCost, undefined);
+  assert.equal(pendant.internalCastingCost, undefined);
+  assert.equal(updated.castingEvents[0].overallCastingCostCents, 54600);
+  assert.equal(updated.castingEvents[0].componentCosts.length, 2);
 });
 
 test('casting weight times supplier rate is fixed precision and confirmation locks it', async () => {
@@ -81,7 +101,10 @@ test('casting weight times supplier rate is fixed precision and confirmation loc
   const retry = await call(manager, 'confirmInternalCastingCost', payload);
   assert.deepEqual(retry, first);
   assert.equal(first.amountCents, 51460);
-  assert.equal((await read('projects/main')).goldComponents.find(c => c.revisionId === 'pendant-r1').internalCastingCost.status, 'LOCKED');
+  const updated = await read('projects/main');
+  assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').internalCastingCost.status, 'LOCKED');
+  assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').pendingInternalCastingCost, undefined);
+  assert.equal(updated.castingEvents[0].componentCosts.find(c => c.revisionId === 'pendant-r1').supplierRateCentsPerGram, 4000);
   await assert.rejects(call(designer, 'confirmInternalCastingCost', { ...payload, operationId: operation('designer-cost') }));
 });
 
@@ -97,16 +120,49 @@ test('direct locked-cost edit is blocked and correction creates one reversal plu
   assert.equal((await read(`projects/main/revisions/${first.replacementId}`)).kind, 'INTERNAL_COST_REPLACEMENT');
 });
 
-test('assigned production records final weights; variance does not change internal cost', async () => {
+test('assigned Designer records final component weights while Setter and Jeweller remain blocked', async () => {
   const project = await read('projects/main');
   const accent = project.goldComponents.find(c => c.state === 'ACTIVE' && c.componentId === 'accent');
   const beforeCost = project.goldComponents.find(c => c.revisionId === 'pendant-r1').internalCastingCost.amountCents;
-  await call(setter, 'recordFinalComponentWeights', { operationId: operation('final-weights'), projectId: 'main', weights: [{ revisionId: 'pendant-r1', weightMg: 11000 }, { revisionId: accent.revisionId, weightMg: 900 }] });
+  const weights = [{ revisionId: 'pendant-r1', weightMg: 11000 }, { revisionId: accent.revisionId, weightMg: 900 }];
+  await assert.rejects(call(setter, 'recordFinalComponentWeights', { operationId: operation('setter-final'), projectId: 'main', weights }));
+  await assert.rejects(call(jeweller, 'recordFinalComponentWeights', { operationId: operation('jeweller-final'), projectId: 'main', weights }));
+  await assert.rejects(call(otherDesigner, 'recordFinalComponentWeights', { operationId: operation('other-final'), projectId: 'main', weights }));
+  await call(designer, 'recordFinalComponentWeights', { operationId: operation('final-weights'), projectId: 'main', weights });
   const updated = await read('projects/main');
   assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').finalWeightMg, 11000);
   assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').castingWeightMg - 11000, 1345);
   assert.equal(updated.goldComponents.find(c => c.revisionId === 'pendant-r1').internalCastingCost.amountCents, beforeCost);
-  await assert.rejects(call(designer, 'recordFinalComponentWeights', { operationId: operation('designer-final'), projectId: 'main', weights: [{ revisionId: 'pendant-r1', weightMg: 10000 }] }));
+});
+
+test('casting removal preserves history, excludes the component, and keeps at least one active component', async () => {
+  await seed('projects/removal', {
+    code: 'REMOVAL',
+    status: 'Active',
+    designStage: 'Casting Sent',
+    activeAssignees: [designer.uid, setter.uid],
+    assignments: [{ userId: designer.uid, active: true }, { userId: setter.uid, active: true }],
+    goldComponents: [
+      { id: 'main-r1', componentId: 'main', revisionId: 'main-r1', revisionVersion: 0, state: 'ACTIVE', label: 'Main', type: 'Yellow', purity: '14k', purityRatioPpm: 585000 },
+      { id: 'extra-r1', componentId: 'extra', revisionId: 'extra-r1', revisionVersion: 0, state: 'ACTIVE', label: 'Extra', type: 'White', purity: '10k', purityRatioPpm: 417000 },
+    ],
+    castingEvents: [{ id: 'casting-removal', projectId: 'removal', cycleNumber: 1, sentAt: new Date().toISOString(), goldComponentIds: ['main-r1', 'extra-r1'] }],
+    progress: [],
+  });
+  const result = await call(designer, 'recordCastingReceipt', {
+    operationId: operation('remove-component'),
+    projectId: 'removal',
+    condition: 'CORRECT',
+    notes: 'Extra component is no longer required.',
+    weights: [{ revisionId: 'main-r1', weightMg: 2000, supplierRateCentsPerGram: 1000 }],
+    removedComponents: [{ revisionId: 'extra-r1', reason: 'Design no longer needs this piece.' }],
+  });
+  assert.equal(result.overallCastingCostCents, 2000);
+  const project = await read('projects/removal');
+  assert.equal(project.goldComponents.find(c => c.revisionId === 'extra-r1').state, 'REMOVED');
+  assert.equal(project.goldComponents.filter(c => c.state === 'ACTIVE').length, 1);
+  assert.equal(project.castingEvents[0].removedComponents[0].reason, 'Design no longer needs this piece.');
+  assert.equal((await read(`projects/removal/revisions/${operation('remove-component')}`)).after.removedComponents.length, 1);
 });
 
 test('pickup requires Manager, Review status, retroactive reason, and locks independent no-markup charges', async () => {
@@ -155,6 +211,8 @@ test('casting dispatch is assigned-role checked, atomic, and retry safe', async 
   assert.equal(project.castingEvents.length, 1);
   assert.equal(project.designStage, 'Casting Sent');
   await assert.rejects(call(otherDesigner, 'dispatchCastingPhase5', { operationId: operation('dispatch-other'), projectId: 'dispatch', revisionIds: ['d'] }));
+  await assert.rejects(call(setter, 'dispatchCastingPhase5', { operationId: operation('dispatch-setter'), projectId: 'dispatch', revisionIds: ['d'] }));
+  await assert.rejects(call(jeweller, 'dispatchCastingPhase5', { operationId: operation('dispatch-jeweller'), projectId: 'dispatch', revisionIds: ['d'] }));
 });
 
 test('only Manager can safely return an unpicked Review project to Active', async () => {
