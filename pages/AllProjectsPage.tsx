@@ -7,48 +7,10 @@ import { Card, StatusPill, SetterAvatar, Input, Badge, Button } from '../compone
 import { Search, Filter, Layers, ChevronRight, Calendar, ArrowUpRight, Trash2, AlertTriangle, CheckCircle2, RotateCcw, UserCheck, X, LayoutGrid, List, Image as ImageIcon, Maximize2 } from 'lucide-react';
 import { useToast } from '../App';
 import ProjectDetail from './ProjectDetail';
-
-function getEditDistance(a: string, b: string): number {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-  for (let j = 1; j <= b.length; j++) {
-    for (let i = 1; i <= a.length; i++) {
-      const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,
-        matrix[j - 1][i] + 1,
-        matrix[j - 1][i - 1] + indicator
-      );
-    }
-  }
-  return matrix[b.length][a.length];
-}
-
-const isFuzzyMatch = (query: string, target: string) => {
-    if (!query) return true;
-    const q = query.toLowerCase().trim();
-    const t = target.toLowerCase();
-    
-    if (t.includes(q)) return true;
-    if (q.length <= 3) return false;
-
-    const qWords = q.split(/\s+/);
-    const tWords = t.split(/\s+/);
-
-    return qWords.every(qw => {
-        return tWords.some(tw => {
-            if (tw.includes(qw)) return true;
-            if (qw.length > 3 && tw.length > 3) {
-                const allowedTypos = qw.length > 5 ? 2 : 1;
-                return getEditDistance(qw, tw) <= allowedTypos;
-            }
-            return false;
-        });
-    });
-};
+import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/reports/ReportFilterBar';
+import { ReportFilterDefinition, ReportFilterState, newReportFilterState, toPhase7Request } from '../services/reportFilters';
+import { usePhase7Report } from '../services/usePhase7Report';
+import { downloadPhase7Csv, exportPhase7ReportCsv } from '../services/reportsApi';
 
 const AllProjectsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -60,9 +22,12 @@ const AllProjectsPage: React.FC = () => {
   const [salesReps, setSalesReps] = useState<User[]>([]);
   
   // Filters
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus>(ProjectStatus.ACTIVE);
-  const [salesRepFilter, setSalesRepFilter] = useState<string>('ALL');
+  const [reportFilters, setReportFilters] = useState<ReportFilterState>(() => ({
+    ...newReportFilterState(),
+    selections: { status: [ProjectStatus.ACTIVE] },
+  }));
+  const [reportPage, setReportPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const [viewMode, setViewMode] = useState<'LIST' | 'GRID'>(() => {
     if (window.innerWidth < 640) return 'GRID';
     return (localStorage.getItem('kilani_all_projects_view_mode') as 'LIST' | 'GRID') || 'GRID';
@@ -161,36 +126,54 @@ const AllProjectsPage: React.FC = () => {
       }
   };
 
-  const filteredProjects = projects.filter(p => {
-    const repName = salesReps.find(r => r.id === p.salesRepId)?.name || '';
-    const searchableString = [
-        p.clientName || '',
-        p.clientPhone || '',
-        p.pieceName || '',
-        p.code || '',
-        repName
-    ].join(' ');
+  const filterDefinitions: ReportFilterDefinition[] = [
+    {
+      field: 'status',
+      label: 'Status',
+      options: Object.values(ProjectStatus).map(value => ({ value, label: value })),
+    },
+    {
+      field: 'salesRepId',
+      label: 'Sales Rep',
+      options: salesReps.map(user => ({ value: user.id, label: user.name })),
+    },
+    {
+      field: 'service',
+      label: 'Service',
+      options: [
+        { value: 'CUSTOM_MAKE', label: 'Custom Make' },
+        { value: 'ENGAGEMENT', label: 'Engagement' },
+        { value: 'REPAIR', label: 'Repair' },
+        { value: 'OTHER', label: 'Other' },
+        { value: 'MANAGER_REVIEW_REQUIRED', label: 'Manager Review Required' },
+      ],
+    },
+  ];
+  const projectReport = usePhase7Report<any>('ALL_PROJECTS', reportFilters, { page: reportPage, pageSize: 24 });
+  const filteredProjects = projectReport.rows
+    .map(row => projects.find(project => project.id === row.id))
+    .filter((project): project is Project => Boolean(project));
 
-    const matchesSearch = isFuzzyMatch(search, searchableString);
-    const matchesStatus = p.status === statusFilter;
-    const matchesSalesRep = salesRepFilter === 'ALL' || p.salesRepId === salesRepFilter;
-    
-    return matchesSearch && matchesStatus && matchesSalesRep;
-  });
+  const changeReportFilters = (next: ReportFilterState) => {
+    setReportFilters(next);
+    setReportPage(1);
+  };
 
-  // Sort logic varies by tab
-  filteredProjects.sort((a, b) => {
-    if (statusFilter === ProjectStatus.ACTIVE) {
-        if (a.priority === Priority.RUSH && b.priority !== Priority.RUSH) return -1;
-        if (b.priority === Priority.RUSH && a.priority !== Priority.RUSH) return 1;
-        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
-    } else {
-        // For Review and Closed, show most recent activity first
-        const dateA = a.last_status_change_at ? new Date(a.last_status_change_at).getTime() : 0;
-        const dateB = b.last_status_change_at ? new Date(b.last_status_change_at).getTime() : 0;
-        return dateB - dateA;
+  const exportFilteredProjects = async () => {
+    setExporting(true);
+    try {
+      const result = await exportPhase7ReportCsv({
+        ...toPhase7Request('ALL_PROJECTS', reportFilters, 100),
+        cursor: undefined,
+      });
+      downloadPhase7Csv(result, 'all_projects');
+      showToast(`Exported ${result.total} project${result.total === 1 ? '' : 's'}.`);
+    } catch (error: any) {
+      showToast(error?.message || 'Unable to export projects.');
+    } finally {
+      setExporting(false);
     }
-  });
+  };
 
   const handleProjectClick = (projectId: string) => {
     if (viewMode === 'GRID' || window.innerWidth < 1024) {
@@ -218,73 +201,45 @@ const AllProjectsPage: React.FC = () => {
       </div>
 
       {/* Controls */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
-        <div className="lg:col-span-5 relative">
-            <Input 
-             placeholder="Search code, client, or rep..." 
-             value={search} 
-             onChange={e => setSearch(e.target.value)}
-             className="pl-11 bg-white/5 border-white/5 h-12"
-            />
-            <Search className="absolute left-4 top-4 w-4 h-4 text-zinc-500" />
-        </div>
-        
-        <div className="lg:col-span-7 flex flex-col sm:flex-row gap-3">
-           {/* Status Tabs */}
-           <div className="flex overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-black/20 p-1 rounded-[1.5rem] border border-[#2D313A]">
-               {[
-                   { id: ProjectStatus.ACTIVE, label: 'Active' },
-                   { id: ProjectStatus.REVIEW, label: 'Review' },
-                   { id: ProjectStatus.CLOSED, label: 'Closed' }
-               ].map(s => (
-                 <button
-                   key={s.id}
-                   onClick={() => setStatusFilter(s.id)}
-                   className={`px-5 py-2 rounded-2xl text-[11px] font-bold transition-all whitespace-nowrap ${statusFilter === s.id ? 'bg-white text-black shadow-lg scale-[1.02]' : 'text-zinc-500 hover:text-white'}`}
-                 >
-                   {s.label}
-                 </button>
-               ))}
-           </div>
-
-           {/* Sales Rep Filter */}
-            <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-2xl border border-white/5 shrink-0 h-10">
-              <Filter size={14} className="text-zinc-500" />
-              <select 
-                value={salesRepFilter}
-                onChange={e => setSalesRepFilter(e.target.value)}
-                className="bg-transparent border-none text-[11px] text-zinc-300 font-bold focus:ring-0 cursor-pointer w-full sm:w-auto uppercase tracking-wider"
-              >
-                <option value="ALL">All Reps</option>
-                {salesReps.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center bg-black/20 p-1 rounded-2xl border border-[#2D313A] shrink-0 h-10">
+      <div className="mb-6 rounded-3xl border border-[#2D313A] bg-black/20 p-4 space-y-4">
+        <div className="flex flex-wrap justify-end gap-3">
+            <Button size="sm" variant="secondary" loading={exporting} onClick={() => void exportFilteredProjects()}>
+              Export CSV
+            </Button>
+            <div className="flex items-center bg-black/20 p-1 rounded-2xl border border-[#2D313A] shrink-0 min-h-11">
                <button
                   onClick={() => toggleViewMode('GRID')}
+                  aria-label="Grid view"
+                  aria-pressed={viewMode === 'GRID'}
                   title="Grid View"
-                  className={`p-1.5 rounded-xl transition-all ${viewMode === 'GRID' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
+                  className={`min-w-11 min-h-9 p-1.5 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold ${viewMode === 'GRID' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
                >
                   <LayoutGrid size={16} />
                </button>
                <button
                   onClick={() => toggleViewMode('LIST')}
+                  aria-label="List view"
+                  aria-pressed={viewMode === 'LIST'}
                   title="List View"
-                  className={`p-1.5 rounded-xl transition-all ${viewMode === 'LIST' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
+                  className={`min-w-11 min-h-9 p-1.5 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold ${viewMode === 'LIST' ? 'bg-white/10 text-lux-gold' : 'text-zinc-500 hover:text-white'}`}
                >
                   <List size={16} />
                </button>
             </div>
         </div>
+        <ReportFilterBar
+          state={reportFilters}
+          onChange={changeReportFilters}
+          definitions={filterDefinitions}
+          searchPlaceholder="Search code, client, piece, or sales rep…"
+          resultCount={projectReport.total}
+          loading={projectReport.loading}
+        />
       </div>
 
       {/* Project List */}
       <div className={viewMode === 'GRID' ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
-        {filteredProjects.length === 0 ? (
+        {!projectReport.loading && filteredProjects.length === 0 ? (
            <div className={`text-center py-24 bg-black/20 border-2 border-dashed border-[#2D313A] rounded-3xl ${viewMode === 'GRID' ? 'col-span-full' : ''}`}>
               <p className="text-gray-500 font-medium">No projects match your filters.</p>
            </div>
@@ -565,6 +520,8 @@ const AllProjectsPage: React.FC = () => {
           })
         )}
       </div>
+      <ReportMessage loading={projectReport.loading} error={projectReport.error} />
+      <ReportPagination page={reportPage} pageSize={24} total={projectReport.total} onPageChange={setReportPage} />
       </div>
 
       {/* Detail View (iPad/Desktop Split View) */}

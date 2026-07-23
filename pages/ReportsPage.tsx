@@ -9,48 +9,18 @@ import { useToast } from '../App';
 import { runDiamondSituationalTests, TestScenarioResult } from '../services/testHarness';
 import { generateProjectPDF, generateEvidenceAppendixPDF } from '../utils/pdfGenerator';
 import { getCanonicalServiceCode, getProjectServiceLabel, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
-
-function getEditDistance(a: string, b: string): number {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-  for (let j = 1; j <= b.length; j++) {
-    for (let i = 1; i <= a.length; i++) {
-      const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,
-        matrix[j - 1][i] + 1,
-        matrix[j - 1][i - 1] + indicator
-      );
-    }
-  }
-  return matrix[b.length][a.length];
-}
-
-const isFuzzyMatch = (query: string, target: string) => {
-    if (!query) return true;
-    const q = query.toLowerCase().trim();
-    const t = target.toLowerCase();
-    
-    if (t.includes(q)) return true;
-    if (q.length <= 3) return false;
-
-    const qWords = q.split(/\s+/);
-    const tWords = t.split(/\s+/);
-
-    return qWords.every(qw => {
-        return tWords.some(tw => {
-            if (tw.includes(qw)) return true;
-            if (qw.length > 3 && tw.length > 3) {
-                const allowedTypos = qw.length > 5 ? 2 : 1;
-                return getEditDistance(qw, tw) <= allowedTypos;
-            }
-            return false;
-        });
-    });
-};
+import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/reports/ReportFilterBar';
+import {
+  ReportFilterDefinition,
+  ReportFilterState,
+  clearReportFields,
+  newReportFilterState,
+  toPhase7Request,
+} from '../services/reportFilters';
+import { downloadPhase7Csv, exportPhase7ReportCsv } from '../services/reportsApi';
+import { usePhase7Report } from '../services/usePhase7Report';
+import { matchesPhase7Search } from '../functions/src/reports/contract';
+import { generateFilteredReportPDF } from '../utils/reportPdfGenerator';
 
 const ReportsPage: React.FC = () => {
   const showToast = useToast();
@@ -75,13 +45,8 @@ const ReportsPage: React.FC = () => {
   const [weekStart, setWeekStart] = useState(getDefaultWeekStart());
   const [weekEnd, setWeekEnd] = useState(getDefaultWeekEnd());
   const [ledgerTxs, setLedgerTxs] = useState<DiamondLedgerTransaction[]>([]);
-  const [weeklyFilterSpec, setWeeklyFilterSpec] = useState('ALL');
-  const [weeklyFilterColor, setWeeklyFilterColor] = useState('ALL');
-  const [weeklyFilterProject, setWeeklyFilterProject] = useState('ALL');
-  const [weeklyFilterType, setWeeklyFilterType] = useState('ALL');
-  const [weeklyFilterBag, setWeeklyFilterBag] = useState('');
-  const [weeklyFilterSalesRep, setWeeklyFilterSalesRep] = useState('ALL');
-  const [weeklyFilterUser, setWeeklyFilterUser] = useState('ALL');
+  const [weeklyFilters, setWeeklyFilters] = useState<ReportFilterState>(newReportFilterState);
+  const [weeklyPage, setWeeklyPage] = useState(1);
   
   // Stock Snapshot State
   const defaultSnapshotStart = () => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; };
@@ -113,14 +78,23 @@ const ReportsPage: React.FC = () => {
   // Project Report State
   const [projects, setProjects] = useState(store.getProjects());
   const [salesReps, setSalesReps] = useState<User[]>([]);
-  const [salesRepFilter, setSalesRepFilter] = useState('ALL');
-  const [clientFilter, setClientFilter] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('ALL');
-  const [repairTypeFilter, setRepairTypeFilter] = useState('ALL');
-  const [repairStatusFilter, setRepairStatusFilter] = useState('ALL');
-  const [repairFlagFilter, setRepairFlagFilter] = useState('ALL');
-  const [dateFromFilter, setDateFromFilter] = useState('');
-  const [dateToFilter, setDateToFilter] = useState('');
+  const [projectFilters, setProjectFilters] = useState<ReportFilterState>(newReportFilterState);
+  const [projectPage, setProjectPage] = useState(1);
+  const [inventoryFilters, setInventoryFilters] = useState<ReportFilterState>(newReportFilterState);
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [brokenFilters, setBrokenFilters] = useState<ReportFilterState>(newReportFilterState);
+  const [brokenPage, setBrokenPage] = useState(1);
+  const [systemFilters, setSystemFilters] = useState<ReportFilterState>(newReportFilterState);
+  const [systemPage, setSystemPage] = useState(1);
+  const [exportingSection, setExportingSection] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'weekly') { setWeeklyFilters(newReportFilterState()); setWeeklyPage(1); }
+    if (activeTab !== 'inventory') { setInventoryFilters(newReportFilterState()); setInventoryPage(1); }
+    if (activeTab !== 'broken') { setBrokenFilters(newReportFilterState()); setBrokenPage(1); }
+    if (activeTab !== 'projects') { setProjectFilters(newReportFilterState()); setProjectPage(1); }
+    if (activeTab !== 'system') { setSystemFilters(newReportFilterState()); setSystemPage(1); }
+  }, [activeTab]);
 
   // Broken Report State
   const [brokenMovements, setBrokenMovements] = useState<InventoryMovement[]>([]);
@@ -437,53 +411,141 @@ const ReportsPage: React.FC = () => {
       }
   };
 
-  const filteredProjects = projects.filter(p => {
-     const matchesRep = salesRepFilter === 'ALL' || p.salesRepId === salesRepFilter;
-     if (!matchesRep) return false;
-     const canonicalService = getCanonicalServiceCode(p);
-     const repair = store.getRepairDetails(p);
-     const repairCost = store.getRepairCostSummary(p.id);
+  const reportUsers = store.getUsers();
+  const reportSpecs = store.getSpecs();
+  const option = (value: string, label: string) => ({ value, label });
+  const projectFilterDefinitions: ReportFilterDefinition[] = [
+    {
+      field: 'service',
+      label: 'Service',
+      options: [
+        option('CUSTOM_MAKE', 'Custom Make'),
+        option('ENGAGEMENT', 'Engagement'),
+        option('REPAIR', 'Repair'),
+        option('OTHER', 'Other'),
+        option('MANAGER_REVIEW_REQUIRED', 'Manager Review Required'),
+      ],
+    },
+    {
+      field: 'status',
+      label: 'Project Status',
+      options: Object.values(ProjectStatus).map(value => option(value, value)),
+    },
+    {
+      field: 'salesRepId',
+      label: 'Sales Rep',
+      options: salesReps.map(user => option(user.id, user.name)),
+    },
+  ];
+  const repairIsSelected = (projectFilters.selections.service || []).includes('REPAIR');
+  if (repairIsSelected) {
+    projectFilterDefinitions.push(
+      {
+        field: 'repairType',
+        label: 'Repair Type',
+        options: Object.values(RepairType).map(value => option(value, value)),
+      },
+      {
+        field: 'repairStatus',
+        label: 'Repair Status',
+        options: Object.values(RepairStatus).map(value => option(value, value)),
+      },
+      {
+        field: 'repairFlag',
+        label: 'Repair Flag',
+        options: [
+          option('NO_CHARGE', 'No Charge'),
+          option('OUTSOURCED', 'Outsourced'),
+          option('ACTIVE_REPAIR', 'Active Repair'),
+          option('COMPLETED_REPAIR', 'Completed Repair'),
+        ],
+      },
+    );
+  }
 
-     if (serviceFilter !== 'ALL' && canonicalService !== serviceFilter) return false;
-     if (repairTypeFilter !== 'ALL' && repair?.type !== repairTypeFilter) return false;
-     if (repairStatusFilter !== 'ALL' && repair?.status !== repairStatusFilter) return false;
-     if (repairFlagFilter === 'NO_CHARGE' && !repairCost.noCharge) return false;
-     if (repairFlagFilter === 'OUTSOURCED' && !repairCost.outsourced) return false;
-     if (repairFlagFilter === 'ACTIVE_REPAIR' && (!repair || p.status !== ProjectStatus.ACTIVE)) return false;
-     if (repairFlagFilter === 'COMPLETED_REPAIR' && (!repair || p.status === ProjectStatus.ACTIVE)) return false;
+  const inventoryFilterDefinitions: ReportFilterDefinition[] = [
+    {
+      field: 'type',
+      label: 'Movement Type',
+      options: [...new Set(movements.map(item => item.type))].filter(Boolean).map(value => option(value, value.replaceAll('_', ' '))),
+    },
+    {
+      field: 'location',
+      label: 'Location',
+      options: [...new Set(movements.map(item => item.location).filter(Boolean) as string[])].map(value => option(value, value)),
+    },
+    {
+      field: 'actorId',
+      label: 'Team Member',
+      options: reportUsers.map(user => option(user.id, user.name)),
+    },
+  ];
+  const brokenFilterDefinitions: ReportFilterDefinition[] = [
+    { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => option(spec.id, spec.label)) },
+    { field: 'projectId', label: 'Project', options: projects.map(project => option(project.id, project.code)) },
+    { field: 'actorId', label: 'Team Member', options: reportUsers.map(user => option(user.id, user.name)) },
+  ];
+  const systemFilterDefinitions: ReportFilterDefinition[] = [
+    {
+      field: 'action',
+      label: 'Action',
+      options: [...new Set(systemLogs.map(item => item.action))].filter(Boolean).map(value => option(value, value.replaceAll('_', ' '))),
+    },
+    { field: 'actorId', label: 'Team Member', options: reportUsers.map(user => option(user.id, user.name)) },
+  ];
+  const weeklyFilterDefinitions: ReportFilterDefinition[] = [
+    {
+      field: 'movementType',
+      label: 'Movement Type',
+      options: ['added', 'assigned', 'returned', 'used', 'broken', 'lost', 'adjusted', 'weight_tolerance', 'requested']
+        .map(value => option(value, value.replaceAll('_', ' '))),
+    },
+    { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => option(spec.id, spec.label)) },
+    { field: 'color', label: 'Color', options: ['White', 'Yellow', 'Blue', 'Pink', 'Green', 'Brown', 'Orange'].map(value => option(value, value)) },
+    { field: 'projectId', label: 'Project', options: projects.map(project => option(project.id, project.code)) },
+    { field: 'actorId', label: 'Team Member', options: reportUsers.map(user => option(user.id, user.name)) },
+  ];
 
-     const projectTime = new Date(p.createdAt).getTime();
-     if (dateFromFilter && projectTime < new Date(dateFromFilter).getTime()) return false;
-     if (dateToFilter) {
-       const end = new Date(dateToFilter);
-       end.setHours(23, 59, 59, 999);
-       if (projectTime > end.getTime()) return false;
-     }
-     if (!clientFilter) return true;
+  const changeProjectFilters = (next: ReportFilterState) => {
+    const normalized = (next.selections.service || []).includes('REPAIR')
+      ? next
+      : clearReportFields(next, ['repairType', 'repairStatus', 'repairFlag']);
+    setProjectFilters(normalized);
+    setProjectPage(1);
+  };
+  const changeInventoryFilters = (next: ReportFilterState) => { setInventoryFilters(next); setInventoryPage(1); };
+  const changeBrokenFilters = (next: ReportFilterState) => { setBrokenFilters(next); setBrokenPage(1); };
+  const changeSystemFilters = (next: ReportFilterState) => { setSystemFilters(next); setSystemPage(1); };
+  const changeWeeklyFilters = (next: ReportFilterState) => { setWeeklyFilters(next); setWeeklyPage(1); };
 
-     const repName = salesReps.find(r => r.id === p.salesRepId)?.name || '';
-     
-     const searchableString = [
-         p.clientName || '',
-         p.clientPhone || '',
-         p.pieceName || '',
-         p.code || '',
-         repName
-     ].join(' ');
+  const projectReport = usePhase7Report<any>('PROJECT_HISTORY', projectFilters, { enabled: activeTab === 'projects', page: projectPage });
+  const inventoryReport = usePhase7Report<any>('INVENTORY_LEDGER', inventoryFilters, { enabled: activeTab === 'inventory', page: inventoryPage });
+  const brokenReport = usePhase7Report<any>('BROKEN_STONES', brokenFilters, { enabled: activeTab === 'broken', page: brokenPage });
+  const systemReport = usePhase7Report<any>('SYSTEM_LOGS', systemFilters, { enabled: activeTab === 'system', page: systemPage });
+  const weeklyReport = usePhase7Report<any>('WEEKLY_MOVEMENT', {
+    ...weeklyFilters,
+    from: weekStart,
+    to: weekEnd,
+  }, { enabled: activeTab === 'weekly', page: weeklyPage });
 
-     return isFuzzyMatch(clientFilter, searchableString);
-  });
-
-  const exportCSV = (data: any[], filename: string) => {
-    if(!data.length) return;
-    const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([`${headers}\n${rows}`], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename}.csv`;
-    a.click();
+  const exportSecureCsv = async (
+    section: Parameters<typeof toPhase7Request>[0],
+    filters: ReportFilterState,
+    filename: string,
+  ) => {
+    setExportingSection(section);
+    try {
+      const result = await exportPhase7ReportCsv({
+        ...toPhase7Request(section, filters, 100),
+        cursor: undefined,
+      });
+      downloadPhase7Csv(result, filename);
+      showToast(`Exported ${result.total} authorized row${result.total === 1 ? '' : 's'}.`);
+    } catch (error: any) {
+      showToast(error?.message || 'Unable to export this report.');
+    } finally {
+      setExportingSection(null);
+    }
   };
 
   const formatDateTime = (iso: string) => {
@@ -519,21 +581,26 @@ const ReportsPage: React.FC = () => {
           const ms = new Date(t.createdAt).getTime();
           return ms >= startMs && ms <= endMs;
         });
-        if (weeklyFilterSpec !== 'ALL') filtered = filtered.filter(t => t.specId === weeklyFilterSpec);
-        if (weeklyFilterColor !== 'ALL') filtered = filtered.filter(t => t.color === weeklyFilterColor);
-        if (weeklyFilterProject !== 'ALL') filtered = filtered.filter(t => t.referenceProjectId === weeklyFilterProject);
-        if (weeklyFilterType !== 'ALL') filtered = filtered.filter(t => t.movementType === weeklyFilterType);
-        if (weeklyFilterBag.trim()) filtered = filtered.filter(t => t.referenceBagNumber?.toLowerCase().includes(weeklyFilterBag.trim().toLowerCase()));
-        if (weeklyFilterSalesRep !== 'ALL') {
-          filtered = filtered.filter(t => allProjects.find(p => p.id === t.referenceProjectId)?.salesRepId === weeklyFilterSalesRep);
-        }
-        if (weeklyFilterUser !== 'ALL') {
-          filtered = filtered.filter(t => {
-            const project = allProjects.find(p => p.id === t.referenceProjectId);
-            const assignedToProject = project?.assignedSetterId === weeklyFilterUser || (project?.assignments || []).some(a => a.userId === weeklyFilterUser && a.active);
-            return t.createdById === weeklyFilterUser || assignedToProject;
-          });
-        }
+        const selectedWeekly = weeklyFilters.selections;
+        const matchesAny = (field: string, value: string | undefined) => {
+          const selected = selectedWeekly[field] || [];
+          return !selected.length || (!!value && selected.includes(value));
+        };
+        filtered = filtered.filter(t => {
+          const spec = allSpecs.find(s => s.id === t.specId);
+          const project = allProjects.find(p => p.id === t.referenceProjectId);
+          const actor = allUsers.find(u => u.id === t.createdById);
+          const searchText = [
+            spec?.label, t.color, t.movementType, project?.code,
+            t.referenceBagNumber, actor?.name, t.notes,
+          ].filter(Boolean).join(' ');
+          return matchesAny('specId', t.specId)
+            && matchesAny('color', t.color)
+            && matchesAny('projectId', t.referenceProjectId)
+            && matchesAny('movementType', t.movementType)
+            && matchesAny('actorId', t.createdById)
+            && matchesPhase7Search(weeklyFilters.search, searchText);
+        });
 
         // ── KPI totals from filtered data ─────────────────────────────────
         const totalAdded   = filtered.filter(t => t.movementType === 'added').reduce((a,t) => a + t.quantity, 0);
@@ -577,8 +644,8 @@ const ReportsPage: React.FC = () => {
         });
 
         const passesSpecColorFilter = (specId: string, color: string) => (
-          (weeklyFilterSpec === 'ALL' || specId === weeklyFilterSpec) &&
-          (weeklyFilterColor === 'ALL' || color === weeklyFilterColor)
+          matchesAny('specId', specId) &&
+          matchesAny('color', color)
         );
 
         // ── Per-spec summary (grouped by specId + color) ──────────────────
@@ -589,7 +656,9 @@ const ReportsPage: React.FC = () => {
           valueCad: number;
         }>();
 
-        const seedOpeningBalances = weeklyFilterProject === 'ALL' && weeklyFilterType === 'ALL' && weeklyFilterSalesRep === 'ALL' && weeklyFilterUser === 'ALL' && !weeklyFilterBag.trim();
+        const seedOpeningBalances = !Object.keys(selectedWeekly).some(field =>
+          !['specId', 'color'].includes(field) && (selectedWeekly[field] || []).length > 0
+        ) && !weeklyFilters.search.trim();
         if (seedOpeningBalances) {
           const balanceKeys = new Set<string>();
           ledgerTxs
@@ -682,26 +751,28 @@ const ReportsPage: React.FC = () => {
         });
 
         // ── CSV export helper ─────────────────────────────────────────────
-        const exportWeeklyCSV = () => {
-          const rows = [
-            ['ID','Date','Type','Spec','Color','Qty','Carats','UnitCost USD','TotalValue USD','TotalValue CAD','Project','Bag','Notes'],
-            ...filtered.map(t => {
-              const spec = allSpecs.find(s => s.id === t.specId);
-              const proj = allProjects.find(p => p.id === t.referenceProjectId);
-              return [
-                t.id, new Date(t.createdAt).toLocaleDateString(), t.movementType,
-                spec?.label || t.specId, t.color, t.quantity, t.carats.toFixed(4),
-                t.unitCost.toFixed(2), t.totalValue.toFixed(2), (t.totalValue * usdCad).toFixed(2),
-                proj?.code || '-', t.referenceBagNumber || '-', `"${(t.notes||'').replace(/"/g,'""')}"`
-              ].join(',');
-            })
-          ].join('\n');
-          const blob = new Blob([rows], { type: 'text/csv' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `weekly_movement_${weekStart}_to_${weekEnd}.csv`;
-          a.click();
-        };
+        const exportWeeklyCSV = () => void exportSecureCsv('WEEKLY_MOVEMENT', {
+          ...weeklyFilters,
+          from: weekStart,
+          to: weekEnd,
+        }, 'weekly_movement');
+
+        const exportWeeklyPDF = () => generateFilteredReportPDF(
+          'Weekly Diamond Movement',
+          filtered,
+          [
+            { label: 'Date', value: t => new Date(t.createdAt).toLocaleDateString() },
+            { label: 'Type', value: t => t.movementType },
+            { label: 'Spec', value: t => allSpecs.find(spec => spec.id === t.specId)?.label || t.specId },
+            { label: 'Color', value: t => t.color },
+            { label: 'Qty', value: t => t.quantity },
+            { label: 'Carats', value: t => t.carats.toFixed(4) },
+            { label: 'Project', value: t => allProjects.find(project => project.id === t.referenceProjectId)?.code || '' },
+            { label: 'Bag', value: t => t.referenceBagNumber || '' },
+            { label: 'Notes', value: t => t.notes || '' },
+          ],
+          'weekly_movement',
+        );
 
         const exportSummaryCSV = () => {
           const rows = [
@@ -781,18 +852,18 @@ const ReportsPage: React.FC = () => {
                 }} className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-purple-950/40 text-purple-400 hover:bg-purple-900/60 transition-all border border-purple-800/40 flex items-center gap-1.5">
                   <Play size={12}/> Run Tests
                 </button>
-                <button onClick={exportWeeklyCSV} className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-lux-gold/10 text-lux-gold hover:bg-lux-gold hover:text-black transition-all border border-lux-gold/20 flex items-center gap-1.5">
-                  <Download size={12}/> Export CSV
+                <button disabled={exportingSection === 'WEEKLY_MOVEMENT'} onClick={exportWeeklyCSV} className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-lux-gold/10 text-lux-gold hover:bg-lux-gold hover:text-black transition-all border border-lux-gold/20 flex items-center gap-1.5 disabled:opacity-50">
+                  <Download size={12}/> {exportingSection === 'WEEKLY_MOVEMENT' ? 'Exporting…' : 'Export CSV'}
                 </button>
-                <button onClick={() => window.print()} className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-all border border-white/10 flex items-center gap-1.5">
+                <button onClick={exportWeeklyPDF} className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-all border border-white/10 flex items-center gap-1.5">
                   <FileDown size={12}/> PDF
                 </button>
               </div>
             </div>
 
-            {/* ── Date range picker ───────────────────────────────────────── */}
+            {/* ── Shared section-aware filters ─────────────────────────────── */}
             <Card className="p-5 border-white/5">
-              <div className="flex flex-wrap gap-4 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div className="flex-1 min-w-[150px]">
                   <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">From</label>
                   <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)}
@@ -803,62 +874,16 @@ const ReportsPage: React.FC = () => {
                   <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)}
                     className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold focus:ring-1 focus:ring-lux-gold outline-none" />
                 </div>
-                <div className="flex-1 min-w-[130px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Diamond Size</label>
-                  <select value={weeklyFilterSpec} onChange={e => setWeeklyFilterSpec(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Sizes</option>
-                    {allSpecs.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[120px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Color</label>
-                  <select value={weeklyFilterColor} onChange={e => setWeeklyFilterColor(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Colors</option>
-                    {['White','Yellow','Blue','Pink','Green','Brown','Orange'].map(c => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[130px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Movement Type</label>
-                  <select value={weeklyFilterType} onChange={e => setWeeklyFilterType(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Types</option>
-                    {['added','assigned','returned','used','broken','lost','adjusted','weight_tolerance','requested'].map(t => (
-                      <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[130px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Project</label>
-                  <select value={weeklyFilterProject} onChange={e => setWeeklyFilterProject(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Projects</option>
-                    {allProjects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[110px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Bag #</label>
-                  <input value={weeklyFilterBag} onChange={e => setWeeklyFilterBag(e.target.value)} placeholder="e.g. 001"
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold focus:ring-1 focus:ring-lux-gold outline-none placeholder:text-zinc-600" />
-                </div>
-                <div className="flex-1 min-w-[130px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Sales Rep</label>
-                  <select value={weeklyFilterSalesRep} onChange={e => setWeeklyFilterSalesRep(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Reps</option>
-                    {allUsers.filter(u => u.role === Role.SALES_REP).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[150px]">
-                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Factory / Staff</label>
-                  <select value={weeklyFilterUser} onChange={e => setWeeklyFilterUser(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl p-2.5 text-sm focus:border-lux-gold outline-none">
-                    <option value="ALL">All Staff</option>
-                    {allUsers.filter(u => [Role.SETTER, Role.JEWELLER, Role.MANAGER].includes(u.role)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </div>
               </div>
+              <ReportFilterBar
+                state={weeklyFilters}
+                onChange={changeWeeklyFilters}
+                definitions={weeklyFilterDefinitions}
+                searchPlaceholder="Search project, bag, diamond, team member, or notes…"
+                showDates={false}
+                resultCount={weeklyReport.total}
+                loading={weeklyReport.loading}
+              />
             </Card>
 
             {/* ── Executive Insights ─────────────────────────────────────── */}
@@ -1071,7 +1096,7 @@ const ReportsPage: React.FC = () => {
               <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
                 <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
                   <Clock size={13} className="text-lux-gold"/> Transaction Audit Log
-                  <span className="px-2 py-0.5 bg-zinc-800 rounded-lg text-zinc-500 font-mono text-[10px]">{filtered.length} entries</span>
+                  <span className="px-2 py-0.5 bg-zinc-800 rounded-lg text-zinc-500 font-mono text-[10px]">{weeklyReport.total} entries</span>
                 </h3>
                 <button onClick={exportWeeklyCSV} className="text-[10px] font-bold text-lux-gold hover:text-white bg-lux-gold/10 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-colors">
                   <Download size={10}/> Export All
@@ -1094,13 +1119,13 @@ const ReportsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.03]">
-                    {filtered.length === 0 ? (
-                      <tr><td colSpan={10} className="py-16 text-center text-zinc-600">No transactions in this period.</td></tr>
-                    ) : filtered.slice().reverse().map((t, i) => {
-                      const spec = allSpecs.find(s => s.id === t.specId);
-                      const proj = allProjects.find(p => p.id === t.referenceProjectId);
+                    {weeklyReport.rows.map((t, i) => {
                       const colorClass = movementColors[t.movementType] || 'text-zinc-400 bg-zinc-800/40 border-zinc-700/40';
-                      const missingCost = !t.unitCost || t.unitCost === 0;
+                      const unitCost = Number(t.unitCost || 0);
+                      const totalValue = Number(t.totalValue || 0);
+                      const quantity = Number(t.quantity || 0);
+                      const carats = Number(t.carats || 0);
+                      const missingCost = unitCost === 0;
                       return (
                         <tr key={t.id + i} className={`hover:bg-white/[0.02] transition-colors ${missingCost ? 'bg-amber-950/10' : ''}`}>
                           <td className="px-4 py-2.5 text-zinc-500 font-mono whitespace-nowrap">
@@ -1112,26 +1137,26 @@ const ReportsPage: React.FC = () => {
                               {t.movementType}
                             </span>
                           </td>
-                          <td className="px-4 py-2.5 font-bold text-white">{spec?.label || t.specId}</td>
+                          <td className="px-4 py-2.5 font-bold text-white">{t.specLabel || t.specId}</td>
                           <td className="px-4 py-2.5">
                             <span className="text-[10px] font-bold px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400 border border-white/5">{t.color}</span>
                           </td>
-                          <td className={`px-4 py-2.5 text-right font-mono font-bold ${t.quantity > 0 ? 'text-emerald-400' : t.quantity < 0 ? 'text-red-400' : 'text-zinc-500'}`}>
-                            {t.quantity > 0 ? `+${t.quantity}` : t.quantity}
+                          <td className={`px-4 py-2.5 text-right font-mono font-bold ${quantity > 0 ? 'text-emerald-400' : quantity < 0 ? 'text-red-400' : 'text-zinc-500'}`}>
+                            {quantity > 0 ? `+${quantity}` : quantity}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-zinc-400">
-                            {t.carats > 0 ? '+' : ''}{t.carats.toFixed(4)}
+                            {carats > 0 ? '+' : ''}{carats.toFixed(4)}
                           </td>
                           <td className={`px-4 py-2.5 text-right font-mono ${missingCost ? 'text-amber-400' : 'text-zinc-400'}`}>
-                            {missingCost ? <span className="flex items-center justify-end gap-1"><AlertTriangle size={10}/>—</span> : `$${t.unitCost.toFixed(2)}`}
+                            {missingCost ? <span className="flex items-center justify-end gap-1"><AlertTriangle size={10}/>—</span> : `$${unitCost.toFixed(2)}`}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-lux-gold font-bold text-[11px]">
-                            ${(t.totalValue * usdCad).toLocaleString('en-CA', { maximumFractionDigits: 2 })}
+                            ${(totalValue * usdCad).toLocaleString('en-CA', { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-2.5 text-zinc-400 whitespace-nowrap">
-                            {proj && <span className="font-bold text-white mr-1">{proj.code}</span>}
-                            {t.referenceBagNumber && <span className="text-[10px] bg-lux-gold/10 text-lux-gold px-1.5 py-0.5 rounded border border-lux-gold/20">#{t.referenceBagNumber}</span>}
-                            {!proj && !t.referenceBagNumber && <span className="text-zinc-600">—</span>}
+                            {t.projectCode && <span className="font-bold text-white mr-1">{t.projectCode}</span>}
+                            {t.bagNumber && <span className="text-[10px] bg-lux-gold/10 text-lux-gold px-1.5 py-0.5 rounded border border-lux-gold/20">#{t.bagNumber}</span>}
+                            {!t.projectCode && !t.bagNumber && <span className="text-zinc-600">—</span>}
                           </td>
                           <td className="px-4 py-2.5 text-zinc-500 max-w-[220px] truncate" title={t.notes}>{t.notes || '—'}</td>
                         </tr>
@@ -1140,6 +1165,8 @@ const ReportsPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+              <ReportMessage loading={weeklyReport.loading} error={weeklyReport.error} empty={!weeklyReport.loading && !weeklyReport.rows.length} />
+              <ReportPagination page={weeklyPage} pageSize={25} total={weeklyReport.total} onPageChange={setWeeklyPage} />
             </Card>
 
           {/* ── Stock Snapshot Generator ─────────────────────────────────── */}
@@ -1245,27 +1272,27 @@ const ReportsPage: React.FC = () => {
       })()}
 
       {activeTab === 'inventory' && (
-
-
         <Card className="overflow-hidden">
-           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex justify-between">
-              <h3 className="font-bold text-white">All Movements</h3>
-              <Button size="sm" variant="secondary" onClick={() => exportCSV(movements.map(m => {
-                const firstLine = m.lines?.[0];
-                const spec = firstLine?.specId ? store.getSpecs().find(s => s.id === firstLine.specId) : null;
-                return {
-                  id: m.id,
-                  date: m.createdAt,
-                  type: m.type,
-                  notes: m.notes,
-                  creator: store.getUser(m.createdById)?.name || 'System',
-                  location: m.location || store.getUser(m.createdById)?.location || 'Toronto',
-                  itemNoteText: spec?.inventoryNote?.text || '',
-                  itemNoteAuthor: spec?.inventoryNote?.authorName || '',
-                  itemNoteCreatedAt: spec?.inventoryNote?.createdAt || '',
-                  itemNoteLastEditedAt: spec?.inventoryNote?.lastEditedAt || ''
-                };
-              }), 'inventory_ledger')}>Export CSV</Button>
+           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 space-y-4">
+              <div className="flex justify-between items-center gap-3">
+                <h3 className="font-bold text-white">Inventory Ledger</h3>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={exportingSection === 'INVENTORY_LEDGER'}
+                  onClick={() => void exportSecureCsv('INVENTORY_LEDGER', inventoryFilters, 'inventory_ledger')}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              <ReportFilterBar
+                state={inventoryFilters}
+                onChange={changeInventoryFilters}
+                definitions={inventoryFilterDefinitions}
+                searchPlaceholder="Search reference, bag, item, team member, or notes…"
+                resultCount={inventoryReport.total}
+                loading={inventoryReport.loading}
+              />
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
@@ -1279,13 +1306,13 @@ const ReportsPage: React.FC = () => {
                  </tr>
                </thead>
                <tbody className="divide-y divide-zinc-800/50">
-                  {movements.slice(0, 50).map(m => {
-                    const isExpanded = !!expandedMovements[m.id];
-                    const safeLines = m.lines || [];
+                  {inventoryReport.rows.map(m => {
+                    const isExpanded = !!expandedMovements[m.id as string];
+                    const safeLines = Array.isArray(m.lines) ? m.lines : [];
                     return (
                       <React.Fragment key={m.id}>
                         <tr 
-                          onClick={() => toggleMovement(m.id)} 
+                          onClick={() => toggleMovement(m.id as string)}
                           className="hover:bg-zinc-900/30 cursor-pointer transition-colors"
                         >
                           <td className="p-4 text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</td>
@@ -1307,7 +1334,7 @@ const ReportsPage: React.FC = () => {
                                             <div key={i} className="text-[10px] text-zinc-500 flex items-center gap-1.5 whitespace-nowrap justify-end">
                                                <span className="text-zinc-400 font-medium">{sizeLabel}</span>
                                                {l.pcs !== undefined && l.pcs !== null && <span className="text-lux-gold/80">{l.pcs}pcs</span>}
-                                               <span className="text-blue-400/60">({l.ct.toFixed(3)}ct)</span>
+                                               <span className="text-blue-400/60">({Number(l.ct || 0).toFixed(3)}ct)</span>
                                             </div>
                                          );
                                       })}
@@ -1322,6 +1349,8 @@ const ReportsPage: React.FC = () => {
                 </tbody>
              </table>
            </div>
+           <ReportMessage loading={inventoryReport.loading} error={inventoryReport.error} empty={!inventoryReport.loading && !inventoryReport.rows.length} />
+           <ReportPagination page={inventoryPage} pageSize={25} total={inventoryReport.total} onPageChange={setInventoryPage} />
         </Card>
       )}
 
@@ -1329,25 +1358,43 @@ const ReportsPage: React.FC = () => {
          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div className="bg-red-950/20 border border-red-900/30 p-5 rounded-2xl">
-                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Total Broken Carats</div>
+                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Visible Page Carats</div>
                   <div className="text-2xl font-bold text-white font-mono">
-                     {brokenMovements.reduce((acc, m) => acc + m.lines.reduce((a,l)=>a+l.ct,0), 0).toFixed(3)} ct
+                     {brokenReport.rows.reduce((total, row) => total + Number(row.carats || 0), 0).toFixed(3)} ct
                   </div>
                </div>
                <div className="bg-red-950/20 border border-red-900/30 p-5 rounded-2xl">
-                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Total Incidents</div>
+                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Filtered Incidents</div>
                   <div className="text-2xl font-bold text-white font-mono">
-                     {brokenMovements.length}
+                     {brokenReport.total}
                   </div>
                </div>
             </div>
 
             <Card className="overflow-hidden">
-               <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex justify-between">
-                  <div className="flex items-center gap-2">
+               <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
                      <AlertOctagon size={18} className="text-red-500" />
                      <h3 className="font-bold text-white">Breakage Log</h3>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={exportingSection === 'BROKEN_STONES'}
+                      onClick={() => void exportSecureCsv('BROKEN_STONES', brokenFilters, 'broken_stones')}
+                    >
+                      Export CSV
+                    </Button>
                   </div>
+                  <ReportFilterBar
+                    state={brokenFilters}
+                    onChange={changeBrokenFilters}
+                    definitions={brokenFilterDefinitions}
+                    searchPlaceholder="Search project, bag, diamond, team member, or notes…"
+                    resultCount={brokenReport.total}
+                    loading={brokenReport.loading}
+                  />
                </div>
                <div className="overflow-x-auto">
                  <table className="w-full text-sm text-left">
@@ -1361,32 +1408,23 @@ const ReportsPage: React.FC = () => {
                      </tr>
                    </thead>
                    <tbody className="divide-y divide-zinc-800/50">
-                     {brokenMovements.map(m => (
-                        <React.Fragment key={m.id}>
-                           {m.lines.map((l, idx) => {
-                              const spec = l.specId ? store.getSpecs().find(s => s.id === l.specId) : null;
-                              const p = store.getProject(m.referenceProjectId || '');
-                              return (
-                                 <tr key={`${m.id}-${idx}`} className="hover:bg-zinc-900/30">
-                                    <td className="p-4 text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</td>
-                                    <td className="p-4">
-                                       {p && <div className="text-white font-bold text-xs mb-0.5">{p.code}</div>}
-                                       <div className="text-zinc-500 text-xs">{m.notes}</div>
-                                    </td>
-                                    <td className="p-4 text-zinc-300">{spec ? spec.label : <span className="text-zinc-500 italic">Mixed/Unknown</span>}</td>
-                                    <td className="p-4 text-right font-mono text-red-400">{l.pcs ? l.pcs : '-'}</td>
-                                    <td className="p-4 text-right font-mono text-zinc-500">{l.ct.toFixed(3)}</td>
-                                 </tr>
-                              );
-                           })}
-                        </React.Fragment>
+                     {brokenReport.rows.map(row => (
+                       <tr key={row.id} className="hover:bg-zinc-900/30">
+                         <td className="p-4 text-zinc-400 font-mono">{new Date(row.createdAt).toLocaleDateString()}</td>
+                         <td className="p-4">
+                           {row.projectCode && <div className="text-white font-bold text-xs mb-0.5">{row.projectCode}</div>}
+                           <div className="text-zinc-500 text-xs">{row.notes}</div>
+                         </td>
+                         <td className="p-4 text-zinc-300">{row.specLabel || <span className="text-zinc-500 italic">Mixed/Unknown</span>}</td>
+                         <td className="p-4 text-right font-mono text-red-400">{row.pieces || '-'}</td>
+                         <td className="p-4 text-right font-mono text-zinc-500">{Number(row.carats || 0).toFixed(3)}</td>
+                       </tr>
                      ))}
-                     {brokenMovements.length === 0 && (
-                        <tr><td colSpan={5} className="p-8 text-center text-zinc-500">No breakage recorded.</td></tr>
-                     )}
                    </tbody>
                  </table>
                </div>
+               <ReportMessage loading={brokenReport.loading} error={brokenReport.error} empty={!brokenReport.loading && !brokenReport.rows.length} />
+               <ReportPagination page={brokenPage} pageSize={25} total={brokenReport.total} onPageChange={setBrokenPage} />
             </Card>
          </div>
       )}
@@ -1395,81 +1433,24 @@ const ReportsPage: React.FC = () => {
         <Card className="overflow-hidden">
            <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex flex-col gap-4">
               <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-              <div className="flex flex-col md:flex-row gap-4 flex-1">
-                 <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
-                    <input 
-                       type="text" 
-                       placeholder="Search by client, phone, piece, code, or rep..." 
-                       value={clientFilter}
-                       onChange={e => setClientFilter(e.target.value)}
-                       className="w-full bg-black border border-zinc-700 rounded-2xl py-2 pl-9 text-sm text-white focus:border-lux-gold"
-                    />
-                 </div>
-                 <div className="flex items-center gap-2 text-xs">
-                    <Filter size={14} className="text-zinc-500" />
-                    <select 
-                       value={salesRepFilter} 
-                       onChange={e => setSalesRepFilter(e.target.value)}
-                       className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9"
-                    >
-                       <option value="ALL">All Sales Reps</option>
-                       {salesReps.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                 </div>
+                <h3 className="font-bold text-white">Project History</h3>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={exportingSection === 'PROJECT_HISTORY'}
+                  onClick={() => void exportSecureCsv('PROJECT_HISTORY', projectFilters, 'project_history')}
+                >
+                  Export CSV
+                </Button>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => exportCSV(filteredProjects.map(p => {
-                const repair = store.getRepairDetails(p);
-                const repairCost = store.getRepairCostSummary(p.id);
-                return {
-                  id: p.id,
-                  code: p.code,
-                  client: p.clientName || '',
-                  piece: p.pieceName,
-                  status: p.status,
-                  salesRep: store.getUser(p.salesRepId || '')?.name || '',
-                  serviceType: getProjectServiceLabel(p),
-                  repairType: repair?.type || '',
-                  repairStatus: repair?.status || '',
-                  internalCost: repair ? repairCost.totalInternalCostCad : (store.getProjectCostSummary(p.id).internalCastingCostCad || ''),
-                  totalProjectCost: repair ? repairCost.totalInternalCostCad : store.getProjectCostSummary(p.id).totalProjectCostCad,
-                  clientCharge: repair ? repairCost.finalClientChargeCad : (store.getProjectCostSummary(p.id).pickupClientGoldChargeCad || ''),
-                  pickupDate: p.pickupPricingSnapshot?.actualPickupDate || p.date_picked_up || '',
-                  goldRateCadPerGram: p.pickupPricingSnapshot ? p.pickupPricingSnapshot.priceCentsPerGram / 100 : '',
-                  goldRateSource: p.pickupPricingSnapshot?.source || '',
-                  profitLoss: repair ? repairCost.profitLossCad : '',
-                  noCharge: repairCost.noCharge ? 'Yes' : '',
-                  outsourced: repairCost.outsourced ? 'Yes' : ''
-                };
-              }), 'project_history')}>Export CSV</Button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
-                 <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
-                    <option value="ALL">All Services</option>
-                    <option value="CUSTOM_MAKE">Custom Make</option>
-                    <option value="ENGAGEMENT">Engagement</option>
-                    <option value="REPAIR">Repair</option>
-                    <option value="OTHER">Other</option>
-                    <option value="MANAGER_REVIEW_REQUIRED">Manager Review Required</option>
-                 </select>
-                 <select value={repairTypeFilter} onChange={e => setRepairTypeFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
-                    <option value="ALL">All Repair Types</option>
-                    {Object.values(RepairType).map(type => <option key={type} value={type}>{type}</option>)}
-                 </select>
-                 <select value={repairStatusFilter} onChange={e => setRepairStatusFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
-                    <option value="ALL">All Repair Statuses</option>
-                    {Object.values(RepairStatus).map(status => <option key={status} value={status}>{status}</option>)}
-                 </select>
-                 <select value={repairFlagFilter} onChange={e => setRepairFlagFilter(e.target.value)} className="bg-black border border-zinc-700 rounded-2xl py-2 px-2 text-white h-9">
-                    <option value="ALL">All Repair Flags</option>
-                    <option value="NO_CHARGE">No Charge</option>
-                    <option value="OUTSOURCED">Outsourced</option>
-                    <option value="ACTIVE_REPAIR">Active Repairs</option>
-                    <option value="COMPLETED_REPAIR">Completed Repairs</option>
-                 </select>
-                 <Input type="date" value={dateFromFilter} onChange={e => setDateFromFilter(e.target.value)} />
-                 <Input type="date" value={dateToFilter} onChange={e => setDateToFilter(e.target.value)} />
-              </div>
+              <ReportFilterBar
+                state={projectFilters}
+                onChange={changeProjectFilters}
+                definitions={projectFilterDefinitions}
+                searchPlaceholder="Search client, phone, piece, project code, or rep…"
+                resultCount={projectReport.total}
+                loading={projectReport.loading}
+              />
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
@@ -1486,11 +1467,12 @@ const ReportsPage: React.FC = () => {
                  </tr>
                </thead>
                <tbody className="divide-y divide-zinc-800/50">
-                 {filteredProjects.map(p => {
-                   const repair = store.getRepairDetails(p);
-                   const previewImage = repair?.beforeImage || p.projectPhotos?.[0];
+                 {projectReport.rows.map(row => {
+                   const p = store.getProject(row.id);
+                   const repair = p ? store.getRepairDetails(p) : null;
+                   const previewImage = row.previewImage;
                    return (
-                   <tr key={p.id} onClick={() => handleSelectProject(p)} className="hover:bg-zinc-900/50 cursor-pointer transition-colors group">
+                   <tr key={row.id} onClick={() => p && handleSelectProject(p)} className="hover:bg-zinc-900/50 cursor-pointer transition-colors group">
                      <td className="p-4">
                         <div className="w-10 h-10 bg-black rounded-xl border border-zinc-800 overflow-hidden flex items-center justify-center">
                            {previewImage ? (
@@ -1501,23 +1483,24 @@ const ReportsPage: React.FC = () => {
                         </div>
                      </td>
                      <td className="p-4 text-white font-bold group-hover:text-lux-gold transition-colors flex items-center gap-2">
-                        {p.code}
-                        {p.isQuickRepair && <Badge color="blue">Quick Repair</Badge>}
-                        {repair && <Badge color="amber">{repair.type}</Badge>}
+                        {row.code}
+                        {p?.isQuickRepair && <Badge color="blue">Quick Repair</Badge>}
+                        {row.service && <Badge color={row.serviceCode === 'REPAIR' ? 'amber' : 'blue'}>{row.service}</Badge>}
                         {repair?.outsourced && <Badge color="blue">Outsourced</Badge>}
                      </td>
                      <td className="p-4 text-zinc-300">
-                        <div>{p.clientName || '-'}</div>
-                        {p.clientPhone && <div className="text-xs text-zinc-500 mt-0.5">{p.clientPhone}</div>}
+                        <div>{row.clientName || '-'}</div>
+                        {row.clientPhone && <div className="text-xs text-zinc-500 mt-0.5">{row.clientPhone}</div>}
                      </td>
-                     <td className="p-4 text-zinc-400">{p.pieceName}</td>
-                     <td className="p-4 text-zinc-400">{store.getUser(p.salesRepId || '')?.name || '-'}</td>
-                     <td className="p-4"><StatusPill status={p.status} /></td>
-                     <td className="p-4 text-right font-mono">{p.currentPercentComplete || 0}%</td>
+                     <td className="p-4 text-zinc-400">{row.pieceName}</td>
+                     <td className="p-4 text-zinc-400">{row.salesRepName || '-'}</td>
+                     <td className="p-4"><StatusPill status={row.status} /></td>
+                     <td className="p-4 text-right font-mono">{row.progress || 0}%</td>
                      <td className="p-4">
-                        <button 
-                           onClick={(e) => handleExportPDF(e, p)} 
-                           className={`p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-lux-gold transition-colors ${generatingPdfId === p.id ? 'animate-pulse text-lux-gold' : ''}`}
+                        <button
+                           disabled={!p}
+                           onClick={(e) => p && handleExportPDF(e, p)}
+                           className={`p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-lux-gold transition-colors ${generatingPdfId === row.id ? 'animate-pulse text-lux-gold' : ''}`}
                            title="Export PDF"
                         >
                            <FileDown size={18} />
@@ -1529,14 +1512,33 @@ const ReportsPage: React.FC = () => {
                </tbody>
               </table>
            </div>
+           <ReportMessage loading={projectReport.loading} error={projectReport.error} empty={!projectReport.loading && !projectReport.rows.length} />
+           <ReportPagination page={projectPage} pageSize={25} total={projectReport.total} onPageChange={setProjectPage} />
         </Card>
       )}
 
       {activeTab === 'system' && (
         <Card className="overflow-hidden">
-           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex justify-between">
-              <h3 className="font-bold text-white">System Logs</h3>
-              <Button size="sm" variant="secondary" onClick={() => exportCSV(systemLogs.map(l => ({id: l.id, date: l.createdAt, user: store.getUser(l.createdById)?.name, action: l.action, details: l.details})), 'system_logs')}>Export CSV</Button>
+           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 space-y-4">
+              <div className="flex justify-between items-center gap-3">
+                <h3 className="font-bold text-white">System Logs</h3>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={exportingSection === 'SYSTEM_LOGS'}
+                  onClick={() => void exportSecureCsv('SYSTEM_LOGS', systemFilters, 'system_logs')}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              <ReportFilterBar
+                state={systemFilters}
+                onChange={changeSystemFilters}
+                definitions={systemFilterDefinitions}
+                searchPlaceholder="Search action, team member, or details…"
+                resultCount={systemReport.total}
+                loading={systemReport.loading}
+              />
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
@@ -1549,21 +1551,21 @@ const ReportsPage: React.FC = () => {
                  </tr>
                </thead>
                <tbody className="divide-y divide-zinc-800/50">
-                 {systemLogs.length === 0 ? (
-                   <tr><td colSpan={4} className="p-8 text-center text-zinc-500">No system logs found.</td></tr>
-                 ) : systemLogs.map(log => (
+                 {systemReport.rows.map(log => (
                    <tr key={log.id} className="hover:bg-zinc-900/30 transition-colors">
                      <td className="p-4 text-zinc-400 font-mono text-xs whitespace-nowrap">{formatDateTime(log.createdAt)}</td>
-                     <td className="p-4 text-lux-cream font-medium">{store.getUser(log.createdById)?.name || 'System'}</td>
+                     <td className="p-4 text-lux-cream font-medium">{log.actorName || 'System'}</td>
                      <td className="p-4">
                        <Badge color="blue">{log.action}</Badge>
                      </td>
                      <td className="p-4 text-zinc-400">{log.details}</td>
                    </tr>
                  ))}
-                </tbody>
+               </tbody>
                </table>
             </div>
+            <ReportMessage loading={systemReport.loading} error={systemReport.error} empty={!systemReport.loading && !systemReport.rows.length} />
+            <ReportPagination page={systemPage} pageSize={25} total={systemReport.total} onPageChange={setSystemPage} />
          </Card>
        )}
 

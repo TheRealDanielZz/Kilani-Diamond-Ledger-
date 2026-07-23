@@ -10,6 +10,10 @@ import { GoldPriceCard } from '../components/GoldPriceCard';
 import { RepairProjectModal } from '../components/RepairProjectModal';
 import { IssueDiamondsModal } from '../components/IssueDiamondsModal';
 import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
+import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/reports/ReportFilterBar';
+import { ReportFilterDefinition, ReportFilterState, newReportFilterState, toPhase7Request } from '../services/reportFilters';
+import { usePhase7Report } from '../services/usePhase7Report';
+import { downloadPhase7Csv, exportPhase7ReportCsv } from '../services/reportsApi';
 
 const SERVICE_OPTIONS: Array<{ code: CanonicalProjectServiceCode; disabled?: boolean }> = [
    { code: 'CUSTOM_MAKE' },
@@ -47,6 +51,11 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const [viewMode, setViewMode] = useState<'LIST' | 'GRID'>('LIST');
    const [showAllRequests, setShowAllRequests] = useState(false);
    const [showAllReturns, setShowAllReturns] = useState(false);
+   const [requestFilters, setRequestFilters] = useState<ReportFilterState>(newReportFilterState);
+   const [returnFilters, setReturnFilters] = useState<ReportFilterState>(newReportFilterState);
+   const [requestPage, setRequestPage] = useState(1);
+   const [returnPage, setReturnPage] = useState(1);
+   const [exportingReport, setExportingReport] = useState<'REQUESTS' | 'RETURNS' | null>(null);
 
    const [fulfillReq, setFulfillReq] = useState<IssueRequest | null>(null);
    const [editedLines, setEditedLines] = useState<{
@@ -183,6 +192,78 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       });
       setReturnBags(pendingInfos);
       setInventorySummary(store.getInventorySummary());
+   };
+
+   useEffect(() => {
+      if (!showAllRequests) {
+         setRequestFilters(newReportFilterState());
+         setRequestPage(1);
+      }
+   }, [showAllRequests]);
+
+   useEffect(() => {
+      if (!showAllReturns) {
+         setReturnFilters(newReportFilterState());
+         setReturnPage(1);
+      }
+   }, [showAllReturns]);
+
+   const reportUsers = store.getUsers();
+   const reportProjects = store.getProjects();
+   const reportSpecs = store.getSpecs();
+   const requestFilterDefinitions: ReportFilterDefinition[] = [
+      { field: 'requesterId', label: 'Requester', options: reportUsers.map(user => ({ value: user.id, label: user.name })) },
+      { field: 'projectId', label: 'Project', options: reportProjects.map(project => ({ value: project.id, label: project.code })) },
+      { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => ({ value: spec.id, label: spec.label })) },
+   ];
+   const returnFilterDefinitions: ReportFilterDefinition[] = [
+      { field: 'holderId', label: 'Holder', options: reportUsers.map(user => ({ value: user.id, label: user.name })) },
+      { field: 'projectId', label: 'Project', options: reportProjects.map(project => ({ value: project.id, label: project.code })) },
+      { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => ({ value: spec.id, label: spec.label })) },
+   ];
+   const requestQueryFilters: ReportFilterState = {
+      ...requestFilters,
+      selections: { ...requestFilters.selections, status: ['OPEN'] },
+   };
+   const returnQueryFilters: ReportFilterState = {
+      ...returnFilters,
+      selections: { ...returnFilters.selections, status: ['PENDING'] },
+   };
+   const requestReport = usePhase7Report<any>('REQUESTS', requestQueryFilters, {
+      enabled: showAllRequests,
+      page: requestPage,
+      pageSize: 20,
+   });
+   const returnReport = usePhase7Report<any>('RETURNS', returnQueryFilters, {
+      enabled: showAllReturns,
+      page: returnPage,
+      pageSize: 20,
+   });
+   const visibleRequests = requestReport.rows
+      .map(row => requests.find(request => request.id === row.id))
+      .filter((request): request is IssueRequest => Boolean(request));
+   const visibleReturns = returnReport.rows
+      .map(row => returnBags.find(info => (info.tx?.id || `legacy-${info.bag.id}`) === row.id))
+      .filter((info): info is { bag: DiamondBag; tx?: BagReturnTransaction } => Boolean(info));
+
+   const exportManagerReport = async (
+      section: 'REQUESTS' | 'RETURNS',
+      filters: ReportFilterState,
+      filename: string,
+   ) => {
+      setExportingReport(section);
+      try {
+         const result = await exportPhase7ReportCsv({
+            ...toPhase7Request(section, filters, 100),
+            cursor: undefined,
+         });
+         downloadPhase7Csv(result, filename);
+         showToast(`Exported ${result.total} authorized row${result.total === 1 ? '' : 's'}.`);
+      } catch (error: any) {
+         showToast(error?.message || 'Unable to export this report.');
+      } finally {
+         setExportingReport(null);
+      }
    };
 
    const handleCreateProject = async () => {
@@ -652,7 +733,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowAllRequests(false)}>
                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
                <div
-                  className="relative w-full max-w-lg max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
                   <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/80 via-indigo-500 to-cyan-400 z-10"></div>
@@ -661,13 +742,28 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                         <div className="bg-blue-500/10 text-blue-400 p-2 rounded-xl border border-blue-500/20"><Inbox size={18} /></div>
                         <div>
                            <h2 className="font-bold text-theme-text-primary text-base">All Requests</h2>
-                           <p className="text-[10px] text-theme-text-secondary">{requests.length} pending</p>
+                           <p className="text-[10px] text-theme-text-secondary">{requestReport.total} filtered</p>
                         </div>
                      </div>
-                     <button onClick={() => setShowAllRequests(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><X size={18} /></button>
+                     <div className="flex items-center gap-2">
+                        <Button size="sm" variant="secondary" loading={exportingReport === 'REQUESTS'} onClick={() => void exportManagerReport('REQUESTS', requestQueryFilters, 'requests')}>
+                           Export CSV
+                        </Button>
+                        <button aria-label="Close requests" onClick={() => setShowAllRequests(false)} className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><X size={18} /></button>
+                     </div>
+                  </div>
+                  <div className="px-4 py-3 border-b border-white/5">
+                     <ReportFilterBar
+                        state={requestFilters}
+                        onChange={next => { setRequestFilters(next); setRequestPage(1); }}
+                        definitions={requestFilterDefinitions}
+                        searchPlaceholder="Search project, requester, diamond, or job number…"
+                        resultCount={requestReport.total}
+                        loading={requestReport.loading}
+                     />
                   </div>
                   <div className="px-4 py-3 space-y-2 overflow-y-auto flex-1 scrollbar-thin">
-                     {requests.map(r => {
+                     {visibleRequests.map(r => {
                         const project = store.getProject(r.projectId);
                         const requester = store.getUser(r.requestedById);
                         const totalStones = r.lines.reduce((sum, line) => sum + line.requestedPcs, 0);
@@ -697,7 +793,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                            </div>
                         );
                      })}
+                     <ReportMessage loading={requestReport.loading} error={requestReport.error} empty={!requestReport.loading && !visibleRequests.length} />
                   </div>
+                  <ReportPagination page={requestPage} pageSize={20} total={requestReport.total} onPageChange={setRequestPage} />
                </div>
             </div>
          )}
@@ -707,7 +805,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowAllReturns(false)}>
                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
                <div
-                  className="relative w-full max-w-lg max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
                   <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500/80 via-orange-500 to-yellow-400 z-10"></div>
@@ -716,13 +814,28 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                         <div className="bg-amber-500/10 text-amber-500 p-2 rounded-xl border border-amber-500/20"><PackageCheck size={18} /></div>
                         <div>
                            <h2 className="font-bold text-theme-text-primary text-base">All Returns</h2>
-                           <p className="text-[10px] text-theme-text-secondary">{returnBags.length} pending</p>
+                           <p className="text-[10px] text-theme-text-secondary">{returnReport.total} filtered</p>
                         </div>
                      </div>
-                     <button onClick={() => setShowAllReturns(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><X size={18} /></button>
+                     <div className="flex items-center gap-2">
+                        <Button size="sm" variant="secondary" loading={exportingReport === 'RETURNS'} onClick={() => void exportManagerReport('RETURNS', returnQueryFilters, 'returns')}>
+                           Export CSV
+                        </Button>
+                        <button aria-label="Close returns" onClick={() => setShowAllReturns(false)} className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"><X size={18} /></button>
+                     </div>
+                  </div>
+                  <div className="px-4 py-3 border-b border-white/5">
+                     <ReportFilterBar
+                        state={returnFilters}
+                        onChange={next => { setReturnFilters(next); setReturnPage(1); }}
+                        definitions={returnFilterDefinitions}
+                        searchPlaceholder="Search project, bag, holder, diamond, or notes…"
+                        resultCount={returnReport.total}
+                        loading={returnReport.loading}
+                     />
                   </div>
                   <div className="px-4 py-3 space-y-2 overflow-y-auto flex-1 scrollbar-thin">
-                     {returnBags.map((info, idx) => {
+                     {visibleReturns.map((info, idx) => {
                         const { bag: b, tx } = info;
                         const project = store.getProject(b.projectId);
                         const returner = tx ? store.getUser(tx.setterId) : store.getUser(b.issuedToId);
@@ -769,7 +882,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                            </div>
                         );
                      })}
+                     <ReportMessage loading={returnReport.loading} error={returnReport.error} empty={!returnReport.loading && !visibleReturns.length} />
                   </div>
+                  <ReportPagination page={returnPage} pageSize={20} total={returnReport.total} onPageChange={setReturnPage} />
                </div>
             </div>
          )}

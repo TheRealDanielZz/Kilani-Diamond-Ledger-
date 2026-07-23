@@ -38,6 +38,7 @@ export {
   applyPhase6ServiceMigration,
   rollbackPhase6ServiceMigration,
 } from './projects/phase6';
+export { queryPhase7Report, exportPhase7ReportCsv } from './reports/phase7';
 
 initializeApp();
 const db = getFirestore();
