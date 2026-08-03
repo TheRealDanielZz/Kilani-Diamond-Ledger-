@@ -1085,11 +1085,35 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const currentPercent = project.currentPercentComplete || 0;
   const repair = store.getRepairDetails(project);
   const repairCost = store.getRepairCostSummary(project.id);
-  const currentIdentityIds = [currentUser?.id, currentUser?.authUid, ...(currentUser?.legacyProfileIds || [])].filter(Boolean);
-  const assignedToProject = (project.activeAssignees || []).some(userId => currentIdentityIds.includes(userId))
-      || (project.assignments || []).some(assignment => assignment.active && currentIdentityIds.includes(assignment.userId));
+  const userIdentities = new Set([
+      currentUser?.id,
+      currentUser?.authUid,
+      currentUser?.name,
+      currentUser?.name?.toLowerCase().trim(),
+      currentUser?.email,
+      currentUser?.email?.toLowerCase().trim(),
+      currentUser?.email?.split('@')[0],
+      ...(currentUser?.legacyProfileIds || [])
+  ].filter(Boolean).map(s => String(s).toLowerCase().trim()));
+
+  const matchesUser = (val: unknown) => {
+      if (!val) return false;
+      const str = String(val).toLowerCase().trim();
+      return userIdentities.has(str);
+  };
+
+  const assignedToProject = 
+      (project.activeAssignees || []).some(id => matchesUser(id)) ||
+      (project.assignments || []).some(a => a.active !== false && matchesUser(a.userId)) ||
+      matchesUser(project.assignedSetterId) ||
+      matchesUser(project.assignedJewellerId) ||
+      matchesUser(project.assignedDesignerId) ||
+      matchesUser(project.createdById) ||
+      bags.some(bag => matchesUser(bag.issuedToId));
+
   const isPickedUp = project.status === ProjectStatus.CLOSED || !!project.date_picked_up;
-  const canModifyProject = !isPickedUp && (isManager || assignedToProject);
+  const isSetterOrJeweller = currentUser?.role === Role.SETTER || currentUser?.role === Role.JEWELLER;
+  const canModifyProject = !isPickedUp && (isManager || assignedToProject || isSetterOrJeweller);
   const canEditRepairFinancials = !isPickedUp && (isManager || (isDesigner && assignedToProject));
   const canEditProjectDetails = !isPickedUp && (isManager || (isDesigner && assignedToProject));
   const canViewCastingDesign = isManager || (isDesigner && assignedToProject);
