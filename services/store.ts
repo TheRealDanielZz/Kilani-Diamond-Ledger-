@@ -26,7 +26,7 @@ import {
     InventorySummaryItem, InventoryLine, BagItem, CastingEvent, ProjectNote, ProjectAssignment,
     AppNotification, NotificationType, SystemLog, GoldComponent, GoldCostBreakdownItem,
     RepairDetailsV2, RepairStatus, RepairType, RepairCostSummary,
-    Diamond, EvidenceImage, EvidenceReplacement
+    Diamond, EvidenceImage, EvidenceReplacement, StaffPerformanceOverride
 } from '../types';
 import { generateThumbnail } from '../components/ImageUpload';
 import {
@@ -35,7 +35,7 @@ import {
 } from './demoData';
 import {
     calculateCurrentStockCarats, computeLineDelta, estimatedValue, normalizeBalance, resolveAvgWeight, resolveLineCarats, roundCt,
-    isAdditiveMovement, MIXED_UNSORTED_SPEC_ID
+    isAdditiveMovement, MIXED_UNSORTED_SPEC_ID, isMeleeLocation
 } from './inventoryMath';
 import { InventoryCorrectionInput, ReconcileIssue, ReconcileResult } from '../types';
 import { getProjectRevisions as fetchProjectRevisions, reviseProjectDetails, ProjectRevisionPayload } from './projectRevisionApi';
@@ -522,11 +522,18 @@ class StoreService {
             });
         }
 
+        // Specs are needed by ALL roles (for diamond request dropdowns etc.)
+        // so we always attach a real-time listener. This is the permanent fix
+        // — no cloud-function dependency means specs are never empty.
+        this.unsubscribes.push(onSnapshot(collection(db, 'specs'), (snap) => {
+            this.specs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as DiamondSpec[];
+            this.notify();
+        }, error => console.error('Error listening to specs:', error)));
+
         if (this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER) {
-            ['specs', 'bands', 'transactions'].forEach(col => {
+            ['bands', 'transactions'].forEach(col => {
                 this.unsubscribes.push(onSnapshot(collection(db, col), (snap) => {
                     const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-                    if (col === 'specs') this.specs = data as DiamondSpec[];
                     if (col === 'bands') this.bands = data as DiamondPriceBand[];
                     if (col === 'transactions') this.transactions = data as ProjectTransaction[];
                     this.notify();
@@ -625,7 +632,7 @@ class StoreService {
         }
     }
 
-    async refreshPrivateInventoryContext() {
+    async refreshPrivateInventoryContext(retryCount = 0) {
         if (this.isDemoMode || !this.currentUser || this.currentUser.role === Role.MANAGER || this.currentUser.role === Role.DESIGNER) return;
         try {
             const context = await inventoryApi.getMyContext();
@@ -637,6 +644,13 @@ class StoreService {
             this.notify();
         } catch (error) {
             console.error('Unable to refresh private inventory context:', error);
+            // Retry up to 3 times with exponential backoff so
+            // Setters/Jewellers reliably receive their specs list.
+            if (retryCount < 3) {
+                const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                await new Promise(r => setTimeout(r, delay));
+                return this.refreshPrivateInventoryContext(retryCount + 1);
+            }
         }
     }
 
@@ -761,6 +775,8 @@ class StoreService {
         const u = this.users.find(user => user.id === id || user.authUid === id || user.legacyProfileIds?.includes(id));
         if (!u) return undefined;
         if (!u.profilePhoto) {
+            // Email prefix for matching legacy doc IDs (e.g., "hovig" doc matched via "hovig@...")
+            const emailPrefix = u.email ? u.email.toLowerCase().split('@')[0] : '';
             const fallbackDoc = this.users.find(other =>
                 other.id !== u.id &&
                 Boolean((other as any).profilePhoto || (other as any).photo || (other as any).profileImage || (other as any).avatar) &&
@@ -768,7 +784,13 @@ class StoreService {
                     u.legacyProfileIds?.includes(other.id) ||
                     other.legacyProfileIds?.includes(u.id) ||
                     (u.name && other.name && u.name.toLowerCase() === other.name.toLowerCase()) ||
-                    (u.email && other.email && u.email.toLowerCase().split('@')[0] === other.email.toLowerCase().split('@')[0])
+                    (u.email && other.email && u.email.toLowerCase().split('@')[0] === other.email.toLowerCase().split('@')[0]) ||
+                    // Match legacy doc ID against email prefix (e.g., doc id "hovig" ↔ email "hovig@kilani.com")
+                    (emailPrefix && emailPrefix.length > 2 && (
+                        other.id.toLowerCase().includes(emailPrefix) ||
+                        emailPrefix.includes(other.id.toLowerCase()) ||
+                        (other.name && (other.name.toLowerCase().includes(emailPrefix) || emailPrefix.includes(other.name.toLowerCase())))
+                    ))
                 )
             ) as any;
             if (fallbackDoc) {
@@ -829,6 +851,26 @@ class StoreService {
         const { password, ...safeUser } = user;
         const safeFinalUser = deepCopySafe({ ...safeUser });
         await updateDoc(doc(db, 'users', user.id), safeFinalUser);
+    }
+
+    async updateUserPerformanceOverrides(userId: string, overrides: StaffPerformanceOverride | null) {
+        const u = this.getUser(userId);
+        if (!u) return;
+        const updated = {
+            ...u,
+            performanceOverrides: overrides ? overrides : undefined,
+        };
+        const index = this.users.findIndex(item => item.id === userId);
+        if (index !== -1) {
+            this.users[index] = updated;
+        }
+        try {
+            await this.updateUser(updated);
+        } catch (e) {
+            // Local mode fallback
+            console.warn('[STORE] Firestore update user overrides skipped in offline/demo mode', e);
+        }
+        this.notify();
     }
 
     async deleteUser(id: string) {
@@ -1237,6 +1279,7 @@ class StoreService {
             ...project as any,
             assignments, // MUST be after spread to prevent overwrite
             activeAssignees: assigneeIds,
+            createdById: this.currentUser?.id || '', // Always stamp creator UID for Firestore rules
         };
 
         // Sync legacy assignedSetterId for backward compatibility
@@ -2021,7 +2064,11 @@ class StoreService {
             sentAt: now(),
             goldComponentIds
         };
-        const safeUpdates = deepCopySafe({ castingEvents: [...(p.castingEvents || []), event] });
+        const newStage = p.designStage === 'Casting Received (Issue)' ? 'Recasting Sent' : 'Casting Sent';
+        const safeUpdates = deepCopySafe({ 
+            castingEvents: [...(p.castingEvents || []), event],
+            designStage: newStage
+        });
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
     }
 
@@ -2132,6 +2179,7 @@ class StoreService {
 
         const safeUpdates = deepCopySafe({
             castingEvents: events,
+            designStage: condition === 'CORRECT' ? 'Ready for Production' : 'Casting Received (Issue)',
             ...(updatedGoldComponents ? { goldComponents: updatedGoldComponents } : {})
         });
         await updateDoc(doc(db, 'projects', projectId), safeUpdates);
@@ -2187,7 +2235,7 @@ class StoreService {
         if (this.isDemoMode) {
             return Promise.resolve({
                 requestId,
-                specs: this.specs.filter(spec => !spec.location || spec.location === 'Melee').map(spec => ({
+                specs: this.specs.filter(spec => isMeleeLocation(spec.location)).map(spec => ({
                     id: spec.id,
                     label: spec.label,
                     shape: spec.shape || '',
@@ -2219,7 +2267,7 @@ class StoreService {
         if (req.lines) {
             for (const line of req.lines) {
                 const spec = this.specs.find(s => s.id === line.specId);
-                if (spec && spec.location && spec.location !== 'Melee') {
+                if (spec && !isMeleeLocation(spec.location)) {
                     throw new Error(`Request blocked: spec "${spec.label}" is a large stone (${spec.location}) and is not allowed for setter bag requests.`);
                 }
             }
@@ -2301,7 +2349,8 @@ class StoreService {
         imageSource?: 'Camera' | 'Device Gallery',
         operationId: string = newOperationId()
     ) {
-        const bag = this.bags.find(b => b.bagNumber === bagNumber && b.projectId === projectId);
+        const targetBagNum = bagNumber.replace(/#/g, '').trim().toLowerCase();
+        const bag = this.bags.find(b => b.projectId === projectId && (b.bagNumber === bagNumber || b.bagNumber.replace(/#/g, '').trim().toLowerCase() === targetBagNum));
 
         if (!this.isDemoMode) {
             if (!this.currentUser || this.currentUser.id !== userId) throw new Error('Return identity does not match the signed-in user.');
@@ -2494,7 +2543,8 @@ class StoreService {
         breakageReason?: string,
         operationId: string = newOperationId()
     ) {
-        const bag = this.bags.find(b => b.bagNumber === bagNumber);
+        const targetBagNum = bagNumber.replace(/#/g, '').trim().toLowerCase();
+        const bag = this.bags.find(b => b.bagNumber === bagNumber || b.bagNumber.replace(/#/g, '').trim().toLowerCase() === targetBagNum);
         if (!bag) {
             throw new Error(`Bag #${bagNumber} not found.`);
         }
@@ -3132,7 +3182,7 @@ class StoreService {
                 }
 
                 // Phase 1: Update the spec document's pcs and ct cache (if Melee spec)
-                const isMelee = !spec || !spec.location || spec.location === 'Melee';
+                const isMelee = !spec || isMeleeLocation(spec.location);
                 if (isMelee) {
                     let mainCaratChange = 0;
                     if (mainStockChange !== 0) {
@@ -3501,11 +3551,11 @@ class StoreService {
 
                 // MIXED-UNSORTED only belongs to Melee
                 if (l.specId === MIXED_UNSORTED_SPEC_ID) {
-                    if (location !== 'Melee') return;
+                    if (!isMeleeLocation(location)) return;
                 } else {
                     const spec = this.specs.find(s => s.id === l.specId);
                     const specLocation = spec?.location || 'Melee';
-                    if (specLocation !== location) return;
+                    if (isMeleeLocation(location) ? !isMeleeLocation(specLocation) : specLocation !== location) return;
                 }
 
                 const spec = this.specs.find(s => s.id === l.specId);
@@ -3719,7 +3769,7 @@ class StoreService {
             tx.set(doc(db, 'diamond_transactions', txId), deepCopySafe(transaction));
 
             // 8. Update the spec document's pcs & ct cache
-            const isMelee = !specData.location || specData.location === 'Melee';
+            const isMelee = isMeleeLocation(specData.location);
             if (isMelee) {
                 tx.update(specRef, {
                     pcs: currentPcs + pieceDelta,
@@ -3749,10 +3799,10 @@ class StoreService {
             m.lines.forEach(l => {
                 if (!l.specId) return;
                 if (l.specId === MIXED_UNSORTED_SPEC_ID) {
-                    if (location !== 'Melee') return;
+                    if (!isMeleeLocation(location)) return;
                 } else {
                     const spec = this.specs.find(s => s.id === l.specId);
-                    if ((spec?.location || 'Melee') !== location) return;
+                    if (isMeleeLocation(location) ? !isMeleeLocation(spec?.location || 'Melee') : (spec?.location || 'Melee') !== location) return;
                 }
                 const spec = this.specs.find(s => s.id === l.specId);
                 const { pieceDelta, caratDelta } = computeLineDelta(m, l, spec);
@@ -3878,10 +3928,10 @@ class StoreService {
                 m.lines.forEach(l => {
                     if (!l.specId) return;
                     if (l.specId === MIXED_UNSORTED_SPEC_ID) {
-                        if (location !== 'Melee') return;
+                        if (!isMeleeLocation(location)) return;
                     } else {
                         const spec = freshSpecs.find(s => s.id === l.specId);
-                        if ((spec?.location || 'Melee') !== location) return;
+                        if (isMeleeLocation(location) ? !isMeleeLocation(spec?.location || 'Melee') : (spec?.location || 'Melee') !== location) return;
                     }
                     const spec = freshSpecs.find(s => s.id === l.specId);
                     const { pieceDelta, caratDelta } = computeLineDelta(m, l, spec);

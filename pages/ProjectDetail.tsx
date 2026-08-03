@@ -9,6 +9,7 @@ import { ImageUpload, compressImage } from '../components/ImageUpload';
 import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck, Edit2 } from 'lucide-react';
 import { useToast } from '../App';
 import { FastEntryGrid } from '../components/FastEntryGrid';
+import { isMeleeLocation } from '../services/inventoryMath';
 
 interface Props { 
   currentUser: any; 
@@ -40,8 +41,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const [bags, setBags] = useState<DiamondBag[]>([]);
   const [requests, setRequests] = useState<IssueRequest[]>([]);
   const [cost, setCost] = useState<ProjectCostSummary | null>(null);
-  const [stages] = useState<ProgressStage[]>(store.getStages());
-  const [specs] = useState<DiamondSpec[]>(store.getSpecs());
+  const [stages, setStages] = useState<ProgressStage[]>(store.getStages());
+  const [specs, setSpecs] = useState<DiamondSpec[]>(store.getSpecs());
 
   // View States
   const [activeTab, setActiveTab] = useState<'bags' | 'repair' | 'design' | 'photos'>('bags');
@@ -228,6 +229,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
     setBags(store.getBags(id));
     setRequests(store.getRequests(id));
     setCost(store.getProjectCostSummary(id));
+    setSpecs(store.getSpecs());
+    setStages(store.getStages());
   };
 
   const handleStageSelection = (stage: ProgressStage) => {
@@ -309,8 +312,14 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   };
 
   const handleDesktopStageClick = (s: ProgressStage) => {
-    // Check Design Gate
-    if (project?.designStage !== 'Ready for Production' && s.percentValue > 0) {
+    // Check Design Gate — block ONLY if project is still in pre-casting CAD design phase
+    const isPreCastingDesign = !project?.designStage 
+        || project.designStage === 'Intake' 
+        || project.designStage === 'Working' 
+        || project.designStage === 'Waiting to review';
+    const alreadyInProduction = (project?.currentPercentComplete || 0) > 0 || (!!project?.currentStageName && project.currentStageName !== 'Intake');
+    
+    if (isPreCastingDesign && !alreadyInProduction && s.percentValue > 0) {
         alert("Project is not ready for production. Casting approval required.");
         return;
     }
@@ -466,6 +475,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             removedComponents
         );
         
+        const newDesignStage = castingCondition === 'CORRECT' ? 'Ready for Production' : 'Casting Received (Issue)';
+        setProject(prev => prev ? { ...prev, designStage: newDesignStage } : prev);
+        
         setIsCastingReceive(false);
         setCastingCondition('CORRECT');
         setCastingNotes('');
@@ -571,11 +583,11 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       showToast("Bag number is required.");
       return;
     }
-    const cleanBagNum = returnBagNum.replace(/#/g, '').trim();
+    const cleanBagNum = returnBagNum.replace(/#/g, '').trim().toLowerCase();
     
     // Validate bag against current project
-    const issuedBags = store.getBags().filter(b => b.projectId === project?.id && b.status === BagStatus.ISSUED);
-    const matchedBag = issuedBags.find(b => b.bagNumber.toLowerCase() === cleanBagNum.toLowerCase());
+    const issuedBags = store.getBags().filter(b => b.projectId === project?.id && String(b.status).toLowerCase() === 'issued');
+    const matchedBag = issuedBags.find(b => b.bagNumber.replace(/#/g, '').trim().toLowerCase() === cleanBagNum);
     
     if (!matchedBag) {
       showToast(`No bag with this number is associated with Project ${project?.code}.`);
@@ -1085,8 +1097,15 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const primaryComponent = project.goldComponents?.find(component => !component.state || component.state === 'ACTIVE');
   const primaryMetal = project.goldType || primaryComponent?.type;
   const primaryPurity = project.goldPurity || primaryComponent?.purity;
-  // Locked if not ready OR if already completed (Review/Closed)
-  const isLocked = !canModifyProject || (!repair && project.designStage !== 'Ready for Production' && !isManager && !isDesigner) || project.status !== ProjectStatus.ACTIVE;
+  // Production is locked ONLY IF it's a non-repair project, still in pre-casting design phase (Intake/Working/Waiting to review), 
+  // production hasn't started yet, and user is not a Manager or Designer.
+  const isPreCastingDesign = !project.designStage 
+      || project.designStage === 'Intake' 
+      || project.designStage === 'Working' 
+      || project.designStage === 'Waiting to review';
+  const productionAlreadyStarted = (project.currentPercentComplete || 0) > 0 || (!!project.currentStageName && project.currentStageName !== 'Intake');
+  const isProductionLocked = !repair && isPreCastingDesign && !productionAlreadyStarted && !isManager && !isDesigner;
+  const isLocked = !canModifyProject || isProductionLocked || project.status !== ProjectStatus.ACTIVE;
   const lastWeight = project.progress?.filter(p => p.weightG).pop()?.weightG;
   const openRequests = requests.filter(r => r.status === 'OPEN');
   const completedRequests = requests.filter(r => r.status === 'FULFILLED' || r.status === 'PARTIALLY_FULFILLED_CLOSED');
@@ -1763,51 +1782,128 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                      {/* LEFT: GOLD CALCULATION */}
                                      <div>
-                                         <div className="bg-black/20 p-5 rounded-3xl border border-white/5 mb-4">
-                                             <div className="text-xs font-bold text-zinc-500 uppercase mb-4 tracking-wide flex justify-between items-center">
-                                                 <span>Client Gold Charge</span>
-                                                 <span className="text-lux-gold">${cost?.goldCost.toFixed(2)} total</span>
-                                             </div>
-                                             
-                                             <div className="space-y-4">
-                                                 {cost.goldBreakdown && cost.goldBreakdown.length > 0 ? (
-                                                     cost.goldBreakdown.map((item, idx) => (
-                                                         <div key={idx} className="bg-white/5 p-3 rounded-2xl border border-white/5">
-                                                             <div className="flex justify-between items-start mb-2">
-                                                                 <div className="flex items-center gap-2">
-                                                                     <div className="w-2 h-2 rounded-full bg-lux-gold"></div>
-                                                                     <span className="text-sm font-bold text-white">{item.label}</span>
-                                                                 </div>
-                                                                 <span className="text-lux-gold font-mono text-sm">${item.calculatedCostCad.toFixed(2)}</span>
-                                                             </div>
-                                                             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
-                                                                 <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400">{item.type} {item.purity}</span>
-                                                                 <span>{item.weightG.toFixed(2)}g final</span>
-                                                                 <span className="text-lux-gold/60">Ratio: {item.ratioUsed.toFixed(3)}</span>
-                                                             </div>
-                                                         </div>
-                                                     ))
-                                                 ) : (
-                                                     <div className="text-center py-4 text-zinc-500 text-xs">No gold components found.</div>
-                                                 )}
-                                             </div>
+                                     <div className="bg-black/20 rounded-3xl border border-white/5 mb-4 overflow-hidden">
+                                        {/* ── LAYER 1: TOTAL HEADER ── */}
+                                        <div className="px-5 pt-5 pb-3">
+                                            <div className="flex items-baseline justify-between mb-1">
+                                                <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Client Gold Charge</span>
+                                                <div className="text-right">
+                                                    <span className="text-2xl font-bold font-mono text-lux-gold tracking-tight" style={{ textShadow: '0 0 24px rgba(212,175,55,0.3)' }}>
+                                                        ${cost?.goldCost.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                                             <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
-                                                 <div className="text-center">
-                                                     <div className="text-[10px] text-zinc-600 uppercase font-bold mb-1">Total Casting</div>
-                                                     <div className="text-sm font-mono text-white">{cost?.initialWeightG.toFixed(2)}g</div>
-                                                 </div>
-                                                 <div className="text-center">
-                                                     <div className="text-[10px] text-zinc-600 uppercase font-bold mb-1 text-red-400">Total Loss</div>
-                                                     <div className="text-sm font-mono text-red-400">{cost?.goldLossG.toFixed(2)}g</div>
-                                                 </div>
-                                             </div>
-                                         </div>
-                                         <div className="text-[10px] text-zinc-500 pl-1">
-                                             {project.pickupPricingSnapshot
-                                               ? `* Locked from ${project.pickupPricingSnapshot.source} for the actual pickup date. No markup applied.`
-                                               : '* Client charge remains pending until final weights and the actual pickup-date historical rate are locked.'}
-                                         </div>
+                                        {/* ── LAYER 2: PROPORTIONAL COST BAR ── */}
+                                        {cost.goldBreakdown && cost.goldBreakdown.length > 0 && (
+                                            <div className="px-5 pb-2">
+                                                <div className="flex h-3 rounded-full overflow-hidden bg-zinc-800/60 border border-white/5">
+                                                    {cost.goldBreakdown.map((item, idx) => {
+                                                        const pct = cost.goldCost > 0 ? (item.calculatedCostCad / cost.goldCost) * 100 : 0;
+                                                        const colors = [
+                                                            'bg-lux-gold',
+                                                            'bg-amber-500',
+                                                            'bg-yellow-600',
+                                                            'bg-orange-400',
+                                                        ];
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className={`${colors[idx % colors.length]} transition-all duration-500 relative group`}
+                                                                style={{ width: `${Math.max(pct, 2)}%` }}
+                                                                title={`${item.label}: $${item.calculatedCostCad.toFixed(2)} (${pct.toFixed(0)}%)`}
+                                                            >
+                                                                {idx > 0 && <div className="absolute left-0 top-0 bottom-0 w-px bg-black/40"></div>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* ── LAYER 3: COMPONENT BREAKDOWN ROWS ── */}
+                                        <div className="px-5 pt-1 pb-2">
+                                            {cost.goldBreakdown && cost.goldBreakdown.length > 0 ? (
+                                                cost.goldBreakdown.map((item, idx) => {
+                                                    const pct = cost.goldCost > 0 ? (item.calculatedCostCad / cost.goldCost) * 100 : 0;
+                                                    const colors = [
+                                                        'bg-lux-gold',
+                                                        'bg-amber-500',
+                                                        'bg-yellow-600',
+                                                        'bg-orange-400',
+                                                    ];
+                                                    return (
+                                                        <div key={idx} className={`py-2.5 ${idx < cost.goldBreakdown!.length - 1 ? 'border-b border-white/[0.04]' : ''}`}>
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className={`w-2.5 h-2.5 rounded-sm ${colors[idx % colors.length]} shrink-0`}></div>
+                                                                    <span className="text-[13px] font-semibold text-white truncate">{item.label}</span>
+                                                                    <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">{pct.toFixed(0)}%</span>
+                                                                </div>
+                                                                <span className="text-lux-gold font-mono text-[13px] font-semibold tabular-nums shrink-0 ml-3">${item.calculatedCostCad.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 pl-[22px] mt-1 text-[10px]">
+                                                                <span className="bg-zinc-800/80 text-zinc-400 px-1.5 py-px rounded font-medium">{item.type} {item.purity}</span>
+                                                                <span className="text-zinc-500">{item.weightG.toFixed(2)}g</span>
+                                                                <span className="text-zinc-600">·</span>
+                                                                <span className="text-zinc-500">×{item.ratioUsed.toFixed(3)}</span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="text-center py-5 text-zinc-600 text-xs">No gold components found.</div>
+                                            )}
+                                        </div>
+
+                                        {/* ── LAYER 4: WEIGHT FLOW DIAGRAM ── */}
+                                        <div className="bg-white/[0.02] border-t border-white/5 px-5 py-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Weight Flow</span>
+                                                <span className="text-[10px] text-zinc-600 font-mono tabular-nums">{cost?.initialWeightG.toFixed(2)}g → {cost?.finalWeightG.toFixed(2)}g</span>
+                                            </div>
+                                            {/* Visual weight bar */}
+                                            <div className="relative">
+                                                <div className="flex h-6 rounded-lg overflow-hidden bg-zinc-900 border border-white/5">
+                                                    {/* Final weight portion */}
+                                                    <div
+                                                        className="bg-gradient-to-r from-lux-gold/30 to-lux-gold/20 flex items-center justify-center transition-all duration-500 relative"
+                                                        style={{ width: `${cost.initialWeightG > 0 ? ((cost.finalWeightG / cost.initialWeightG) * 100) : 100}%` }}
+                                                    >
+                                                        <span className="text-[9px] font-bold text-lux-gold/90 font-mono tabular-nums">{cost?.finalWeightG.toFixed(2)}g</span>
+                                                    </div>
+                                                    {/* Loss portion */}
+                                                    {cost.goldLossG > 0 && (
+                                                        <div
+                                                            className="bg-red-500/10 flex items-center justify-center transition-all duration-500 border-l border-red-500/20"
+                                                            style={{ width: `${(cost.goldLossG / cost.initialWeightG) * 100}%` }}
+                                                        >
+                                                            <span className="text-[9px] font-bold text-red-400/80 font-mono tabular-nums">-{cost?.goldLossG.toFixed(2)}g</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {/* Labels below bar */}
+                                                <div className="flex justify-between mt-1.5">
+                                                    <span className="text-[9px] text-zinc-600 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-sm bg-lux-gold/30 inline-block"></span>
+                                                        Final
+                                                    </span>
+                                                    {cost.goldLossG > 0 && (
+                                                        <span className="text-[9px] text-zinc-600 flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-sm bg-red-500/20 inline-block"></span>
+                                                            Loss
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                     </div>
+                                     <div className="text-[10px] text-zinc-500 pl-1">
+                                         {project.pickupPricingSnapshot
+                                           ? `* Locked from ${project.pickupPricingSnapshot.source} for the actual pickup date. No markup applied.`
+                                           : '* Client charge remains pending until final weights and the actual pickup-date historical rate are locked.'}
+                                     </div>
                                      </div>
 
                                      {/* RIGHT: LABOUR & SETTER */}
@@ -2276,8 +2372,9 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                       )}
                                       
                                       {event.notes && (
-                                          <div className="mt-2 text-[10px] text-zinc-500 italic bg-black/40 p-2 rounded-xl border border-white/5">
-                                              "{event.notes}"
+                                          <div className="mt-3 text-xs text-zinc-300 bg-zinc-800/50 p-3 rounded-xl border border-white/10 relative">
+                                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-lux-gold rounded-l-xl opacity-50"></div>
+                                              <span className="italic">"{event.notes}"</span>
                                           </div>
                                       )}
                                       {event.condition && event.condition !== 'CORRECT' && (
@@ -2553,7 +2650,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
            <Card className="w-full max-w-lg md:max-w-3xl p-6 max-h-[85vh] flex flex-col mb-safe md:mb-0 animate-in slide-in-from-bottom-4 md:zoom-in-95">
               <h3 className="font-bold text-white text-lg mb-4">Request Diamonds for {project?.code}</h3>
               <div className="flex-1 overflow-y-auto mb-4">
-                 <FastEntryGrid specs={specs.filter(s => !s.location || s.location === 'Melee')} onLinesChange={setRequestLines} mode="PCS" />
+                 <FastEntryGrid specs={specs.filter(s => isMeleeLocation(s.location))} onLinesChange={setRequestLines} mode="PCS" />
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
                  <Button variant="secondary" onClick={() => setIsRequesting(false)}>Cancel</Button>
@@ -2573,7 +2670,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                           {(() => {
-                              const issuedBagsForReturn = store.getBags().filter(b => b.projectId === project?.id && b.status === BagStatus.ISSUED);
+                              const issuedBagsForReturn = store.getBags().filter(b => b.projectId === project?.id && String(b.status).toLowerCase() === 'issued');
                               if (issuedBagsForReturn.length === 0) {
                                   return (
                                       <div className="bg-red-950/30 border border-red-900/50 p-3 rounded-xl flex items-start gap-2 text-red-500 text-sm h-full">
@@ -2622,7 +2719,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                       
                       {(() => {
                           const cleanBagNum = returnBagNum.replace(/#/g, '').trim().toLowerCase();
-                          const selectedBagForReturn = store.getBags().find(b => b.projectId === project?.id && b.status === BagStatus.ISSUED && b.bagNumber.toLowerCase() === cleanBagNum);
+                          const selectedBagForReturn = store.getBags().find(b => b.projectId === project?.id && String(b.status).toLowerCase() === 'issued' && b.bagNumber.replace(/#/g, '').trim().toLowerCase() === cleanBagNum);
                           
                           if (!selectedBagForReturn) {
                               return (
