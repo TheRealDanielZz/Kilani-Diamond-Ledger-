@@ -372,10 +372,14 @@ class StoreService {
 
             await setDoc(directDocRef, deepCopySafe(mergedProfile), { merge: true });
 
-            // Ensure legacy profile docs maintain authUid link
+            // Ensure legacy profile docs are cleaned up or maintain authUid link
             for (const m of matchingLegacyDocs) {
                 if (m.id !== u.uid) {
-                    await setDoc(doc(db, 'users', m.id), { authUid: u.uid }, { merge: true }).catch(console.error);
+                    if (m.id.startsWith('temp-')) {
+                        await deleteDoc(doc(db, 'users', m.id)).catch(console.error);
+                    } else {
+                        await setDoc(doc(db, 'users', m.id), { authUid: u.uid }, { merge: true }).catch(console.error);
+                    }
                 }
             }
 
