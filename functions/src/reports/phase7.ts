@@ -54,12 +54,31 @@ function stringOf(value: unknown): string {
   return value === null || value === undefined ? '' : String(value);
 }
 
-function plain(value: unknown): unknown {
+function plain(value: unknown, seen = new WeakSet()): unknown {
+  if (value === null || value === undefined) return value;
   if (value instanceof Timestamp) return value.toDate().toISOString();
-  if (Array.isArray(value)) return value.map(plain);
-  if (value && typeof value === 'object') {
-    if ('toDate' in value && typeof value.toDate === 'function') return value.toDate().toISOString();
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, plain(item)]));
+  if (typeof value === 'object') {
+    if ('toDate' in value && typeof (value as any).toDate === 'function') {
+      try {
+        return (value as any).toDate().toISOString();
+      } catch {
+        return String(value);
+      }
+    }
+    if (seen.has(value)) return null;
+    seen.add(value);
+
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== null && proto !== Object.prototype && !Array.isArray(value)) {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => plain(item, seen));
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, plain(item, seen)])
+    );
   }
   return value;
 }
@@ -522,15 +541,21 @@ async function evaluate(request: Phase7FilterRequest, actorLocation: unknown): P
 }
 
 export const queryPhase7Report = onCall(CALLABLE_OPTIONS, async callableRequest => {
-  const request = normalizedRequest(callableRequest.data);
-  const actor = await authorize(request.section, callableRequest);
-  const actorLocation = (actor.profile as typeof actor.profile & { location?: unknown }).location;
-  const page = paginatePhase7Rows(await evaluate(request, actorLocation), request.pageSize, request.cursor);
-  return {
-    ...page,
-    rows: page.rows.map(reportRow => reportRow.data),
-    section: request.section,
-  };
+  try {
+    const request = normalizedRequest(callableRequest.data);
+    const actor = await authorize(request.section, callableRequest);
+    const actorLocation = (actor.profile as typeof actor.profile & { location?: unknown }).location;
+    const page = paginatePhase7Rows(await evaluate(request, actorLocation), request.pageSize, request.cursor);
+    return {
+      ...page,
+      rows: page.rows.map(reportRow => reportRow.data),
+      section: request.section,
+    };
+  } catch (error) {
+    console.error('Error in queryPhase7Report:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', error instanceof Error ? error.message : 'Internal error processing report');
+  }
 });
 
 export const exportPhase7ReportCsv = onCall(CALLABLE_OPTIONS, async callableRequest => {

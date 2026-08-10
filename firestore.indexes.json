@@ -1,4 +1,38 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "setter_assignment_intervals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "setterUid", "order": "ASCENDING" },
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "setter_assignment_intervals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "setterUid", "order": "ASCENDING" },
+        { "fieldPath": "startedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "setter_assignment_intervals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "setterUid", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "setter_tracking_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "setterUid", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

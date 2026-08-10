@@ -172,6 +172,8 @@ const App = () => {
                       <Route path="/inventory" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><InventoryPage /></ProtectedRoute>} />
 
                       <Route path="/reports" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER, Role.DESIGNER]}><ReportsPage /></ProtectedRoute>} />
+                      <Route path="/reports/team" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><ReportsPage /></ProtectedRoute>} />
+                      <Route path="/reports/team/:memberId" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><ReportsPage /></ProtectedRoute>} />
                       <Route path="/settings" element={<ProtectedRoute user={user} allowedRoles={[Role.MANAGER]}><SettingsPage /></ProtectedRoute>} />
                   </Route>
                   </Routes>

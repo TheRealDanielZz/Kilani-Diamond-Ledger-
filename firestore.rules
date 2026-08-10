@@ -89,6 +89,29 @@ service cloud.firestore {
         && request.resource.data.services[0].status in ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
     }
 
+    // Quick Repair intake: Setters, Jewellers, and Designers may create a
+    // project ONLY when isQuickRepair is true, the service is REPAIR, and the
+    // document records the creator's UID for later audit. No financial or
+    // gold-component fields are permitted — those remain Manager-only.
+    function quickRepairCreateAuthorized() {
+      let userProfile = profile();
+      return signedIn()
+        && userProfile.active != false
+        && (userProfile.role == 'Setter' || userProfile.role == 'Jeweller' || userProfile.role == 'Designer')
+        && request.resource.data.isQuickRepair == true
+        && request.resource.data.services is list
+        && request.resource.data.services.size() == 1
+        && request.resource.data.services[0] is map
+        && request.resource.data.services[0].code == 'REPAIR'
+        && request.resource.data.services[0].status in ['PENDING', 'IN_PROGRESS', 'COMPLETED']
+        && request.resource.data.createdById == request.auth.uid
+        && !request.resource.data.keys().hasAny([
+            'goldComponents', 'primaryGoldComponentId', 'castingEvents',
+            'pickupPricingSnapshot', 'projectEndGoldPriceSnapshot',
+            'projectEndGoldPriceCapturedAt', 'finalGoldCostCalculated'
+          ]);
+    }
+
     function projectServiceIdentityUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['services'])
         || (resource.data.services is list
@@ -173,9 +196,10 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow read: if signedIn();
-      // Project creation may contain component scaffolding. Keep creation
-      // Manager-only so a Designer cannot inject pre-locked financial fields.
-      allow create: if manager() && validProjectServiceOnCreate();
+      // Full project creation remains Manager-only to prevent financial field injection.
+      // Quick Repair intake is scoped to REPAIR service + isQuickRepair flag only.
+      allow create: if (manager() && validProjectServiceOnCreate())
+                    || quickRepairCreateAuthorized();
       allow update: if directProjectUpdateIsSafe() && projectUpdateAuthorized();
       allow delete: if manager() && !pickedUp();
 
@@ -254,7 +278,7 @@ service cloud.firestore {
     }
 
     match /specs/{specId} {
-      allow read: if managerOrDesigner();
+      allow read: if signedIn();
       allow create: if managerOrDesigner()
         && ((!('pcs' in request.resource.data) && !('ct' in request.resource.data))
           || (request.resource.data.pcs == 0 && request.resource.data.ct == 0));
@@ -301,6 +325,21 @@ service cloud.firestore {
     }
 
     match /project_workflow_operations/{operationId} {
+      allow read, write: if false;
+    }
+
+    // Phase 9 analytics preparation is backend-owned. Even Managers use a
+    // trusted callable so unfinished analytics results cannot be queried,
+    // injected, changed, or deleted through the client SDK.
+    match /setter_tracking_events/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /setter_assignment_intervals/{intervalId} {
+      allow read, write: if false;
+    }
+
+    match /phase9_tracking_operations/{operationId} {
       allow read, write: if false;
     }
 

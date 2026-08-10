@@ -4,12 +4,14 @@ import { store } from '../services/store';
 import { InventoryMovementType, DiamondSpec, InventoryMovement, Project, Diamond, InventorySummaryItem, InventoryNote, NoteAuditEntry } from '../types';
 import { Card, Button, StatusPill, Input } from '../components/UI';
 import { FastEntryGrid } from '../components/FastEntryGrid';
+import { isMeleeLocation } from '../services/inventoryMath';
 import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown } from 'lucide-react';
 import { useToast } from '../App';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { InventoryNotesSection } from '../components/InventoryNotesSection';
 import { jsPDF } from 'jspdf';
 import { inventoryApi } from '../services/inventoryApi';
+import { calculateRapnetInventorySummary } from '../services/rapnetService';
 
 const InventoryPage: React.FC = () => {
   const showToast = useToast();
@@ -151,7 +153,7 @@ const InventoryPage: React.FC = () => {
   // 'Melee' behaves as aggregate spec view
   const isMeleeView = selectedLocation === 'Melee';
   // Specs filtered to the current melee-style location
-  const currentSpecs = specs.filter(s => !s.location || s.location === 'Melee');
+  const currentSpecs = specs.filter(s => isMeleeLocation(s.location));
 
   // Analytics Calculation (Toronto/Miami)
   const analyticsData = React.useMemo(() => {
@@ -164,6 +166,9 @@ const InventoryPage: React.FC = () => {
     
     const totalCarats = locationDiamonds.reduce((sum, d) => sum + (d.size || 0), 0);
     const avgCarats = totalCarats / totalCount;
+
+    // Rapnet Valuation Engine
+    const rapnet = calculateRapnetInventorySummary(locationDiamonds);
     
     // Status breakdown
     const soldCount = locationDiamonds.filter(d => d.sold?.toUpperCase() === 'SOLD').length;
@@ -186,7 +191,8 @@ const InventoryPage: React.FC = () => {
       avgCarats,
       soldCount,
       availableCount,
-      shapesList
+      shapesList,
+      rapnet
     };
   }, [diamonds, selectedLocation]);
 
@@ -1229,11 +1235,16 @@ const InventoryPage: React.FC = () => {
                         <span className="text-[8px] text-zinc-600 mt-1 uppercase">Avg Weight: {analyticsData.avgCarats.toFixed(2)}ct</span>
                      </div>
                      <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex flex-col justify-center">
-                        <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Est Inventory Value</span>
+                        <span className="text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Est Rapnet Inventory Value</span>
                         <span className="text-xl font-bold font-mono text-emerald-400 mt-1 leading-none">
-                           ${(analyticsData.totalCarats * 2400).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                           ${analyticsData.rapnet.totalValueUsd.toLocaleString()}
                         </span>
-                        <span className="text-[8px] text-zinc-600 mt-1 uppercase">Est Avg: $2.4k/ct</span>
+                        <div className="flex items-center gap-2 mt-1">
+                           <span className="text-[8px] text-zinc-500 uppercase font-mono">Est Avg: ${analyticsData.rapnet.avgPricePerCtUsd.toLocaleString()}/ct</span>
+                           <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">
+                             Rd: ${analyticsData.rapnet.roundValueUsd.toLocaleString()} | Fancy: ${analyticsData.rapnet.fancyValueUsd.toLocaleString()}
+                           </span>
+                        </div>
                      </div>
                   </div>
                </div>

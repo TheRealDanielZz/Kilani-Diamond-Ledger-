@@ -197,7 +197,7 @@ export const SegmentedControl: React.FC<{
 
 // Standard Button
 export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { 
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   icon?: React.ReactNode;
   loading?: boolean;
@@ -211,6 +211,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
     secondary: "liquid-glass hover:bg-theme-table-hover text-theme-text-primary border-theme-border",
     danger: "bg-red-500/10 backdrop-blur-3xl text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-500",
     ghost: "bg-transparent text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-table-hover",
+    outline: "bg-transparent text-theme-text-primary border border-theme-border hover:bg-theme-table-hover",
   };
   
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {

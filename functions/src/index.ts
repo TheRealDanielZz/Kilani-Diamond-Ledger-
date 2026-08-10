@@ -39,6 +39,13 @@ export {
   rollbackPhase6ServiceMigration,
 } from './projects/phase6';
 export { queryPhase7Report, exportPhase7ReportCsv } from './reports/phase7';
+export {
+  activatePhase9SetterTracking,
+  getPhase9SetterAnalyticsFeatureState,
+  getPhase9SetterTrackingDryRun,
+  trackPhase9SetterProjectChanges,
+  trackPhase9SetterRoleChanges,
+} from './analytics/phase9';
 
 initializeApp();
 const db = getFirestore();

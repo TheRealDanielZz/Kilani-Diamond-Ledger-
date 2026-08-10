@@ -64,6 +64,15 @@ before(async () => {
       setDoc(doc(db, 'notifications/own'), { userId: 'setter-uid', read: false }),
       setDoc(doc(db, 'notifications/other'), { userId: 'other-uid', read: false }),
       setDoc(doc(db, 'system_migrations/phase6-service-canonical-v1'), { state: 'DRY_RUN' }),
+      setDoc(doc(db, 'setter_tracking_events/phase9-event'), {
+        setterUid: 'setter-uid', projectId: 'project-1', eventType: 'assignment_started',
+      }),
+      setDoc(doc(db, 'setter_assignment_intervals/phase9-interval'), {
+        setterUid: 'setter-uid', projectId: 'project-1', active: true,
+      }),
+      setDoc(doc(db, 'phase9_tracking_operations/phase9-operation'), {
+        sourceEventId: 'source-event',
+      }),
     ]);
   });
   managerDb = env.authenticatedContext('manager-uid').firestore();
@@ -106,6 +115,19 @@ test('ordinary clients cannot bypass protected workflow writes', async () => {
   await assertFails(updateDoc(doc(managerDb, 'specs/spec-1'), { pcs: 999 }));
   await assertFails(deleteDoc(doc(managerDb, 'movements/movement-1')));
   await assertFails(deleteDoc(doc(managerDb, 'evidence/evidence-1')));
+});
+
+test('Phase 9 tracking records are backend-only, including for Managers', async () => {
+  await assertFails(getDoc(doc(managerDb, 'setter_tracking_events/phase9-event')));
+  await assertFails(getDoc(doc(setterDb, 'setter_assignment_intervals/phase9-interval')));
+  await assertFails(getDoc(doc(managerDb, 'phase9_tracking_operations/phase9-operation')));
+  await assertFails(setDoc(doc(managerDb, 'setter_tracking_events/forged'), {
+    setterUid: 'setter-uid', projectId: 'project-1', eventType: 'project_completed',
+  }));
+  await assertFails(updateDoc(doc(managerDb, 'setter_assignment_intervals/phase9-interval'), {
+    active: false,
+  }));
+  await assertFails(deleteDoc(doc(managerDb, 'setter_tracking_events/phase9-event')));
 });
 
 test('Manager may edit spec metadata but not its authoritative balance', async () => {

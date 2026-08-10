@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kilani Diamond Reporter — What's New Since July 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ──────────────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #08080a;
+  color: #e4e4e7;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Theme Tokens ──────────────────────────────────────────── */
+:root {
+  --gold: #f5c249;
+  --gold-dim: #d4a438;
+  --gold-glow: rgba(245, 194, 73, 0.12);
+  --gold-glow-strong: rgba(245, 194, 73, 0.25);
+  --obsidian: #0b0b0d;
+  --obsidian-raised: #111114;
+  --obsidian-card: #161619;
+  --obsidian-border: rgba(255,255,255,0.07);
+  --text-primary: #f0f0f2;
+  --text-muted: #71717a;
+  --text-dim: #52525b;
+  --success: #34d399;
+  --fix: #f97316;
+  --feature: #818cf8;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+}
+
+/* ── Slide Container ───────────────────────────────────────── */
+.deck {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(40px) scale(0.97);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s 0.6s;
+  will-change: transform, opacity;
+}
+
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s 0s;
+}
+
+.slide.exit-up {
+  opacity: 0;
+  transform: translateY(-40px) scale(0.97);
+}
+
+/* ── Progress Bar ──────────────────────────────────────────── */
+.progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-dim));
+  z-index: 100;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 20px var(--gold-glow-strong);
+}
+
+/* ── Navigation ────────────────────────────────────────────── */
+.nav-controls {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  z-index: 90;
+  background: rgba(22, 22, 25, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--obsidian-border);
+  border-radius: 100px;
+  padding: 0.5rem 1.25rem;
+}
+
+.nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--obsidian-border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s;
+}
+.nav-btn:hover { background: var(--gold-glow); color: var(--gold); border-color: rgba(245,194,73,0.3); }
+.nav-btn:disabled { opacity: 0.25; cursor: default; }
+.nav-btn:disabled:hover { background: transparent; color: var(--text-muted); border-color: var(--obsidian-border); }
+
+.nav-counter {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  min-width: 4rem;
+  text-align: center;
+}
+
+.nav-dots {
+  display: flex;
+  gap: 6px;
+}
+.nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+  padding: 0;
+}
+.nav-dot.active {
+  background: var(--gold);
+  width: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 12px var(--gold-glow-strong);
+}
+
+/* ── Keyboard hint ─────────────────────────────────────────── */
+.keyboard-hint {
+  position: fixed;
+  bottom: 6.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 1;
+  transition: opacity 1s;
+  z-index: 90;
+}
+.keyboard-hint.hidden { opacity: 0; }
+
+/* ── Typography ────────────────────────────────────────────── */
+.slide-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.slide-label::before {
+  content: '';
+  width: 24px;
+  height: 1px;
+  background: var(--gold);
+  opacity: 0.5;
+}
+
+.slide-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-primary);
+  text-align: center;
+  max-width: 800px;
+  margin-bottom: 1.25rem;
+}
+
+.slide-subtitle {
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 600px;
+  margin-bottom: 2rem;
+}
+
+.gold-text { color: var(--gold); }
+.italic { font-style: italic; }
+
+/* ── Hero-specific ─────────────────────────────────────────── */
+.hero-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 0 60px var(--gold-glow-strong), 0 0 120px var(--gold-glow);
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.hero-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  border-radius: 100px;
+  background: var(--gold-glow);
+  border: 1px solid rgba(245,194,73,0.2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 2.5rem;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 2rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 1.75rem;
+  background: var(--obsidian-card);
+  border: 1px solid var(--obsidian-border);
+  border-radius: var(--radius-lg);
+  min-width: 130px;
+}
+
+.stat-number {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  margin-top: 0.4rem;
+}
+
+/* ── Content Cards ─────────────────────────────────────────── */
+.content-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 900px;
+}
+
+.fix-cards, .feature-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  width: 100%;
+  max-width: 800px;
+}
+
+@media (min-width: 640px) {
+  .fix-cards.two-col, .feature-cards.two-col {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.fix-card, .feature-card {
+  background: var(--obsidian-card);
+  border: 1px solid var(--obsidian-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  text-align: left;
+  transition: transform 0.3s, border-color 0.3s;
+}
+.fix-card:hover, .feature-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.card-icon.fix { background: rgba(249,115,22,0.12); }
+.card-icon.feature { background: rgba(129,140,248,0.12); }
+.card-icon.success { background: rgba(52,211,153,0.12); }
+.card-icon.gold { background: var(--gold-glow); }
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.card-desc {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.card-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  margin-top: 0.75rem;
+}
+.card-tag.fix { background: rgba(249,115,22,0.15); color: #fb923c; }
+.card-tag.feature { background: rgba(129,140,248,0.15); color: #a5b4fc; }
+.card-tag.security { background: rgba(239,68,68,0.15); color: #fca5a5; }
+.card-tag.ux { background: rgba(52,211,153,0.15); color: #6ee7b7; }
+.card-tag.auth { background: rgba(168,85,247,0.15); color: #c4b5fd; }
+
+/* ── Timeline ──────────────────────────────────────────────── */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  max-width: 700px;
+  position: relative;
+  padding-left: 2rem;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--gold), var(--gold-dim), transparent);
+  border-radius: 2px;
+}
+
+.timeline-item {
+  position: relative;
+  padding: 1rem 0 1.5rem 1.5rem;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -2rem;
+  top: 1.35rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: 3px solid var(--obsidian);
+  box-shadow: 0 0 0 2px rgba(245,194,73,0.3);
+  z-index: 2;
+}
+
+.timeline-date {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 0.25rem;
+}
+
+.timeline-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.timeline-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Bullet List ───────────────────────────────────────────── */
+.bullet-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 700px;
+  text-align: left;
+}
+.bullet-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.bullet-list li::before {
+  content: '✓';
+  flex-shrink: 0;
+  color: var(--success);
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+/* ── Phase badge ───────────────────────────────────────────── */
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 100px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+}
+.phase-badge.p5 { background: rgba(56,189,248,0.12); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.2); }
+.phase-badge.p6 { background: rgba(249,115,22,0.12); color: #fdba74; border: 1px solid rgba(249,115,22,0.2); }
+.phase-badge.p7 { background: rgba(168,85,247,0.12); color: #c4b5fd; border: 1px solid rgba(168,85,247,0.2); }
+.phase-badge.p8 { background: rgba(52,211,153,0.12); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.2); }
+
+/* ── Big number ────────────────────────────────────────────── */
+.big-number {
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 900;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--gold), #fff, var(--gold));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ── Stagger animation for children ────────────────────────── */
+.slide.active .stagger > * {
+  animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.slide.active .stagger > *:nth-child(1) { animation-delay: 0.08s; }
+.slide.active .stagger > *:nth-child(2) { animation-delay: 0.16s; }
+.slide.active .stagger > *:nth-child(3) { animation-delay: 0.24s; }
+.slide.active .stagger > *:nth-child(4) { animation-delay: 0.32s; }
+.slide.active .stagger > *:nth-child(5) { animation-delay: 0.40s; }
+.slide.active .stagger > *:nth-child(6) { animation-delay: 0.48s; }
+.slide.active .stagger > *:nth-child(7) { animation-delay: 0.56s; }
+.slide.active .stagger > *:nth-child(8) { animation-delay: 0.64s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Ambient glow ──────────────────────────────────────────── */
+.ambient {
+  position: fixed;
+  pointer-events: none;
+  z-index: 0;
+}
+.ambient-1 {
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, var(--gold-glow) 0%, transparent 70%);
+  top: -200px; right: -200px;
+  opacity: 0.4;
+  animation: drift 20s ease-in-out infinite;
+}
+.ambient-2 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(129,140,248,0.06) 0%, transparent 70%);
+  bottom: -150px; left: -150px;
+  opacity: 0.3;
+  animation: drift 25s ease-in-out infinite reverse;
+}
+
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  33% { transform: translate(30px, -20px); }
+  66% { transform: translate(-20px, 15px); }
+}
+
+/* ── Divider ───────────────────────────────────────────────── */
+.divider {
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  margin: 1.5rem auto;
+  border-radius: 2px;
+}
+
+/* ── Scrollable inner area ─────────────────────────────────── */
+.slide-scroll {
+  overflow-y: auto;
+  max-height: calc(100vh - 10rem);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0 4rem;
+  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+.slide-scroll::-webkit-scrollbar { width: 4px; }
+.slide-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+
+/* ── Final CTA slide ───────────────────────────────────────── */
+.cta-ring {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 0 80px var(--gold-glow-strong);
+  animation: pulse-ring 3s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 40px var(--gold-glow); transform: scale(1); }
+  50% { box-shadow: 0 0 80px var(--gold-glow-strong); transform: scale(1.04); }
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .slide { padding: 2rem 1.25rem; }
+  .hero-stats { gap: 0.75rem; }
+  .stat-card { padding: 1rem 1.25rem; min-width: 100px; }
+  .stat-number { font-size: 1.5rem; }
+  .nav-dots { display: none; }
+  .timeline { padding-left: 1.5rem; }
+  .fix-card, .feature-card { padding: 1.25rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- Ambient glows -->
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+
+<!-- Progress bar -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SLIDES
+     ═══════════════════════════════════════════════════════════ -->
+<div class="deck" id="deck">
+
+  <!-- ─── SLIDE 0: Hero ─── -->
+  <div class="slide active" data-slide="0">
+    <div class="hero-logo">💎</div>
+    <div class="hero-version">v7.0 — July 2026 Update</div>
+    <h1 class="slide-title">What's New in<br><span class="gold-text">Kilani Diamond Reporter</span></h1>
+    <p class="slide-subtitle">4 weeks of improvements. Here's everything that shipped since July 2nd.</p>
+    <div class="hero-stats stagger">
+      <div class="stat-card">
+        <span class="stat-number" data-count="21">0</span>
+        <span class="stat-label">Commits</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" data-count="7000" data-suffix="+">0</span>
+        <span class="stat-label">Lines Added</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" data-count="4">0</span>
+        <span class="stat-label">New Phases</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" data-count="11">0</span>
+        <span class="stat-label">Bug Fixes</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 1: Timeline Overview ─── -->
+  <div class="slide" data-slide="1">
+    <div class="slide-scroll">
+      <div class="slide-label">Timeline</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">4 Weeks at a Glance</h2>
+      <div class="divider"></div>
+      <div class="timeline stagger">
+        <div class="timeline-item">
+          <div class="timeline-date">July 3</div>
+          <div class="timeline-title">Inventory Balance Fix</div>
+          <div class="timeline-desc">Pieces/carats desync resolved with snapshot-based math</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">July 7</div>
+          <div class="timeline-title">Firebase Security Fix</div>
+          <div class="timeline-desc">Manager role string case mismatch corrected</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">July 10</div>
+          <div class="timeline-title">Evidence Permissions</div>
+          <div class="timeline-desc">All authenticated users can now upload evidence</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">July 20</div>
+          <div class="timeline-title">Version 7.0 Release 🚀</div>
+          <div class="timeline-desc">Major version shipped with all accumulated improvements</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">July 22</div>
+          <div class="timeline-title">Phases 5 & 6 + UI Overhaul</div>
+          <div class="timeline-desc">Service model, diamond issuance, project views reworked</div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-date">July 23</div>
+          <div class="timeline-title">Phases 7 & 8, Repairs, Auth</div>
+          <div class="timeline-desc">Reporting filters, quick repairs, profile healing — biggest day</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 2: Inventory Fix ─── -->
+  <div class="slide" data-slide="2">
+    <div class="slide-scroll">
+      <div class="slide-label">July 3 — Critical Fix</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Inventory<br><span class="gold-text">Pieces &amp; Carats Desync</span></h2>
+      <p class="slide-subtitle">The core inventory ledger could show incorrect totals. Here's what happened and how it was fixed.</p>
+      <div class="fix-cards stagger" style="max-width:700px">
+        <div class="fix-card">
+          <div class="card-icon fix">🐛</div>
+          <div class="card-title">The Problem</div>
+          <div class="card-desc">Editing a catalog spec's weight would retroactively recalculate past movements. The Quick Stock Adjustment feature allowed arbitrary edits that bypassed validation.</div>
+          <span class="card-tag fix">Data Integrity</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon success">✅</div>
+          <div class="card-title">The Fix</div>
+          <div class="card-desc">Every movement now <strong>snapshots</strong> the avg-weight at creation time. 0 pcs → 0 ct → $0 is enforced. Quick Stock Adjustment was removed entirely.</div>
+          <span class="card-tag ux">Snapshot Math</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon gold">🔒</div>
+          <div class="card-title">New Safeguards</div>
+          <div class="card-desc">Replaced with a <strong>manager-only Inventory Correction</strong> that creates a full audit trail. Added a reconciliation script + UI modal for bulk repair.</div>
+          <span class="card-tag security">Manager-Only</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">🧹</div>
+          <div class="card-title">Cleanup</div>
+          <div class="card-desc">Removed a hardcoded one-time migration script from App.tsx that was injecting bulk return data for project 1351. Restricted /projects route to Manager & Designer only.</div>
+          <span class="card-tag fix">Tech Debt</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 3: Security Fixes ─── -->
+  <div class="slide" data-slide="3">
+    <div class="slide-scroll">
+      <div class="slide-label">July 7 & 10 — Security</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Firebase<br><span class="gold-text">Security Rules Fixed</span></h2>
+      <p class="slide-subtitle">Two permission issues were silently blocking users from core workflows.</p>
+      <div class="fix-cards two-col stagger" style="max-width:700px">
+        <div class="fix-card">
+          <div class="card-icon fix">🔤</div>
+          <div class="card-title">Manager Role Mismatch</div>
+          <div class="card-desc">Firestore rules checked for <code style="color:var(--fix);background:rgba(249,115,22,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">'MANAGER'</code> but user documents stored <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">'Manager'</code>. Case-sensitive comparison meant managers were denied write access.</div>
+          <span class="card-tag fix">1-Line Fix</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">📸</div>
+          <div class="card-title">Evidence Upload Blocked</div>
+          <div class="card-desc">Setters and designers couldn't upload evidence photos — both Firestore and Storage rules restricted writes to Manager-only. Now any authenticated user can attach evidence.</div>
+          <span class="card-tag security">Permissions</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 4: V7 Release ─── -->
+  <div class="slide" data-slide="4">
+    <div class="big-number">7.0</div>
+    <div class="slide-label">July 20</div>
+    <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Version 7.0<br><span class="gold-text">Shipped</span></h2>
+    <p class="slide-subtitle">Major version publish — all accumulated changes from Phases 1–4 consolidated, GitHub history connected, and deployed to production.</p>
+  </div>
+
+  <!-- ─── SLIDE 5: UI Fixes ─── -->
+  <div class="slide" data-slide="5">
+    <div class="slide-scroll">
+      <div class="slide-label">July 22 — UI / UX</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">All Projects Page<br><span class="gold-text">View & Pickup Overhaul</span></h2>
+      <p class="slide-subtitle">Grid view, quick peek, and the pickup flow — all reworked.</p>
+      <div class="fix-cards two-col stagger" style="max-width:750px">
+        <div class="fix-card">
+          <div class="card-icon fix">🔲</div>
+          <div class="card-title">Grid View Toggle Fix</div>
+          <div class="card-desc">Switching to grid mode didn't close the split-view panel, and clicking projects in grid mode tried to open the side panel instead of navigating. Now mode-aware.</div>
+          <span class="card-tag ux">UX</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon success">🔲</div>
+          <div class="card-title">Fullscreen Quick Peek</div>
+          <div class="card-desc">Added a Maximize button to the split-view panel header so you can jump to the full project page. Plus tooltips on Close and Fullscreen buttons.</div>
+          <span class="card-tag ux">New Control</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon gold">📅</div>
+          <div class="card-title">Pickup Date & Reason</div>
+          <div class="card-desc">Pickup confirmation now requires an <strong>Actual Pickup Date</strong> (defaults to today, Toronto TZ). If backdated, a <strong>late-entry reason</strong> is required. Gold rate is snapshotted.</div>
+          <span class="card-tag feature">New Fields</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon success">🔄</div>
+          <div class="card-title">Double-Click Prevention</div>
+          <div class="card-desc">The Confirm Pickup button now shows a loading spinner and disables during submission. Also validates that all required fields are filled before enabling.</div>
+          <span class="card-tag ux">Safety</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 6: Phases 5 & 6 ─── -->
+  <div class="slide" data-slide="6">
+    <div class="slide-scroll">
+      <div class="slide-label">July 22 — New Features</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Phases <span class="gold-text">5 & 6</span></h2>
+      <p class="slide-subtitle">Service model engine and diamond issuance — the operational backbone.</p>
+      <div class="fix-cards two-col stagger" style="max-width:750px">
+        <div class="feature-card">
+          <span class="phase-badge p5">Phase 5 — Service Model</span>
+          <div class="card-title">25 files • ~2,100 lines</div>
+          <div class="card-desc" style="margin-top:0.5rem">
+            Full service model with <strong>phase5.ts</strong> cloud function (513 lines), client API, project service model layer, expanded project detail views, new settings page, and comprehensive integration tests.
+          </div>
+        </div>
+        <div class="feature-card">
+          <span class="phase-badge p6">Phase 6 — Issue Diamonds</span>
+          <div class="card-title">5 files • ~740 lines</div>
+          <div class="card-desc" style="margin-top:0.5rem">
+            New <strong>IssueDiamondsModal</strong> (430 lines) for the full diamond issuance flow. Cloud function with role safeguards, classifier tests, and an approved migration script.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 7: Phases 7 & 8 ─── -->
+  <div class="slide" data-slide="7">
+    <div class="slide-scroll">
+      <div class="slide-label">July 23 — New Features</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Phases <span class="gold-text">7 & 8</span></h2>
+      <p class="slide-subtitle">Shared reporting and configurable project views.</p>
+      <div class="fix-cards two-col stagger" style="max-width:750px">
+        <div class="feature-card">
+          <span class="phase-badge p7">Phase 7 — Reporting</span>
+          <div class="card-title">14 files • ~2,000 lines</div>
+          <div class="card-desc" style="margin-top:0.5rem">
+            <strong>ReportFilterBar</strong> component, server-side report generation (521-line cloud function), report contracts, filters service, React hook, and PDF generator. Full ReportsPage rework.
+          </div>
+        </div>
+        <div class="feature-card">
+          <span class="phase-badge p8">Phase 8 — Project Views</span>
+          <div class="card-title">11 files • ~680 lines</div>
+          <div class="card-desc" style="margin-top:0.5rem">
+            <strong>ProjectViews</strong> component with grid/list/compact modes, a persisted preference hook, presentation service, and simplified AllProjects + ManagerDashboard pages.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 8: Report Fixes ─── -->
+  <div class="slide" data-slide="8">
+    <div class="slide-scroll">
+      <div class="slide-label">July 23 — Report Fixes</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Reporting<br><span class="gold-text">Dropdowns & Date Pickers</span></h2>
+      <p class="slide-subtitle">Two UX issues in the new reporting filter bar.</p>
+      <div class="fix-cards two-col stagger" style="max-width:750px">
+        <div class="fix-card">
+          <div class="card-icon fix">📂</div>
+          <div class="card-title">Dropdown Layering (z-index)</div>
+          <div class="card-desc">Filter dropdowns rendered <strong>behind</strong> other page elements. Fixed by giving the open <code style="color:var(--fix);background:rgba(249,115,22,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">&lt;details&gt;</code> a stacking context with <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">open:z-50</code>, bumped the panel to z-[70], added heavier shadow and <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">overscroll-contain</code>.</div>
+          <span class="card-tag fix">CSS z-index</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">📅</div>
+          <div class="card-title">Date Picker Controls</div>
+          <div class="card-desc">Native date inputs were hard to use — calendar icon hidden on some browsers. Created a custom <strong>DateFilter</strong> component with an explicit calendar button that calls <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">showPicker()</code>. Added custom CSS to hide browser defaults.</div>
+          <span class="card-tag ux">Custom Component</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 9: Quick Repair ─── -->
+  <div class="slide" data-slide="9">
+    <div class="slide-scroll">
+      <div class="slide-label">July 23 — New Feature</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Quick Walk-In<br><span class="gold-text">Repair System</span></h2>
+      <p class="slide-subtitle">A brand-new fast intake flow for setters and jewellers handling walk-in repairs.</p>
+      <div class="feature-cards stagger" style="max-width:700px">
+        <div class="feature-card">
+          <div class="card-icon gold">⚡</div>
+          <div class="card-title">Auto-Generated Project Codes</div>
+          <div class="card-desc">Each repair gets a code in the format <code style="color:var(--gold);background:var(--gold-glow);padding:2px 8px;border-radius:6px;font-size:0.8rem;font-weight:600">REP-240723-DIAMOND</code> — combining date and repair type. Five categories: Diamond Setting, Ring Resizing, Broken/Solder, Watch Repair, General.</div>
+        </div>
+        <div class="feature-card">
+          <div class="card-icon gold">🎨</div>
+          <div class="card-title">Obsidian & Gold Themed Modal</div>
+          <div class="card-desc">Redesigned from a flat dark-blue scheme to match the Kilani brand — <strong>Framer Motion</strong> animations, gold glow shadow, mobile bottom-sheet layout, contextual step icons, and proper light-mode support.</div>
+        </div>
+        <div class="feature-card">
+          <div class="card-icon gold">🔗</div>
+          <div class="card-title">End-to-End Wiring</div>
+          <div class="card-desc">Available on both <strong>Manager</strong> and <strong>Setter</strong> dashboards. After creation, setters are automatically navigated to the new project page. Connected via <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">onProjectCreated</code> callback.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 10: Auth & Profile Fixes ─── -->
+  <div class="slide" data-slide="10">
+    <div class="slide-scroll">
+      <div class="slide-label">July 23 — Auth & Profiles</div>
+      <h2 class="slide-title" style="font-size:clamp(1.5rem,3.5vw,2.5rem)">Self-Healing<br><span class="gold-text">Profile System</span></h2>
+      <p class="slide-subtitle">Legacy profiles, missing photos, and invisible project assignments — all resolved.</p>
+      <div class="fix-cards stagger" style="max-width:700px">
+        <div class="fix-card">
+          <div class="card-icon fix">🧬</div>
+          <div class="card-title">Legacy Profile Merging</div>
+          <div class="card-desc">Users with pre-Auth orphan documents had <strong>multiple Firestore profiles</strong> (one with their photo, another with their role, a third from a rename). On login the store now scans <strong>all</strong> user documents and matches by email, authUid, legacy ID arrays, and name similarity — then merges them into one authoritative profile.</div>
+          <span class="card-tag auth">Self-Healing</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">👁️</div>
+          <div class="card-title">Designer Dashboard — Invisible Projects</div>
+          <div class="card-desc">Designers couldn't see projects assigned to them because <code style="color:var(--fix);background:rgba(249,115,22,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">acceptedProfileIds</code> only checked the current ID and legacy IDs — not <strong>authUid, name, or email</strong>. The match set now covers all identity signals, including looking up the assigned user's document to cross-match by name.</div>
+          <span class="card-tag auth">Matching</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">📷</div>
+          <div class="card-title">Profile Photo Resolution</div>
+          <div class="card-desc"><code style="color:var(--fix);background:rgba(249,115,22,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">getUser(id)</code> now checks <strong>profilePhoto, photo, profileImage, avatar</strong> fields across linked profiles. Falls back to matching by legacy IDs, same name, or email prefix (e.g., <em>harout</em> from harout@kilani.com).</div>
+          <span class="card-tag auth">Photo Fallback</span>
+        </div>
+        <div class="fix-card">
+          <div class="card-icon fix">🔗</div>
+          <div class="card-title">Setter Repair Callback</div>
+          <div class="card-desc">After creating a quick repair, the setter wasn't redirected to the new project. The <code style="color:var(--fix);background:rgba(249,115,22,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">QuickRepairModal</code> was missing the <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">currentUser</code> prop and <code style="color:var(--success);background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:6px;font-size:0.75rem">onProjectCreated</code> callback. Now wired end-to-end.</div>
+          <span class="card-tag fix">Props</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SLIDE 11: Closing ─── -->
+  <div class="slide" data-slide="11">
+    <div class="cta-ring">💎</div>
+    <h2 class="slide-title">That's the Update.</h2>
+    <p class="slide-subtitle">21 commits. 7,000+ lines. 4 new phases. 11 bug fixes. 1 brand-new repair system.<br><br><span class="gold-text" style="font-weight:600">Kilani Diamond Reporter v7.0</span> — built for the team.</p>
+  </div>
+
+</div>
+
+<!-- ── Navigation ──────────────────────────────────────────── -->
+<div class="keyboard-hint" id="keyHint">← → or swipe to navigate</div>
+<div class="nav-controls">
+  <button class="nav-btn" id="prevBtn" aria-label="Previous slide">←</button>
+  <div class="nav-dots" id="navDots"></div>
+  <span class="nav-counter" id="navCounter">1 / 12</span>
+  <button class="nav-btn" id="nextBtn" aria-label="Next slide">→</button>
+</div>
+
+<script>
+(() => {
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let current = 0;
+  let animating = false;
+
+  const progressBar = document.getElementById('progressBar');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const navCounter = document.getElementById('navCounter');
+  const navDots = document.getElementById('navDots');
+  const keyHint = document.getElementById('keyHint');
+
+  // Build dots
+  for (let i = 0; i < total; i++) {
+    const dot = document.createElement('button');
+    dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+    dot.setAttribute('aria-label', `Slide ${i + 1}`);
+    dot.addEventListener('click', () => goTo(i));
+    navDots.appendChild(dot);
+  }
+
+  function updateUI() {
+    progressBar.style.width = `${((current + 1) / total) * 100}%`;
+    navCounter.textContent = `${current + 1} / ${total}`;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === total - 1;
+
+    document.querySelectorAll('.nav-dot').forEach((d, i) => {
+      d.className = 'nav-dot' + (i === current ? ' active' : '');
+    });
+  }
+
+  function goTo(index) {
+    if (animating || index === current || index < 0 || index >= total) return;
+    animating = true;
+
+    const dir = index > current ? 1 : -1;
+    const prev = slides[current];
+    const next = slides[index];
+
+    // Exit current
+    prev.classList.remove('active');
+    if (dir === 1) prev.classList.add('exit-up');
+
+    // Enter next
+    next.style.transition = 'none';
+    next.style.transform = dir === 1 ? 'translateY(40px) scale(0.97)' : 'translateY(-40px) scale(0.97)';
+    next.style.opacity = '0';
+    next.classList.add('active');
+
+    requestAnimationFrame(() => {
+      next.style.transition = '';
+      next.style.transform = '';
+      next.style.opacity = '';
+    });
+
+    current = index;
+    updateUI();
+    animateCounters();
+
+    // Reset scroll in new slide
+    const scrollArea = next.querySelector('.slide-scroll');
+    if (scrollArea) scrollArea.scrollTop = 0;
+
+    setTimeout(() => {
+      prev.classList.remove('exit-up');
+      animating = false;
+    }, 650);
+  }
+
+  function next() { goTo(current + 1); }
+  function prev() { goTo(current - 1); }
+
+  prevBtn.addEventListener('click', prev);
+  nextBtn.addEventListener('click', next);
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+    keyHint.classList.add('hidden');
+  });
+
+  // Touch/swipe
+  let touchStartX = 0, touchStartY = 0;
+  document.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+      dx < 0 ? next() : prev();
+      keyHint.classList.add('hidden');
+    }
+  }, { passive: true });
+
+  // Animated counters
+  function animateCounters() {
+    const counters = slides[current].querySelectorAll('[data-count]');
+    counters.forEach(el => {
+      const target = parseInt(el.dataset.count);
+      const suffix = el.dataset.suffix || '';
+      const duration = 1200;
+      const start = performance.now();
+
+      function tick(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(eased * target).toLocaleString() + suffix;
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // Init
+  updateUI();
+  setTimeout(animateCounters, 400);
+  setTimeout(() => keyHint.classList.add('hidden'), 5000);
+})();
+</script>
+</body>
+</html>

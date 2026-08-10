@@ -49,7 +49,16 @@ export async function requireManager(request: CallableRequest): Promise<Authenti
 export function isAssignedToProject(project: Record<string, unknown>, actor: AuthenticatedActor): boolean {
   if (actor.profile.role === 'Manager') return true;
 
-  const acceptedIds = new Set([actor.uid, ...(actor.profile.legacyProfileIds || [])]);
+  // Include name and email to match legacy assignments that may reference
+  // the user by display name or email rather than Firebase UID.
+  const actorName = typeof actor.profile.name === 'string' ? actor.profile.name.toLowerCase().trim() : '';
+  const actorEmail = typeof actor.profile.email === 'string' ? actor.profile.email.toLowerCase().trim() : '';
+  const acceptedIds = new Set([
+    actor.uid,
+    ...(actor.profile.legacyProfileIds || []),
+    ...(actorName ? [actorName] : []),
+    ...(actorEmail ? [actorEmail] : []),
+  ]);
 
   // 1. Check activeAssignees string array
   const activeAssignees = Array.isArray(project.activeAssignees) ? project.activeAssignees : [];

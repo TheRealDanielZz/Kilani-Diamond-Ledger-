@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DiamondSpec } from '../types';
 import { Button } from './UI';
 import { Trash2, Plus, Clipboard } from 'lucide-react';
@@ -22,6 +22,22 @@ interface Props {
 
 export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesChange, showCost = false, mode = 'PCS' }) => {
   const [lines, setLines] = useState<EntryLine[]>(initialLines || []);
+
+  // Auto-add the first entry line once specs finish loading
+  // (covers Setters/Jewellers whose specs arrive asynchronously)
+  useEffect(() => {
+    if (specs.length > 0 && lines.length === 0 && !initialLines?.length) {
+      const firstLine: EntryLine = {
+        id: Math.random().toString(36).substr(2, 9),
+        specId: specs[0].id,
+        pcs: 0,
+        ct: 0,
+        cost: specs[0].defaultCostPerCtUsd || 0
+      };
+      setLines([firstLine]);
+      onLinesChange([firstLine]);
+    }
+  }, [specs]);
 
   const addLine = () => {
     const newLine: EntryLine = {
@@ -279,10 +295,14 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
         {lines.length === 0 && (
           <div className="p-16 text-center text-zinc-600">
             <div className="w-16 h-16 mx-auto mb-4 bg-zinc-900/50 rounded-full flex items-center justify-center border border-white/5 opacity-50">
-               <Clipboard size={24} />
+               {specs.length === 0 ? (
+                 <div className="w-6 h-6 border-2 border-zinc-600 border-t-lux-gold rounded-full animate-spin" />
+               ) : (
+                 <Clipboard size={24} />
+               )}
             </div>
-            <p className="text-sm font-medium">Ready for data entry</p>
-            <p className="text-[10px] uppercase font-black tracking-widest mt-2 opacity-40">Paste from clipboard or click "Add Diamond Entry"</p>
+            <p className="text-sm font-medium">{specs.length === 0 ? 'Loading diamond specifications…' : 'Ready for data entry'}</p>
+            {specs.length > 0 && <p className="text-[10px] uppercase font-black tracking-widest mt-2 opacity-40">Paste from clipboard or click "Add Diamond Entry"</p>}
           </div>
         )}
       </div>

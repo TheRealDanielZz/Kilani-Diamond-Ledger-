@@ -1,0 +1,576 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Download, Printer, Search, ArrowDownLeft, ArrowUpRight, Filter, 
+  Calendar, Activity, Gem, Diamond, Factory, Layers, Info, BarChart3, 
+  Sparkles, X, ChevronRight, Clock, ShieldCheck 
+} from 'lucide-react';
+import { store } from '../../services/store';
+import { InventoryMovementType, ProjectStatus, DiamondSpec, InventoryMovement, Project } from '../../types';
+
+export type DiamondShape = 'Round Brilliant' | 'Princess' | 'Emerald' | 'Oval' | 'Cushion' | 'Marquise' | 'Pear' | 'Radiant';
+
+export interface StatementRow {
+  id: string;
+  size: number;
+  shape: DiamondShape;
+  costPerCt: number;
+  quantityPcs: number;
+  weightCt: number;
+  totalValueUsd: number;
+  incomingCt: number;
+  factorySentCt: number;
+  usedCt: number;
+}
+
+export const DailyDiamondStatement: React.FC = () => {
+  const [statementDate, setStatementDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedShape, setSelectedShape] = useState<string>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'gains' | 'consumed' | 'high_value'>('all');
+  const [selectedRow, setSelectedRow] = useState<StatementRow | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'melees' | 'big_stones'>('melees');
+
+  // Real Data Integration using Store subscription
+  const [specs, setSpecs] = useState<DiamondSpec[]>(() => [...store.getSpecs()]);
+  const [movements, setMovements] = useState<InventoryMovement[]>(() => [...store.getInventoryMovements()]);
+  const [projects, setProjects] = useState<Project[]>(() => [...store.getProjects()]);
+
+  useEffect(() => {
+    return store.subscribe(() => {
+      setSpecs([...store.getSpecs()]);
+      setMovements([...store.getInventoryMovements()]);
+      setProjects([...store.getProjects()]);
+    });
+  }, []);
+
+  // Map Store Data to Detailed Statement Rows (Per Spec Size)
+  const statementRows = useMemo<StatementRow[]>(() => {
+    return specs.map(spec => {
+      const size = spec.sizeMm || 1.0;
+      const shape: DiamondShape = (spec.shape as DiamondShape) || 'Round Brilliant';
+      const costPerCt = spec.defaultCostPerCtUsd || 750;
+      const quantityPcs = spec.pcs || 0;
+      const weightCt = spec.ct || 0;
+      const totalValueUsd = weightCt * costPerCt;
+
+      // 1. Calculate incoming for this spec
+      let incomingCt = 0;
+      movements.filter(m => m.type === InventoryMovementType.SHIPMENT_IN).forEach(m => {
+        m.lines.forEach(l => {
+          if (l.specId === spec.id || l.averageWeightSnapshot === spec.ctPerStone) {
+            incomingCt += l.ct || 0;
+          }
+        });
+      });
+
+      // 2. Calculate sent to factory for this spec
+      let factorySentCt = 0;
+      movements.filter(m => m.type === InventoryMovementType.ISSUE).forEach(m => {
+        m.lines.forEach(l => {
+          if (l.specId === spec.id) {
+            factorySentCt += l.ct || 0;
+          }
+        });
+      });
+
+      // 3. Calculate used in factory for this spec across projects
+      let usedCt = 0;
+      projects.forEach(p => {
+        const summary = store.getProjectCostSummary(p.id);
+        summary.breakdown.forEach(b => {
+          if (b.componentId === spec.id) {
+            usedCt += (b.usedPcs || 0) * (spec.ctPerStone || 0);
+          }
+        });
+      });
+
+      return {
+        id: spec.id,
+        size,
+        shape,
+        costPerCt,
+        quantityPcs,
+        weightCt,
+        totalValueUsd,
+        incomingCt,
+        factorySentCt,
+        usedCt
+      };
+    }).sort((a, b) => a.size - b.size);
+  }, [specs, movements, projects]);
+
+  // Filtered Rows based on Search, Shape, and Quick Filter Mode
+  const filteredData = useMemo(() => {
+    return statementRows.filter((row) => {
+      const sizeStr = row.size.toFixed(2);
+      const matchesSearch = !searchQuery || sizeStr.includes(searchQuery) || row.costPerCt.toString().includes(searchQuery) || row.shape.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesShape = selectedShape === 'all' || row.shape === selectedShape;
+      const netCt = row.incomingCt - row.usedCt;
+
+      if (!matchesSearch || !matchesShape) return false;
+      if (filterMode === 'gains') return netCt > 0;
+      if (filterMode === 'consumed') return netCt < 0;
+      if (filterMode === 'high_value') return row.totalValueUsd >= 5000;
+      return true;
+    });
+  }, [statementRows, searchQuery, selectedShape, filterMode]);
+
+  // Statement Totals
+  const totals = useMemo(() => {
+    return statementRows.reduce(
+      (acc, r) => {
+        acc.pcs += r.quantityPcs;
+        acc.weight += r.weightCt;
+        acc.value += r.totalValueUsd;
+        acc.incoming += r.incomingCt;
+        acc.factorySent += r.factorySentCt;
+        acc.used += r.usedCt;
+        return acc;
+      },
+      { pcs: 0, weight: 0, value: 0, incoming: 0, factorySent: 0, used: 0 }
+    );
+  }, [statementRows]);
+
+  const netMovementTotal = totals.incoming - totals.used;
+
+  const handleSelectRow = (row: StatementRow) => {
+    setSelectedRow(row);
+    setDrawerOpen(true);
+  };
+
+  const handleExportExcel = () => {
+    const headers = ['Size (mm)', 'Shape', 'Cost/ct (USD)', 'Quantity (pcs)', 'Weight (ct)', 'Total Value (USD)', 'INCOMING TODAY (ct)', 'SENT TO FACTORY (ct)', 'USED IN FACTORY TODAY (ct)', 'Net Movement (ct)'];
+    const rows = filteredData.map(r => [
+      r.size.toFixed(2),
+      r.shape,
+      r.costPerCt,
+      r.quantityPcs,
+      r.weightCt.toFixed(4),
+      r.totalValueUsd.toFixed(2),
+      r.incomingCt.toFixed(4),
+      r.factorySentCt.toFixed(4),
+      r.usedCt.toFixed(4),
+      (r.incomingCt - r.usedCt).toFixed(4)
+    ]);
+    
+    const summaryRow = ['TOTALS', '', '', totals.pcs, totals.weight.toFixed(4), totals.value.toFixed(2), totals.incoming.toFixed(4), totals.factorySent.toFixed(4), totals.used.toFixed(4), netMovementTotal.toFixed(4)];
+
+    const csvContent = 'data:text/csv;charset=utf-8,' 
+      + ['KILANI DIAMOND REPORTER - DAILY DIAMOND STATEMENT', `Date: ${statementDate}`, '']
+          .concat([headers.join(',')])
+          .concat(rows.map(e => e.join(',')))
+          .concat([''])
+          .concat([summaryRow.join(',')])
+          .join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Kilani_Diamond_Statement_${statementDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#060a14] p-4 md:p-8 font-sans text-white selection:bg-amber-500/30">
+      <div className="max-w-7xl mx-auto space-y-8">
+
+        {/* ── TOP NAVIGATION TABS (MELEES / BIG STONES) ──────────────────────── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex bg-[#0d1220] p-1.5 rounded-2xl border border-zinc-800 shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
+            <button 
+              onClick={() => setActiveTab('melees')}
+              className={`relative z-10 px-8 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
+                activeTab === 'melees'
+                  ? 'text-black bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_0_24px_rgba(245,158,11,0.35)]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Gem className="inline-block w-4 h-4 mr-2" /> MELEES
+            </button>
+            <button 
+              disabled
+              className="relative z-10 px-8 py-3.5 rounded-xl text-sm font-bold text-zinc-500 opacity-60 cursor-not-allowed flex items-center gap-2"
+            >
+              <Diamond className="w-4 h-4" /> BIG STONES 
+              <span className="text-[9px] font-black uppercase tracking-widest bg-zinc-800/80 text-zinc-400 px-2 py-0.5 rounded-md border border-zinc-700/50">
+                Coming Soon
+              </span>
+            </button>
+          </div>
+          
+          {/* Time & Action Controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2.5 bg-[#0d1220]/80 border border-zinc-800 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg">
+              <Calendar className="w-4 h-4 text-amber-400" />
+              <input
+                type="date"
+                value={statementDate}
+                onChange={(e) => setStatementDate(e.target.value)}
+                className="bg-transparent text-white focus:outline-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={handleExportExcel}
+              className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-transform active:scale-95"
+            >
+              <Download size={14} /> Export Excel
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className="bg-[#0d1220] hover:bg-zinc-800 text-zinc-300 border border-zinc-800 font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors"
+            >
+              <Printer size={14} /> Print
+            </button>
+          </div>
+        </div>
+
+        {/* ── HERO EXECUTIVE APPLE WIDGETS GRID ──────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+          
+          {/* Widget 1: Inventory Total Value (Gold Glow) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-[32px] p-6 relative overflow-hidden bg-gradient-to-b from-[#111625] to-[#0a0d16] border border-amber-500/30 shadow-[0_20px_40px_-15px_rgba(245,158,11,0.15)] group hover:border-amber-500/50 transition-all duration-500"
+          >
+            <div className="absolute -inset-[100%] bg-[radial-gradient(circle_at_50%_100%,rgba(245,158,11,0.18),transparent_60%)] opacity-60 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="flex items-center justify-between relative z-10 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400/90 flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5" /> Inventory Total Value
+              </span>
+              <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <Gem className="w-4 h-4 text-amber-400" />
+              </div>
+            </div>
+            <div className="relative z-10">
+              <div className="text-3xl lg:text-4xl font-black text-white tabular-nums tracking-tighter mb-1">
+                ${totals.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-zinc-400 text-xs font-semibold">USD Stock Valuation</div>
+            </div>
+          </motion.div>
+
+          {/* Widget 2: Total Income Today (Emerald Glow) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="rounded-[32px] p-6 relative overflow-hidden bg-gradient-to-b from-[#0f1f18] to-[#0a110e] border border-emerald-500/30 shadow-[0_20px_40px_-15px_rgba(16,185,129,0.15)] group hover:border-emerald-500/50 transition-all duration-500"
+          >
+            <div className="absolute -inset-[100%] bg-[radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.18),transparent_60%)] opacity-60 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="flex items-center justify-between relative z-10 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400 flex items-center gap-1.5">
+                <ArrowDownLeft className="w-3.5 h-3.5" /> Total Income Today
+              </span>
+              <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+              </div>
+            </div>
+            <div className="relative z-10">
+              <div className="text-3xl lg:text-4xl font-black text-emerald-400 tabular-nums tracking-tighter mb-1 drop-shadow-[0_0_12px_rgba(16,185,129,0.3)]">
+                +{totals.incoming.toFixed(2)} <span className="text-sm font-bold text-emerald-500">ct</span>
+              </div>
+              <div className="text-zinc-400 text-xs font-semibold">Incoming Stock</div>
+            </div>
+          </motion.div>
+
+          {/* Widget 3: Sent to Factory (Cyan Glow) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="rounded-[32px] p-6 relative overflow-hidden bg-gradient-to-b from-[#0c1a26] to-[#080f18] border border-cyan-500/30 shadow-[0_20px_40px_-15px_rgba(6,182,212,0.15)] group hover:border-cyan-500/50 transition-all duration-500"
+          >
+            <div className="absolute -inset-[100%] bg-[radial-gradient(circle_at_50%_100%,rgba(6,182,212,0.18),transparent_60%)] opacity-60 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="flex items-center justify-between relative z-10 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-cyan-400 flex items-center gap-1.5">
+                <Factory className="w-3.5 h-3.5" /> Sent to Factory
+              </span>
+              <div className="w-8 h-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <Layers className="w-4 h-4 text-cyan-400" />
+              </div>
+            </div>
+            <div className="relative z-10">
+              <div className="text-3xl lg:text-4xl font-black text-cyan-300 tabular-nums tracking-tighter mb-1">
+                {totals.factorySent.toFixed(2)} <span className="text-sm font-bold text-cyan-500">ct</span>
+              </div>
+              <div className="text-zinc-400 text-xs font-semibold">Dispatched to Setters</div>
+            </div>
+          </motion.div>
+
+          {/* Widget 4: Used in Factory (Amber Glow) */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+            className="rounded-[32px] p-6 relative overflow-hidden bg-gradient-to-b from-[#21160a] to-[#120c05] border border-amber-500/30 shadow-[0_20px_40px_-15px_rgba(245,158,11,0.15)] group hover:border-amber-500/50 transition-all duration-500"
+          >
+            <div className="absolute -inset-[100%] bg-[radial-gradient(circle_at_50%_100%,rgba(245,158,11,0.18),transparent_60%)] opacity-60 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="flex items-center justify-between relative z-10 mb-4">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400 flex items-center gap-1.5">
+                <ArrowUpRight className="w-3.5 h-3.5" /> Used in Factory
+              </span>
+              <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-amber-400" />
+              </div>
+            </div>
+            <div className="relative z-10">
+              <div className="text-3xl lg:text-4xl font-black text-amber-300 tabular-nums tracking-tighter mb-1">
+                {totals.used.toFixed(2)} <span className="text-sm font-bold text-amber-500">ct</span>
+              </div>
+              <div className="text-zinc-400 text-xs font-semibold">Setted in Pieces</div>
+            </div>
+          </motion.div>
+
+        </div>
+
+        {/* ── SEARCH & FILTER CONTROLS ────────────────────────────── */}
+        <div className="bg-[#0d1220] rounded-[32px] border border-zinc-800/80 p-6 shadow-2xl space-y-4">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+            
+            {/* Shape Filter Pills */}
+            <div className="flex items-center gap-1.5 bg-zinc-900/60 p-1.5 rounded-2xl border border-zinc-800/50 overflow-x-auto w-full lg:w-auto">
+              {['all', 'Round Brilliant', 'Princess', 'Emerald', 'Oval', 'Cushion', 'Marquise'].map((shape) => (
+                <button
+                  key={shape}
+                  onClick={() => setSelectedShape(shape)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                    selectedShape === shape
+                      ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                  }`}
+                >
+                  {shape === 'all' ? 'All Shapes' : shape}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative w-full lg:w-80">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Search size (e.g. 0.80), shape..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-zinc-900/60 border border-zinc-800 rounded-2xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Quick Filter Pills */}
+          <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/60">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 mr-2 flex items-center gap-1">
+              <Filter size={12} /> Filter:
+            </span>
+            {[
+              { key: 'all', label: `All Sizes (${statementRows.length})` },
+              { key: 'gains', label: 'Gains Only (+)' },
+              { key: 'consumed', label: 'Consumed Only (-)' },
+              { key: 'high_value', label: 'High Value (≥ $5k)' }
+            ].map(pill => (
+              <button
+                key={pill.key}
+                onClick={() => setFilterMode(pill.key as any)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  filterMode === pill.key
+                    ? 'bg-zinc-800 text-amber-400 border border-amber-500/30'
+                    : 'text-zinc-500 hover:text-zinc-300 bg-zinc-900/30'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── DETAILED STATEMENT TABLE (PER SIZE) ──────────────────────── */}
+        <div className="bg-[#0d1220] rounded-[32px] border border-zinc-800/80 shadow-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-zinc-900/90 text-zinc-400 font-extrabold uppercase tracking-wider border-b border-zinc-800">
+                  <th className="py-4 px-5">Size (mm)</th>
+                  <th className="py-4 px-4">Shape</th>
+                  <th className="py-4 px-4 text-right">Cost/ct</th>
+                  <th className="py-4 px-4 text-right">Qty (pcs)</th>
+                  <th className="py-4 px-4 text-right">Weight (ct)</th>
+                  <th className="py-4 px-4 text-right">Total Value</th>
+                  <th className="py-4 px-4 text-right text-emerald-400">Incoming</th>
+                  <th className="py-4 px-4 text-right text-cyan-400">Sent Out</th>
+                  <th className="py-4 px-4 text-right text-amber-400">Used</th>
+                  <th className="py-4 px-4 text-right">Net Move</th>
+                  <th className="py-4 px-4"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {filteredData.map((row) => {
+                  const net = row.incomingCt - row.usedCt;
+                  const isPositive = net > 0;
+                  const isNegative = net < 0;
+                  const isSelected = selectedRow?.id === row.id;
+
+                  return (
+                    <tr
+                      key={row.id}
+                      onClick={() => handleSelectRow(row)}
+                      className={`cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-amber-500/10 border-l-4 border-l-amber-500' 
+                          : 'hover:bg-zinc-800/40'
+                      }`}
+                    >
+                      <td className="py-3.5 px-5 font-extrabold text-white text-sm tabular-nums">
+                        {row.size.toFixed(2)} mm
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-zinc-300">
+                        <span className="inline-flex items-center gap-1.5 bg-zinc-900 px-2.5 py-1 rounded-md border border-zinc-800 text-[11px]">
+                          {row.shape}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-zinc-400">${row.costPerCt}</td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-white">{row.quantityPcs.toLocaleString()}</td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-amber-400">{row.weightCt.toFixed(3)} ct</td>
+                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-white">${row.totalValueUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-400">
+                        {row.incomingCt > 0 ? `+${row.incomingCt.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-400">
+                        {row.factorySentCt > 0 ? `${row.factorySentCt.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-amber-300">
+                        {row.usedCt > 0 ? `${row.usedCt.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold">
+                        <span className={`px-2 py-0.5 rounded ${isPositive ? 'text-emerald-400 bg-emerald-500/10' : isNegative ? 'text-rose-400 bg-rose-500/10' : 'text-zinc-500'}`}>
+                          {isPositive ? '+' : ''}{net.toFixed(2)} ct
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <ChevronRight className="w-4 h-4 text-zinc-600 inline-block" />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-zinc-900 text-white font-extrabold border-t-2 border-amber-500/50 text-xs">
+                  <td className="py-4 px-5 text-amber-400 uppercase tracking-wider">Totals ({filteredData.length} sizes)</td>
+                  <td className="py-4 px-4">--</td>
+                  <td className="py-4 px-4 text-right">--</td>
+                  <td className="py-4 px-4 text-right font-mono">{totals.pcs.toLocaleString()}</td>
+                  <td className="py-4 px-4 text-right font-mono text-amber-400">{totals.weight.toFixed(2)} ct</td>
+                  <td className="py-4 px-4 text-right font-mono text-white">${totals.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td className="py-4 px-4 text-right font-mono text-emerald-400">+{totals.incoming.toFixed(2)} ct</td>
+                  <td className="py-4 px-4 text-right font-mono text-cyan-400">{totals.factorySent.toFixed(2)} ct</td>
+                  <td className="py-4 px-4 text-right font-mono text-amber-300">{totals.used.toFixed(2)} ct</td>
+                  <td className="py-4 px-4 text-right font-mono">
+                    <span className={netMovementTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {netMovementTotal >= 0 ? '+' : ''}{netMovementTotal.toFixed(2)} ct
+                    </span>
+                  </td>
+                  <td className="py-4 px-4"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* ── DETAIL DRAWER (SLIDES OUT ON ROW CLICK) ──────────────────────── */}
+        <AnimatePresence>
+          {drawerOpen && selectedRow && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex justify-end"
+              onClick={() => setDrawerOpen(false)}
+            >
+              <motion.div
+                initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                className="w-full max-w-md bg-[#0d1220] border-l border-zinc-800 p-6 h-full overflow-y-auto space-y-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Drawer Header */}
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">Diamond Size Spec</div>
+                    <h3 className="text-2xl font-black text-white mt-0.5">{selectedRow.size.toFixed(2)} mm {selectedRow.shape}</h3>
+                  </div>
+                  <button onClick={() => setDrawerOpen(false)} className="p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Spec Overview Card */}
+                <div className="bg-gradient-to-br from-zinc-900 to-black p-5 rounded-2xl border border-amber-500/20 space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400">Cost / Carat:</span>
+                    <span className="font-bold text-white">${selectedRow.costPerCt} USD</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400">Current Stock:</span>
+                    <span className="font-bold text-amber-400">{selectedRow.quantityPcs.toLocaleString()} pcs ({selectedRow.weightCt.toFixed(3)} ct)</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-zinc-800 pt-2">
+                    <span className="text-zinc-400">Total Size Value:</span>
+                    <span className="font-black text-white text-base">${selectedRow.totalValueUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} USD</span>
+                  </div>
+                </div>
+
+                {/* Movement Breakdown */}
+                <div className="space-y-3">
+                  <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Movement Breakdown</div>
+                  
+                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                      <ArrowDownLeft className="w-5 h-5 text-emerald-400" />
+                      <div>
+                        <div className="text-xs font-bold text-white">Incoming Stock</div>
+                        <div className="text-[11px] text-emerald-400">Received today</div>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono font-black text-emerald-400 text-sm">
+                      +{selectedRow.incomingCt.toFixed(2)} ct
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                      <Factory className="w-5 h-5 text-cyan-400" />
+                      <div>
+                        <div className="text-xs font-bold text-white">Sent to Factory</div>
+                        <div className="text-[11px] text-cyan-400">Dispatched</div>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono font-black text-cyan-300 text-sm">
+                      {selectedRow.factorySentCt.toFixed(2)} ct
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                      <ArrowUpRight className="w-5 h-5 text-amber-400" />
+                      <div>
+                        <div className="text-xs font-bold text-white">Used in Factory</div>
+                        <div className="text-[11px] text-amber-400">Setted</div>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono font-black text-amber-300 text-sm">
+                      {selectedRow.usedCt.toFixed(2)} ct
+                    </div>
+                  </div>
+                </div>
+
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      </div>
+    </div>
+  );
+};

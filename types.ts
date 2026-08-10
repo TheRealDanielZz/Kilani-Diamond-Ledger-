@@ -104,6 +104,18 @@ export enum Priority {
   LOW = 'Low'
 }
 
+export interface StaffPerformanceOverride {
+  activeProjectCount?: number | null;
+  bagsInHandCount?: number | null;
+  pendingReturnCount?: number | null;
+  stonesSet?: number | null;
+  currentMonthEstimatedCarats?: number | null;
+  currentMonthStones?: number | null;
+  reason?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -122,6 +134,7 @@ export interface User {
   location?: string;
   authUid?: string;
   legacyProfileIds?: string[];
+  performanceOverrides?: StaffPerformanceOverride;
 }
 
 export interface InventoryNote {
@@ -400,9 +413,13 @@ export interface Project {
   date_picked_up?: string; // When moved to Closed
   last_status_change_at?: string;
   last_status_change_by?: string;
+  updatedAt?: string;
 
   salesRepId?: string;
   assignedSetterId?: string; // Legacy
+  assignedJewellerId?: string; // Legacy
+  assignedDesignerId?: string; // Legacy
+  createdById?: string; // Legacy
   assignments: ProjectAssignment[];
   activeAssignees?: string[];
   services: ProjectService[];
@@ -581,6 +598,72 @@ export interface SetterAnalyticsEntry {
   heldBagNumbers: string[];
   estimatedBrokenPcs: number;
   isBlockedTimeExcluded?: boolean;
+}
+
+export type SetterTrackingDataQuality =
+  | 'phase9_server_observed'
+  | 'phase9_activation_baseline'
+  | 'legacy_reference_only';
+
+export type SetterTrackingEventType =
+  | 'assignment_started'
+  | 'assignment_ended'
+  | 'project_completed'
+  | 'stage_transition';
+
+export interface SetterTrackingEvent {
+  id: string;
+  schemaVersion: 1;
+  eventType: SetterTrackingEventType;
+  setterUid: string;
+  projectId: string;
+  intervalId?: string;
+  occurredAt: unknown;
+  source: 'phase9_activation_baseline' | 'project_change' | 'user_role_change';
+  sourceEventId: string;
+  dataQuality: SetterTrackingDataQuality;
+  stageName?: string;
+}
+
+export interface SetterAssignmentInterval {
+  id: string;
+  schemaVersion: 1;
+  setterUid: string;
+  projectId: string;
+  startedAt: unknown;
+  endedAt: unknown | null;
+  active: boolean;
+  startEventId: string;
+  endEventId: string | null;
+  completedAt: unknown | null;
+  completionEventId: string | null;
+  dataQuality: SetterTrackingDataQuality;
+  reliableElapsedStartsAt: unknown;
+  historicalStartAvailable: boolean;
+  legacyRecordedAssignedAt: string | null;
+}
+
+export interface SetterAnalyticsFutureContract {
+  version: 'phase9-setter-tracking-v1';
+  analyticsEnabled: false;
+  dashboardEnabled: false;
+  csvExportEnabled: false;
+  pdfExportEnabled: false;
+  trackedRole: 'Setter';
+  productivityScoringEnabled: false;
+  message: 'Setter analytics will be available in a future update.';
+}
+
+export interface SetterBagFutureContext {
+  bagId: string;
+  bagNumber: string;
+  projectId: string;
+  setterId: string;
+  issueDate: string | null;
+  issueTimingQuality: 'server_confirmed' | 'legacy_recorded' | 'unavailable';
+  daysHeld: number | null;
+  pendingReturn: boolean;
+  confirmedBrokenPieces: number;
 }
 
 export interface CostBreakdownItem {

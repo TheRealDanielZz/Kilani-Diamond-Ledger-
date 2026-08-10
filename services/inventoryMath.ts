@@ -22,6 +22,17 @@ import { InventoryMovementType, InventoryLine, InventoryMovement, DiamondSpec } 
  *  "0 pieces ⇒ 0 carats" rule. */
 export const MIXED_UNSORTED_SPEC_ID = 'MIXED-UNSORTED';
 
+/** Canonical location string used by cloud functions for Toronto melee inventory. */
+export const TORONTO_MELEE = 'TORONTO_MELEE';
+
+/** Returns true when a spec's location value refers to the Toronto melee pool.
+ *  Mirrors the cloud function's `isTorontoMeleeLocation` — accepts all legacy
+ *  variants (undefined, null, '', 'Melee') AND the canonical 'TORONTO_MELEE'
+ *  that the cloud function returns to setter clients via `sanitizedSpec`. */
+export function isMeleeLocation(location: string | undefined | null): boolean {
+    return !location || location === 'Melee' || location === TORONTO_MELEE;
+}
+
 /** Carats are displayed to 3 decimals. Any residual balance smaller than half
  *  of the last displayed digit is pure floating-point noise and is normalised
  *  to zero. This tolerance is ONLY for harmless float residue — it must never

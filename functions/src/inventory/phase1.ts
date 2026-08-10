@@ -194,6 +194,7 @@ function sanitizedSpec(doc: FirebaseFirestore.QueryDocumentSnapshot) {
     shape: spec.shape || '',
     sizeMm: Number(spec.sizeMm || 0),
     ctPerStone: Number(spec.ctPerStone || 0),
+    defaultCostPerCtUsd: Number(spec.defaultCostPerCtUsd || 0),
     location: TORONTO_MELEE,
   };
 }
