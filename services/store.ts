@@ -106,6 +106,7 @@ class StoreService {
     private currentUser: User | null = null;
     private listeners: (() => void)[] = [];
     private unsubscribes: (() => void)[] = [];
+    private _version = 0;
 
     public isDemoMode = false;
 
@@ -682,8 +683,11 @@ class StoreService {
     }
 
     notify() {
+        this._version++;
         this.listeners.forEach(l => l());
     }
+
+    getVersion() { return this._version; }
 
     getSystemLogs() { return this.systemLogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
 

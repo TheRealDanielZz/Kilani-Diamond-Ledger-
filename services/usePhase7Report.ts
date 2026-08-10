@@ -1,12 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, useRef } from 'react';
 import { Phase7ReportSection } from '../functions/src/reports/contract';
 import { ReportFilterState, toPhase7Request } from './reportFilters';
-import { Phase7ReportPage, queryPhase7Report } from './reportsApi';
+import { Phase7ReportPage, queryPhase7Report, queryPhase7ReportLocal } from './reportsApi';
+import { store } from './store';
 
 interface UsePhase7ReportOptions {
   enabled?: boolean;
   page?: number;
   pageSize?: number;
+}
+
+/** Subscribe to the store's version counter so we re-render (and re-query) when Firestore snapshots arrive. */
+function useStoreVersion(): number {
+  return useSyncExternalStore(
+    (cb) => store.subscribe(cb),
+    () => store.getVersion(),
+  );
 }
 
 export function usePhase7Report<T = Record<string, unknown>>(
@@ -24,6 +33,11 @@ export function usePhase7Report<T = Record<string, unknown>>(
   });
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
+  // Once the Cloud Function fails, switch permanently to local-only mode
+  // for the lifetime of this component. No more wasted HTTP round-trips.
+  const localOnlyRef = useRef(false);
+
+  const storeVersion = useStoreVersion();
 
   const request = useMemo(() => {
     const offset = Math.max(0, page - 1) * pageSize;
@@ -46,6 +60,18 @@ export function usePhase7Report<T = Record<string, unknown>>(
       setLoading(false);
       return;
     }
+
+    // If we already know Cloud Functions are broken, skip the HTTP call
+    // entirely and generate the report from local store data. This path
+    // is re-triggered by storeVersion so we always have the latest data.
+    if (localOnlyRef.current) {
+      const localResult = queryPhase7ReportLocal<T>(request);
+      setResult(localResult);
+      setLoading(false);
+      setError('');
+      return;
+    }
+
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setLoading(true);
@@ -55,7 +81,13 @@ export function usePhase7Report<T = Record<string, unknown>>(
           if (!cancelled) setResult(next);
         })
         .catch(cause => {
-          if (!cancelled) setError(cause instanceof Error ? cause.message : 'Unable to load this report.');
+          if (!cancelled) {
+            // Cloud Function failed — switch to local-only mode
+            localOnlyRef.current = true;
+            const localResult = queryPhase7ReportLocal<T>(request);
+            setResult(localResult);
+            setError('');
+          }
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -65,7 +97,9 @@ export function usePhase7Report<T = Record<string, unknown>>(
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [request, enabled]);
+    // storeVersion is included so that in local-only mode, the report
+    // re-generates whenever Firestore snapshot data arrives.
+  }, [request, enabled, storeVersion]);
 
   return { ...result, loading, error, request };
 }

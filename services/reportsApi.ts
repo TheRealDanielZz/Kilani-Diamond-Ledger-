@@ -149,6 +149,15 @@ function queryPhase7ReportClientFallback<T>(request: Phase7FilterRequest): Phase
   };
 }
 
+/**
+ * Synchronous, local-only report generator.  Used by the hook in
+ * local-only mode (after a Cloud Function failure) so data refreshes
+ * reactively with zero HTTP overhead.
+ */
+export function queryPhase7ReportLocal<T>(request: Phase7FilterRequest): Phase7ReportPage<T> {
+  return queryPhase7ReportClientFallback<T>(request);
+}
+
 export async function queryPhase7Report<T = Record<string, unknown>>(
   request: Phase7FilterRequest,
 ): Promise<Phase7ReportPage<T>> {
