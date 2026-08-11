@@ -154,8 +154,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                return { ...line, issuedPcs: Math.min(line.requestedPcs, stock?.availablePcs || 0) };
             }));
          }).catch(error => {
-            showToast(error?.message || 'Unable to load authoritative availability.');
-            setFulfillmentSpecs([]);
+            const raw = String(error?.message || '').toLowerCase();
+            const message = (raw === 'internal' || !raw) ? 'Unable to load Cloud availability, using local stock.' : error.message;
+            showToast(message);
          }).finally(() => setPreviewLoading(false));
       } else {
          setBagNum('');

@@ -33,11 +33,19 @@ export function usePhase7Report<T = Record<string, unknown>>(
   });
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
-  // Once the Cloud Function fails, switch permanently to local-only mode
-  // for the lifetime of this component. No more wasted HTTP round-trips.
-  const localOnlyRef = useRef(false);
+  // Flag to indicate if Cloud Function is currently unreachable (e.g. offline)
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
 
   const storeVersion = useStoreVersion();
+
+  // Listen to browser online/offline status to recover server-side queries automatically
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOfflineFallback(false);
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   const request = useMemo(() => {
     const offset = Math.max(0, page - 1) * pageSize;
@@ -61,10 +69,9 @@ export function usePhase7Report<T = Record<string, unknown>>(
       return;
     }
 
-    // If we already know Cloud Functions are broken, skip the HTTP call
-    // entirely and generate the report from local store data. This path
-    // is re-triggered by storeVersion so we always have the latest data.
-    if (localOnlyRef.current) {
+    // If browser is explicitly offline or previously failed in this offline window,
+    // generate from local store and update state.
+    if (!navigator.onLine || isOfflineFallback) {
       const localResult = queryPhase7ReportLocal<T>(request);
       setResult(localResult);
       setLoading(false);
@@ -78,12 +85,15 @@ export function usePhase7Report<T = Record<string, unknown>>(
       setError('');
       void queryPhase7Report<T>(request)
         .then(next => {
-          if (!cancelled) setResult(next);
+          if (!cancelled) {
+            setResult(next);
+            setIsOfflineFallback(false);
+          }
         })
         .catch(cause => {
           if (!cancelled) {
-            // Cloud Function failed — switch to local-only mode
-            localOnlyRef.current = true;
+            // Temporary network/CF failure — switch to local fallback for current offline window
+            setIsOfflineFallback(true);
             const localResult = queryPhase7ReportLocal<T>(request);
             setResult(localResult);
             setError('');
@@ -97,9 +107,7 @@ export function usePhase7Report<T = Record<string, unknown>>(
       cancelled = true;
       window.clearTimeout(timer);
     };
-    // storeVersion is included so that in local-only mode, the report
-    // re-generates whenever Firestore snapshot data arrives.
-  }, [request, enabled, storeVersion]);
+  }, [request, enabled, isOfflineFallback, storeVersion]);
 
-  return { ...result, loading, error, request };
+  return { ...result, loading, error, request, isOfflineFallback };
 }

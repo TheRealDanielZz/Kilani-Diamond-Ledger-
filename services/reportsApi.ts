@@ -114,6 +114,7 @@ function queryPhase7ReportClientFallback<T>(request: Phase7FilterRequest): Phase
     const requests = store.getRequests();
     const statusFilter = request.selections?.status || [];
     const filtered = requests.filter(r => !statusFilter.length || statusFilter.includes(r.status));
+    filtered.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
     const pageRows = filtered.slice(offset, offset + pageSize) as T[];
     const nextOffset = offset + pageSize;
     const nextCursor = nextOffset < filtered.length ? encodePhase7Cursor(nextOffset) : null;

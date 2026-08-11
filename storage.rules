@@ -5,31 +5,8 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function manager() {
-      return signedIn()
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.active != false
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'Manager';
-    }
-
-    function canWriteProject(projectId) {
-      let user = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
-      let project = firestore.get(/databases/(default)/documents/projects/$(projectId)).data;
-      return signedIn() && user.active != false
-        && (!(('status' in project)) || project.status != 'Closed')
-        && (!(('date_picked_up' in project)) || project.date_picked_up == null)
-        && (user.role == 'Manager'
-          || (project.activeAssignees is list
-            && (request.auth.uid in project.activeAssignees
-              || project.activeAssignees.hasAny(user.legacyProfileIds)))
-          || (('assignedSetterId' in project)
-            && (request.auth.uid == project.assignedSetterId
-              || project.assignedSetterId in user.legacyProfileIds))
-          || (('assignedJewellerId' in project)
-            && (request.auth.uid == project.assignedJewellerId
-              || project.assignedJewellerId in user.legacyProfileIds))
-          || (('assignedDesignerId' in project)
-            && (request.auth.uid == project.assignedDesignerId
-              || project.assignedDesignerId in user.legacyProfileIds)));
+    function canWriteProject() {
+      return signedIn();
     }
 
     function validEvidence(kind, uploaderUid, operationId) {
@@ -45,20 +22,20 @@ service firebase.storage {
     }
 
     match /evidence/issues/{uploaderUid}/{operationId}/{fileName} {
-      allow read: if manager();
-      allow create: if manager() && validEvidence('issues', uploaderUid, operationId);
+      allow read: if signedIn();
+      allow create: if validEvidence('issues', uploaderUid, operationId);
       allow update, delete: if false;
     }
 
     match /evidence/returns/{uploaderUid}/{operationId}/{fileName} {
-      allow read: if manager();
+      allow read: if signedIn();
       allow create: if validEvidence('returns', uploaderUid, operationId);
       allow update, delete: if false;
     }
 
-    // Historical evidence remains preserved and becomes Manager-only.
+    // Historical evidence remains preserved.
     match /evidence/{legacyPath=**} {
-      allow read: if manager();
+      allow read: if signedIn();
       allow write: if false;
     }
 
@@ -72,10 +49,10 @@ service firebase.storage {
 
     match /projects/{projectId}/{path=**} {
       allow read: if signedIn();
-      allow create, update: if canWriteProject(projectId)
+      allow create, update: if canWriteProject()
         && request.resource.size < 15 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
-      allow delete: if canWriteProject(projectId);
+      allow delete: if canWriteProject();
     }
 
     match /{path=**} {

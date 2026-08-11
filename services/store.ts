@@ -492,23 +492,14 @@ class StoreService {
                     }
                 }
                 if (col === 'projects') {
-                    this.projects = data as Project[];
-                    const canRepairAssignments = this.currentUser?.role === Role.MANAGER || this.currentUser?.role === Role.DESIGNER;
-                    const missing = canRepairAssignments ? this.projects.filter(p => !p.activeAssignees) : [];
-                    if (missing.length > 0) {
-                        missing.forEach(async p => {
-                            const activeIds = (p.assignments || []).filter(a => a.active).map(a => a.userId);
-                            if (!this.isDemoMode) {
-                                try {
-                                    await updateDoc(doc(db, 'projects', p.id), { activeAssignees: activeIds });
-                                } catch (err) {
-                                    console.error("Failed to repair activeAssignees for project:", p.id, err);
-                                }
-                            } else {
-                                p.activeAssignees = activeIds;
-                            }
-                        });
-                    }
+                    this.projects = data.map(p => {
+                        const proj = p as Project;
+                        if (!proj.activeAssignees) {
+                            const activeIds = (proj.assignments || []).filter(a => a.active).map(a => a.userId);
+                            return { ...proj, activeAssignees: activeIds };
+                        }
+                        return proj;
+                    });
                 }
                 this.notify();
             }, (error) => {
@@ -2239,25 +2230,32 @@ class StoreService {
         return this.requests;
     }
 
+    private getLocalFulfillmentPreview(requestId: string): FulfillmentPreview {
+        return {
+            requestId,
+            specs: this.specs.filter(spec => isMeleeLocation(spec.location)).map(spec => ({
+                id: spec.id,
+                label: spec.label,
+                shape: spec.shape || '',
+                sizeMm: spec.sizeMm,
+                ctPerStone: spec.ctPerStone,
+                location: 'TORONTO_MELEE' as const,
+                availablePcs: spec.pcs || 0,
+                maximumIssuePcs: spec.pcs || 0,
+                recommendedIssuePcs: 0,
+                availabilityState: (spec.pcs || 0) > 0 ? 'AVAILABLE' as const : 'OUT_OF_STOCK' as const,
+            })),
+        };
+    }
+
     getFulfillmentPreview(requestId: string): Promise<FulfillmentPreview> {
         if (this.isDemoMode) {
-            return Promise.resolve({
-                requestId,
-                specs: this.specs.filter(spec => isMeleeLocation(spec.location)).map(spec => ({
-                    id: spec.id,
-                    label: spec.label,
-                    shape: spec.shape || '',
-                    sizeMm: spec.sizeMm,
-                    ctPerStone: spec.ctPerStone,
-                    location: 'TORONTO_MELEE' as const,
-                    availablePcs: spec.pcs || 0,
-                    maximumIssuePcs: spec.pcs || 0,
-                    recommendedIssuePcs: 0,
-                    availabilityState: (spec.pcs || 0) > 0 ? 'AVAILABLE' as const : 'OUT_OF_STOCK' as const,
-                })),
-            });
+            return Promise.resolve(this.getLocalFulfillmentPreview(requestId));
         }
-        return inventoryApi.getFulfillmentPreview(requestId);
+        return inventoryApi.getFulfillmentPreview(requestId).catch((err) => {
+            console.warn('Cloud getFulfillmentPreview failed, using local specs fallback:', err);
+            return this.getLocalFulfillmentPreview(requestId);
+        });
     }
 
     async cancelInventoryRequest(requestId: string) {

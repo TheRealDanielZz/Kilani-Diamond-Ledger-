@@ -236,7 +236,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                           }}
                                        >
                                           {fulfillmentSpecs.map(s => (
-                                             <option key={s.id} value={s.id} className="bg-zinc-900 [data-theme=light]:bg-white text-white [data-theme=light]:text-zinc-900">
+                                             <option key={s.id} value={s.id} className="bg-white text-black">
                                                 {s.label} ({s.availablePcs} pcs)
                                              </option>
                                           ))}
