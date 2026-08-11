@@ -537,8 +537,9 @@ class StoreService {
             });
         } else {
             void this.refreshPrivateInventoryContext();
-            const contextTimer = window.setInterval(() => void this.refreshPrivateInventoryContext(), 30_000);
-            this.unsubscribes.push(() => window.clearInterval(contextTimer));
+            this.unsubscribes.push(onSnapshot(doc(db, 'settings', 'private_context_version'), () => {
+                void this.refreshPrivateInventoryContext();
+            }, error => console.warn('Listening to private_context_version:', error)));
         }
 
         // Collections restricted to Managers & Designers (unauthorized users get no raw inventory)
@@ -609,8 +610,13 @@ class StoreService {
                 const evidence = snap.docs.map(d => ({ ...d.data(), id: d.id })) as EvidenceImage[];
                 void Promise.all(evidence.map(async item => {
                     if (!item.storagePath) return item;
+                    if (this.evidenceUrlCache.has(item.storagePath)) {
+                        const photoUrl = this.evidenceUrlCache.get(item.storagePath)!;
+                        return { ...item, photoUrl, thumbnailUrl: photoUrl };
+                    }
                     try {
                         const photoUrl = await getInventoryEvidenceUrl(item.storagePath);
+                        this.evidenceUrlCache.set(item.storagePath, photoUrl);
                         return { ...item, photoUrl, thumbnailUrl: photoUrl };
                     } catch (error) {
                         console.error('Unable to resolve Manager evidence URL:', error);
@@ -666,6 +672,9 @@ class StoreService {
         this.evidenceImages = [];
     }
 
+    private _notifyScheduled = false;
+    private evidenceUrlCache = new Map<string, string>();
+
     subscribe(listener: () => void) {
         this.listeners.push(listener);
         return () => {
@@ -675,7 +684,13 @@ class StoreService {
 
     notify() {
         this._version++;
-        this.listeners.forEach(l => l());
+        if (!this._notifyScheduled) {
+            this._notifyScheduled = true;
+            queueMicrotask(() => {
+                this._notifyScheduled = false;
+                this.listeners.forEach(l => l());
+            });
+        }
     }
 
     getVersion() { return this._version; }
