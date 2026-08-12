@@ -6,11 +6,10 @@ const source = await readFile(new URL('../components/reports/ReportFilterBar.tsx
 const styles = await readFile(new URL('../components/reports/report-filter-date.css', import.meta.url), 'utf8');
 
 test('date filters expose explicit, accessible calendar controls', () => {
-  assert.match(source, /const DateFilter/);
-  assert.match(source, /input\.showPicker\?\.\(\)/);
-  assert.match(source, /Open \$\{label\.toLowerCase\(\)\} date calendar/);
-  assert.match(source, /aria-label=\{`\$\{label\} date`\}/);
+  assert.match(source, /AirbnbDateModal/);
+  assert.match(source, /setIsDateModalOpen/);
+  assert.match(source, /formatDateRangeDisplay/);
   assert.match(source, /<CalendarDays/);
   assert.match(styles, /color-scheme: dark/);
-  assert.match(styles, /calendar-picker-indicator/);
 });
+

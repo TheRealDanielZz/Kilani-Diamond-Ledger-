@@ -1840,6 +1840,35 @@ export const DailyDiamondStatement: React.FC = () => {
                         {(selectedRow.incomingCt - selectedRow.usedCt).toFixed(3)} ct
                       </div>
                     </div>
+
+                    {/* Deep Drill-Down Navigation Trace */}
+                    {store.getBags().filter(b => b.items.some(i => i.specId === selectedRow.specId)).length > 0 && (
+                      <div className="space-y-2 pt-3 border-t border-zinc-800/80">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-amber-400 flex items-center justify-between">
+                          <span>Project & Bag Trace ({store.getBags().filter(b => b.items.some(i => i.specId === selectedRow.specId)).length})</span>
+                        </div>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {store.getBags().filter(b => b.items.some(i => i.specId === selectedRow.specId)).slice(0, 6).map(bag => {
+                            const project = store.getProject(bag.projectId);
+                            const holder = store.getUser(bag.issuedToId);
+                            return (
+                              <div key={bag.id} className="p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800/60 flex items-center justify-between text-xs">
+                                <div>
+                                  <div className="font-bold text-white flex items-center gap-1.5">
+                                    <span>Bag #{bag.bagNumber}</span>
+                                    {project && <span className="text-[10px] bg-amber-400/20 text-amber-300 border border-amber-400/30 px-1.5 py-0.5 rounded-full font-mono">{project.code}</span>}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 mt-0.5">Holder: {holder?.name || 'Setter'} | {bag.issuedAt ? new Date(bag.issuedAt).toLocaleDateString() : '-'}</div>
+                                </div>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase bg-zinc-800 px-2 py-1 rounded-lg">
+                                  {bag.status.replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </Card>
               </motion.div>

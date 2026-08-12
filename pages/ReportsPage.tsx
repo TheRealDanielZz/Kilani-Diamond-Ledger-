@@ -16,12 +16,13 @@ import {
   ReportFilterState,
   clearReportFields,
   newReportFilterState,
+  syncFilterSharedState,
   toPhase7Request,
 } from '../services/reportFilters';
 import { downloadPhase7Csv, exportPhase7ReportCsv } from '../services/reportsApi';
 import { usePhase7Report } from '../services/usePhase7Report';
 import { matchesPhase7Search } from '../functions/src/reports/contract';
-import { generateFilteredReportPDF } from '../utils/reportPdfGenerator';
+import { generateFilteredReportPDF, exportBatchProjectsCsv, generateBatchProjectsPDF } from '../utils/exportEngine';
 import { StaffPerformanceDashboard } from '../components/reports/StaffPerformanceDashboard';
 import { DailyDiamondStatement } from '../components/reports/DailyDiamondStatement';
 
@@ -32,6 +33,9 @@ const ReportsPage: React.FC = () => {
   const location = useLocation();
   const params = useParams<{ memberId?: string }>();
   const navigate = useNavigate();
+
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+
 
   const [activeTab, setActiveTab] = useState<'inventory' | 'projects' | 'broken' | 'system' | 'weekly' | 'staff'>(() => {
     if (location.pathname.startsWith('/reports/team')) return 'staff';
@@ -105,13 +109,51 @@ const ReportsPage: React.FC = () => {
   const [systemPage, setSystemPage] = useState(1);
   const [exportingSection, setExportingSection] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeTab !== 'weekly') { setWeeklyFilters(newReportFilterState()); setWeeklyPage(1); }
-    if (activeTab !== 'inventory') { setInventoryFilters(newReportFilterState()); setInventoryPage(1); }
-    if (activeTab !== 'broken') { setBrokenFilters(newReportFilterState()); setBrokenPage(1); }
-    if (activeTab !== 'projects') { setProjectFilters(newReportFilterState()); setProjectPage(1); }
-    if (activeTab !== 'system') { setSystemFilters(newReportFilterState()); setSystemPage(1); }
-  }, [activeTab]);
+  const handleTabSwitch = (nextTab: 'inventory' | 'projects' | 'broken' | 'system' | 'weekly' | 'staff') => {
+    const currentFilters = activeTab === 'weekly' ? weeklyFilters
+      : activeTab === 'inventory' ? inventoryFilters
+      : activeTab === 'broken' ? brokenFilters
+      : activeTab === 'projects' ? projectFilters
+      : systemFilters;
+
+    setActiveTab(nextTab);
+
+    if (nextTab === 'weekly') setWeeklyFilters(prev => syncFilterSharedState(prev, currentFilters));
+    else if (nextTab === 'inventory') setInventoryFilters(prev => syncFilterSharedState(prev, currentFilters));
+    else if (nextTab === 'broken') setBrokenFilters(prev => syncFilterSharedState(prev, currentFilters));
+    else if (nextTab === 'projects') setProjectFilters(prev => syncFilterSharedState(prev, currentFilters));
+    else if (nextTab === 'system') setSystemFilters(prev => syncFilterSharedState(prev, currentFilters));
+
+    if (nextTab === 'staff') {
+      navigate('/reports/team');
+    }
+  };
+
+  const executiveNegativeBalances = React.useMemo(() => {
+    return store.getSpecs()
+      .filter(s => (s.pcs ?? 0) < 0)
+      .map(s => ({
+        spec: s,
+        color: s.color || 'White',
+        closing: s.pcs || 0,
+      }));
+  }, [movements, projects]);
+
+  const executiveMissingCosts = React.useMemo(() => {
+    return store.getInventoryMovements()
+      .filter(m => m.lines.some(l => l.costPerCtUsd === undefined && l.specId !== 'MIXED-UNSORTED'));
+  }, [movements]);
+
+  const executiveOtherWarnings = React.useMemo(() => {
+    const warnings: string[] = [];
+    const specs = store.getSpecs();
+    const zeroPcsNonZeroCt = specs.filter(s => (s.pcs || 0) === 0 && (s.ct || 0) > 0.0005);
+    if (zeroPcsNonZeroCt.length > 0) {
+      warnings.push(`${zeroPcsNonZeroCt.length} spec(s) show 0 pieces with non-zero carats.`);
+    }
+    return warnings;
+  }, [movements]);
+
 
   // Broken Report State
   const [brokenMovements, setBrokenMovements] = useState<InventoryMovement[]>([]);
@@ -575,22 +617,70 @@ const ReportsPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 pb-24">
       <h1 data-tour="reports-header" className="text-2xl font-bold text-white mb-6">Reports Hub</h1>
+
+      {isManager && (
+        <div className="mb-6">
+          <ExecutiveInsightsModule
+            negativeBalances={executiveNegativeBalances}
+            missingCosts={executiveMissingCosts}
+            otherWarnings={executiveOtherWarnings}
+            usdCadMultiplier={store.getSettings()?.usdToCadMultiplier || 1.35}
+          />
+        </div>
+      )}
       
-      <div className="flex flex-wrap gap-1 border-b border-zinc-800 mb-8">
-         <button onClick={() => setActiveTab('weekly')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'weekly' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}><Activity size={14}/>Daily Diamond Statement</button>
-         <button onClick={() => setActiveTab('inventory')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'inventory' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Inventory Ledger</button>
-         <button onClick={() => setActiveTab('broken')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'broken' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Broken Stones</button>
-         <button onClick={() => setActiveTab('projects')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'projects' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Project History</button>
-         <button onClick={() => setActiveTab('system')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'system' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>System Logs</button>
+      <div className="flex flex-wrap gap-1 border-b border-zinc-800 mb-8" role="tablist" aria-label="Reporting sections">
+         <button
+           role="tab"
+           aria-selected={activeTab === 'weekly'}
+           onClick={() => handleTabSwitch('weekly')}
+           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'weekly' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+         >
+           <Activity size={15}/>Daily Diamond Statement
+         </button>
+         <button
+           role="tab"
+           aria-selected={activeTab === 'inventory'}
+           onClick={() => handleTabSwitch('inventory')}
+           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'inventory' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+         >
+           <Box size={15}/>Inventory Ledger
+         </button>
+         <button
+           role="tab"
+           aria-selected={activeTab === 'broken'}
+           onClick={() => handleTabSwitch('broken')}
+           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broken' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+         >
+           <AlertOctagon size={15}/>Broken Stones
+         </button>
+         <button
+           role="tab"
+           aria-selected={activeTab === 'projects'}
+           onClick={() => handleTabSwitch('projects')}
+           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'projects' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+         >
+           <FileBarChart size={15}/>Project History
+         </button>
+         <button
+           role="tab"
+           aria-selected={activeTab === 'system'}
+           onClick={() => handleTabSwitch('system')}
+           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'system' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+         >
+           <Clock size={15}/>System Logs
+         </button>
          {isManager && (
            <button
-             onClick={() => { setActiveTab('staff'); navigate('/reports/team'); }}
-             className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'staff' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+             role="tab"
+             aria-selected={activeTab === 'staff'}
+             onClick={() => handleTabSwitch('staff')}
+             className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'staff' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
            >
-             <Users size={14} />
+             <Users size={15} />
              Team
-             <span className="text-[10px] font-bold text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-               New Update Coming Soon
+             <span className="text-[10px] font-bold text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+               Updated
              </span>
            </button>
          )}
@@ -767,15 +857,48 @@ const ReportsPage: React.FC = () => {
            <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex flex-col gap-4">
               <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
                 <h3 className="font-bold text-white">Project History</h3>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={exportingSection === 'PROJECT_HISTORY'}
-                  onClick={() => void exportSecureCsv('PROJECT_HISTORY', projectFilters, 'project_history')}
-                >
-                  Export CSV
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={exportingSection === 'PROJECT_HISTORY'}
+                    onClick={() => void exportSecureCsv('PROJECT_HISTORY', projectFilters, 'project_history')}
+                  >
+                    Export CSV
+                  </Button>
+                </div>
               </div>
+
+              {selectedProjectIds.size > 0 && (
+                <div className="bg-lux-gold/10 border border-lux-gold/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+                  <div className="text-xs font-bold text-lux-gold flex items-center gap-2">
+                    <CheckCircle2 size={16} />
+                    <span>{selectedProjectIds.size} project{selectedProjectIds.size === 1 ? '' : 's'} selected</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => {
+                      const selectedRows = projectReport.rows.filter(r => selectedProjectIds.has(r.id));
+                      if (!selectedRows.length) return;
+                      exportBatchProjectsCsv(selectedRows, `batch_projects_${selectedRows.length}_items`);
+                      showToast(`Exported ${selectedRows.length} project(s) to CSV ✓`);
+                    }}>
+                      <Download size={14} /> Export Selected CSV
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => {
+                      const selectedRows = projectReport.rows.filter(r => selectedProjectIds.has(r.id));
+                      if (!selectedRows.length) return;
+                      generateBatchProjectsPDF(selectedRows, `batch_projects_${selectedRows.length}_summary`);
+                      showToast(`Exported ${selectedRows.length} project(s) to PDF ✓`);
+                    }}>
+                      <FileDown size={14} /> Export Selected PDF
+                    </Button>
+                    <button onClick={() => setSelectedProjectIds(new Set())} className="text-xs text-zinc-400 hover:text-white px-2 py-1 font-bold">
+                      Clear Selection
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <ReportFilterBar
                 state={projectFilters}
                 onChange={changeProjectFilters}
@@ -789,6 +912,23 @@ const ReportsPage: React.FC = () => {
              <table className="w-full text-sm text-left">
                <thead className="bg-zinc-900 text-zinc-500 font-bold uppercase text-[11px]">
                  <tr>
+                   <th className="p-4 w-10">
+                     <input
+                       type="checkbox"
+                       className="rounded border-zinc-700 bg-zinc-900 text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
+                       checked={projectReport.rows.length > 0 && projectReport.rows.every(r => selectedProjectIds.has(r.id))}
+                       onChange={() => {
+                         const currentIds = projectReport.rows.map(r => r.id);
+                         const allSelected = currentIds.every(id => selectedProjectIds.has(id));
+                         if (allSelected) {
+                           setSelectedProjectIds(new Set());
+                         } else {
+                           setSelectedProjectIds(new Set(currentIds));
+                         }
+                       }}
+                       title="Select All Visible"
+                     />
+                   </th>
                    <th className="p-4 w-16">Image</th>
                    <th className="p-4">Code</th>
                    <th className="p-4">Client</th>
@@ -804,8 +944,24 @@ const ReportsPage: React.FC = () => {
                    const p = store.getProject(row.id);
                    const repair = p ? store.getRepairDetails(p) : null;
                    const previewImage = row.previewImage;
+                   const isSelected = selectedProjectIds.has(row.id);
                    return (
-                   <tr key={row.id} onClick={() => p && handleSelectProject(p)} className="hover:bg-zinc-900/50 cursor-pointer transition-colors group">
+                   <tr key={row.id} onClick={() => p && handleSelectProject(p)} className={`hover:bg-zinc-900/50 cursor-pointer transition-colors group ${isSelected ? 'bg-lux-gold/5' : ''}`}>
+                     <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                       <input
+                         type="checkbox"
+                         className="rounded border-zinc-700 bg-zinc-900 text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
+                         checked={isSelected}
+                         onChange={() => {
+                           setSelectedProjectIds(prev => {
+                             const next = new Set(prev);
+                             if (next.has(row.id)) next.delete(row.id);
+                             else next.add(row.id);
+                             return next;
+                           });
+                         }}
+                       />
+                     </td>
                      <td className="p-4">
                         <div className="w-10 h-10 bg-black rounded-xl border border-zinc-800 overflow-hidden flex items-center justify-center">
                            {previewImage ? (
@@ -847,7 +1003,7 @@ const ReportsPage: React.FC = () => {
            </div>
            <ReportMessage loading={projectReport.loading} error={projectReport.error} empty={!projectReport.loading && !projectReport.rows.length} />
            <ReportPagination page={projectPage} pageSize={25} total={projectReport.total} onPageChange={setProjectPage} />
-        </Card>
+         </Card>
       )}
 
       {activeTab === 'system' && (

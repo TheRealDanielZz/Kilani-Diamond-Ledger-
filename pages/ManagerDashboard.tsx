@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
 import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones } from '../components/UI';
-import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';

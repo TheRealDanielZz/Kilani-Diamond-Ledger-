@@ -111,3 +111,29 @@ export function reportOptionLabel(
   const definition = definitions.find(item => item.field === field);
   return definition?.options.find(option => option.value === value)?.label || value;
 }
+
+/**
+ * Synchronizes shared filter parameters (search, date range from/to)
+ * from a source filter state into a target filter state, preserving
+ * tab-specific selection filters.
+ */
+export function syncFilterSharedState(
+  target: ReportFilterState,
+  source: ReportFilterState,
+): ReportFilterState {
+  return {
+    ...target,
+    search: source.search,
+    from: source.from,
+    to: source.to,
+    cursor: null, // Reset cursor on sync
+  };
+}
+
+export function resetReportFilterState(state: ReportFilterState): ReportFilterState {
+  return {
+    ...EMPTY_REPORT_FILTER_STATE,
+    selections: {},
+  };
+}
+

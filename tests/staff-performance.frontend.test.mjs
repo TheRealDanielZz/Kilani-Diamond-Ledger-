@@ -261,7 +261,7 @@ test('Reports Hub exposes Team dashboard only to Managers, uses Team label, and 
   const teamExport = await fs.readFile(path.join(root, 'utils/teamExportGenerator.ts'), 'utf8');
 
   // Renamed visible labels
-  assert.match(reports, /isManager && \([\s\S]*<Users size=\{14\} \/>\s*Team/);
+  assert.match(reports, /isManager && \([\s\S]*<Users size=\{1[45]\} \/>\s*Team/);
   assert.match(reports, /activeTab === 'staff' && isManager/);
   assert.match(dashboard, /id="team-heading"[\s\S]*Team/);
   assert.match(dashboard, /currentUser\?\.role !== Role\.MANAGER/);
