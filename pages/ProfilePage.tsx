@@ -99,7 +99,7 @@ const ProfilePage: React.FC = () => {
         <UserCog className="text-lux-gold" size={28} /> My Profile
       </h1>
 
-      <Card className="p-8 border-lux-border mb-6 rounded-[2.5rem]">
+      <Card className="p-8 border-lux-border mb-6 rounded-3xl">
          <div className="flex flex-col items-center mb-8">
             <div 
               className="relative group cursor-pointer"
@@ -160,7 +160,7 @@ const ProfilePage: React.FC = () => {
          </div>
       </Card>
 
-      <Card className="p-6 border-lux-border mb-6 rounded-[2.5rem]">
+      <Card className="p-6 border-lux-border mb-6 rounded-3xl">
          <h3 className="font-bold text-white mb-4 flex items-center gap-2">
             <GraduationCap size={20} className="text-zinc-500"/> Help & Learning
          </h3>

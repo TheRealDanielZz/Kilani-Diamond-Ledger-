@@ -211,7 +211,7 @@ const TeamManagement: React.FC = () => {
       {/* EDIT / CREATE MODAL */}
        {isEditing && (
          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4 sm:p-6">
-           <Card className="w-full max-w-lg flex flex-col max-h-[90vh] border-lux-border shadow-2xl animate-in zoom-in-95 rounded-[2.5rem]">
+           <Card className="w-full max-w-lg flex flex-col max-h-[90vh] border-lux-border shadow-2xl animate-in zoom-in-95 rounded-3xl">
             <div className="p-6 sm:p-8 border-b border-theme-border shrink-0">
                 <h2 className="text-2xl font-bold text-theme-text-primary">
                     {editingId ? 'Edit Profile' : activeTab === 'SALES' ? 'New Sales Rep' : 'New Team Member'}
@@ -373,7 +373,7 @@ const TeamManagement: React.FC = () => {
        {/* DELETE MODAL */}
        {deleteModalOpen && (
          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <Card className="w-full max-w-sm p-6 border-red-500/30 shadow-2xl animate-in zoom-in-95 rounded-[2.5rem]">
+            <Card className="w-full max-w-sm p-6 border-red-500/30 shadow-2xl animate-in zoom-in-95 rounded-3xl">
               <div className="flex flex-col items-center text-center">
                  <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4 border border-red-500/20 text-red-500">
                     <AlertTriangle size={32} />

@@ -35,7 +35,8 @@ const ReportsPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'inventory' | 'projects' | 'broken' | 'system' | 'weekly' | 'staff'>(() => {
     if (location.pathname.startsWith('/reports/team')) return 'staff';
-    return 'inventory';
+    if (location.pathname.startsWith('/reports/statement')) return 'weekly';
+    return 'weekly';
   });
 
   useEffect(() => {
@@ -904,7 +905,7 @@ const ReportsPage: React.FC = () => {
       {/* Project Detail Modal - Redesigned with Tabs */}
       {selectedProject && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-           <Card className="w-full max-w-5xl h-[85vh] flex flex-col border-white/5 shadow-2xl relative animate-in fade-in zoom-in-95 overflow-hidden rounded-[2.5rem]">
+           <Card className="w-full max-w-5xl h-[85vh] flex flex-col border-white/5 shadow-2xl relative animate-in fade-in zoom-in-95 overflow-hidden rounded-3xl">
               
                {/* Premium Header */}
                <div className="px-8 pt-12 pb-8 flex justify-between items-start z-10 relative bg-gradient-to-b from-black/50 to-transparent border-b border-white/5">
@@ -1577,7 +1578,7 @@ const ReportsPage: React.FC = () => {
                                    {pageItems.map((ev) => (
                                       <div 
                                          key={ev.id} 
-                                         className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-[2rem] border border-white/[0.05] p-4 relative overflow-hidden transition-all hover:bg-[#252830]/80 flex flex-col justify-between h-[320px] group cursor-pointer animate-enter"
+                                         className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-2xl border border-white/[0.05] p-4 relative overflow-hidden transition-all hover:bg-[#252830]/80 flex flex-col justify-between h-[320px] group cursor-pointer animate-enter"
                                          onClick={() => { setSelectedEvidence(ev); setSelectedVersionIndex(null); }}
                                       >
                                          <div className="aspect-square w-full rounded-2xl overflow-hidden relative border border-zinc-800 bg-black shrink-0 h-[150px]">
@@ -1639,7 +1640,7 @@ const ReportsPage: React.FC = () => {
 
        {selectedEvidence && (
          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[110] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
-            <Card className="w-full max-w-4xl p-6 max-h-[90vh] flex flex-col animate-in zoom-in-95 overflow-y-auto bg-[#1C1E24] border border-white/10 rounded-[2.5rem]">
+            <Card className="w-full max-w-4xl p-6 max-h-[90vh] flex flex-col animate-in zoom-in-95 overflow-y-auto bg-[#1C1E24] border border-white/10 rounded-3xl">
                <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
                   <div>
                      <h3 className="font-bold text-white text-lg flex items-center gap-2">

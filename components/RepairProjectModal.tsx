@@ -254,7 +254,7 @@ export const RepairProjectModal: React.FC<Props> = ({ isOpen, onClose, currentUs
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[140] flex items-center justify-center p-3 sm:p-5">
-      <div className="w-full max-w-5xl bg-theme-modal-bg rounded-[2rem] border border-theme-border shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="w-full max-w-5xl bg-theme-modal-bg rounded-3xl border border-theme-border shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
         <div className="px-5 sm:px-7 py-5 border-b border-theme-border flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">

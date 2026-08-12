@@ -12,6 +12,7 @@ import { InventoryNotesSection } from '../components/InventoryNotesSection';
 import { jsPDF } from 'jspdf';
 import { inventoryApi } from '../services/inventoryApi';
 import { calculateRapnetInventorySummary } from '../services/rapnetService';
+import { DiamondShapeIcon } from '../components/common/DiamondShapeIcon';
 
 const InventoryPage: React.FC = () => {
   const showToast = useToast();
@@ -992,7 +993,7 @@ const InventoryPage: React.FC = () => {
           <p className="text-sm text-zinc-500 mt-1.5 ml-1">Precision aggregate tracking and stock management.</p>
         </div>
         
-        <div className="flex flex-wrap gap-1.5 bg-zinc-900/40 backdrop-blur-xl p-1.5 rounded-[2rem] border border-white/5 w-full md:w-auto shadow-inner">
+        <div className="flex flex-wrap gap-1.5 bg-zinc-900/40 backdrop-blur-xl p-1.5 rounded-3xl border border-white/5 w-full md:w-auto shadow-inner">
            <button 
              onClick={() => setActiveTab('stock')} 
              className={`flex-1 md:flex-none px-6 py-2.5 rounded-[1.5rem] text-sm font-bold transition-all duration-300 ${activeTab === 'stock' ? 'bg-lux-gold text-black shadow-glow' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
@@ -1413,8 +1414,8 @@ const InventoryPage: React.FC = () => {
                             >
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors border border-white/5 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black' : 'bg-zinc-800 text-zinc-400 group-hover:bg-lux-gold group-hover:text-black'}`}>
-                                      {item.spec.shape?.charAt(0) || 'R'}
+                                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors border border-white/5 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black' : 'bg-zinc-800 text-zinc-400 group-hover:bg-lux-gold group-hover:text-black'}`}>
+                                      <DiamondShapeIcon shape={item.spec.shape || 'Round'} size={16} className="shrink-0" />
                                    </div>
                                    <div>
                                       <div className={`font-bold text-sm leading-tight transition-colors duration-200 flex items-center gap-1.5 ${expandedMeleeSpecId === item.spec.id ? 'text-lux-gold' : 'text-lux-cream'}`}>

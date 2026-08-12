@@ -46,7 +46,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
       {/* Sidebar (Desktop/iPad) - Glass Panel | Mobile - Full Drawer */}
       <aside className={`
           fixed z-[60] transform transition-transform duration-300 shadow-2xl overflow-hidden
-          inset-y-0 left-0 w-72 bg-black/40 border-r border-white/5
+          inset-y-0 left-0 w-72 bg-black/40 border-r border-white/5 md:border-r-0
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
           md:inset-y-4 md:left-4 md:liquid-glass md:translate-x-0
           ${(!isManager && !isDesigner) ? 'hidden md:flex flex-col' : 'flex flex-col'}
@@ -163,7 +163,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
       </header>
 
       {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${(isManager || isDesigner) ? 'md:pl-72' : 'md:pl-72 pb-[90px] md:pb-0'}`}>
+      <div className={`flex-1 flex flex-col h-full overflow-hidden relative ${(isManager || isDesigner) ? 'md:pl-80' : 'md:pl-80 pb-[90px] md:pb-0'}`}>
          
          <main className="flex-1 overflow-auto scroll-smooth p-6 md:p-12 safe-pb relative">
            {/* Spacer for Fixed Header on Mobile */}

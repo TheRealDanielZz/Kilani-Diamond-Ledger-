@@ -72,7 +72,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
       <div className="flex flex-col items-center mb-10 z-10 animate-enter group">
         {store.isDemoMode ? (
           <>
-            <div className="w-28 h-28 backdrop-blur-md rounded-[2.5rem] border border-blue-400/25 flex items-center justify-center mb-8 shadow-glass transform rotate-3 hover:rotate-0 transition-all duration-700 group-hover:border-blue-400/50" style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.2), rgba(59,130,246,0.05))' }}>
+            <div className="w-28 h-28 backdrop-blur-md rounded-3xl border border-blue-400/25 flex items-center justify-center mb-8 shadow-glass transform rotate-3 hover:rotate-0 transition-all duration-700 group-hover:border-blue-400/50" style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.2), rgba(59,130,246,0.05))' }}>
               <svg width="52" height="52" viewBox="0 0 36 36" fill="none">
                 <polygon points="18,3 33,12 33,24 18,33 3,24 3,12" fill="none" stroke="rgba(96,165,250,0.8)" strokeWidth="1.5"/>
                 <polygon points="18,8 28,14 28,22 18,28 8,22 8,14" fill="rgba(59,130,246,0.2)" stroke="rgba(96,165,250,0.5)" strokeWidth="1"/>
@@ -90,7 +90,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
           </>
         ) : (
           <>
-            <div className="w-28 h-28 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-md rounded-[2.5rem] border border-white/10 flex items-center justify-center mb-8 shadow-glass transform rotate-3 hover:rotate-0 transition-all duration-700 overflow-hidden group-hover:shadow-lux-gold/20 group-hover:border-lux-gold/30">
+            <div className="w-28 h-28 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-md rounded-3xl border border-white/10 flex items-center justify-center mb-8 shadow-glass transform rotate-3 hover:rotate-0 transition-all duration-700 overflow-hidden group-hover:shadow-lux-gold/20 group-hover:border-lux-gold/30">
                 <img src="/brand-logo.jpg" alt="Kilani Logo" className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-1000" />
             </div>
             <div className="flex flex-col items-center">
@@ -105,7 +105,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
         )}
       </div>
       
-      <Card className="w-full max-w-sm p-8 border-white/10 shadow-2xl z-10 animate-enter transition-all duration-300 rounded-[2.5rem]">
+      <Card className="w-full max-w-sm p-8 border-white/10 shadow-2xl z-10 animate-enter transition-all duration-300 rounded-3xl">
         <h2 className="text-xl font-bold mb-6 text-white text-center">
           {isResetting ? 'Reset Password' : 'Sign in to workspace'}
         </h2>
@@ -163,7 +163,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
       </Card>
       
       {store.isDemoMode && (
-          <div className="w-full max-w-sm mt-6 p-5 bg-blue-500/5 border border-blue-400/20 rounded-[2rem] backdrop-blur-xl animate-enter flex flex-col items-center gap-3">
+          <div className="w-full max-w-sm mt-6 p-5 bg-blue-500/5 border border-blue-400/20 rounded-2xl backdrop-blur-xl animate-enter flex flex-col items-center gap-3">
               <div className="text-[10px] uppercase tracking-[0.3em] text-blue-400 font-bold text-center">
                 Demo Edition Active
               </div>

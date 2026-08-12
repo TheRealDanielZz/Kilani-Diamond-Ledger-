@@ -223,80 +223,88 @@ const AllProjectsPage: React.FC = () => {
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-5 py-8 pb-24 h-full flex flex-col lg:flex-row gap-6">
+    <div className="max-w-7xl mx-auto px-5 py-8 pb-24 h-full flex flex-col lg:flex-row gap-6 relative">
       {/* Master List View */}
-      <div className={`flex-1 flex flex-col h-full ${selectedProjectId ? 'lg:w-1/3 lg:flex-none' : 'w-full'}`}>
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-        <div className="flex items-center gap-4">
-          <div className="bg-black/20 p-3 rounded-2xl border border-[#2D313A] shadow-float">
-             <Layers className="w-6 h-6 text-lux-gold" />
+      <div className={`flex-1 flex flex-col h-full transition-all duration-300 relative ${selectedProjectId ? 'lg:w-1/3 lg:flex-none' : 'w-full'}`}>
+        
+        {/* Header & Controls Dimming Container when Quick Peek is active */}
+        <div className={`transition-all duration-300 ${selectedProjectId ? 'lg:opacity-60 lg:hover:opacity-100 lg:backdrop-blur-[1px]' : ''}`}>
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="bg-black/20 p-3 rounded-2xl border border-[#2D313A] shadow-float">
+                 <Layers className="w-6 h-6 text-lux-gold" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-theme-text-primary tracking-tight">Projects</h1>
+                <p className="text-xs text-theme-text-muted font-medium uppercase tracking-[0.15em] mt-1">Master Repository</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-theme-text-primary tracking-tight">Projects</h1>
-            <p className="text-xs text-theme-text-muted font-medium uppercase tracking-[0.15em] mt-1">Master Repository</p>
+
+          {/* Controls */}
+          <div className={`mb-6 rounded-3xl border border-[#2D313A] bg-black/20 p-4 space-y-4 transition-all duration-300 ${selectedProjectId ? 'bg-black/40 border-white/10 shadow-inner' : ''}`}>
+            <div className="flex flex-wrap justify-end gap-3">
+                <Button size="sm" variant="secondary" loading={exporting} onClick={() => void exportFilteredProjects()}>
+                  Export CSV
+                </Button>
+                <ProjectViewToggle value={viewMode} onChange={toggleViewMode} label="All Projects view" />
+            </div>
+            <ReportFilterBar
+              state={reportFilters}
+              onChange={changeReportFilters}
+              definitions={filterDefinitions}
+              searchPlaceholder="Search code, client, piece, or sales rep…"
+              resultCount={projectReport.total}
+              loading={projectReport.loading}
+            />
           </div>
         </div>
-      </div>
 
-      {/* Controls */}
-      <div className="mb-6 rounded-3xl border border-[#2D313A] bg-black/20 p-4 space-y-4">
-        <div className="flex flex-wrap justify-end gap-3">
-            <Button size="sm" variant="secondary" loading={exporting} onClick={() => void exportFilteredProjects()}>
-              Export CSV
-            </Button>
-            <ProjectViewToggle value={viewMode} onChange={toggleViewMode} label="All Projects view" />
+        {/* Project List */}
+        <div className={viewMode === 'GRID' && !selectedProjectId ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
+          {projectReport.loading ? (
+            <ProjectCollectionMessage title="Loading projects" detail="Applying your authorized filters…" />
+          ) : projectReport.error ? (
+            <ProjectCollectionMessage title="Projects unavailable" detail={projectReport.error} />
+          ) : filteredProjects.length ? (
+            filteredProjects.map(project => viewMode === 'GRID' && !selectedProjectId
+              ? (
+                <ProjectGridCard
+                  key={project.id}
+                  project={project}
+                  onOpen={() => handleProjectClick(project.id)}
+                  actions={projectActions(project)}
+                  selected={selectedProjectId === project.id}
+                  compact={!!selectedProjectId}
+                />
+              )
+              : (
+                <ProjectListRow
+                  key={project.id}
+                  project={project}
+                  onOpen={() => handleProjectClick(project.id)}
+                  actions={projectActions(project)}
+                  selected={selectedProjectId === project.id}
+                  compact={!!selectedProjectId}
+                />
+              )
+            )
+          ) : (
+            <ProjectCollectionMessage title="No projects found" detail="Try clearing or changing the active filters." />
+          )}
         </div>
-        <ReportFilterBar
-          state={reportFilters}
-          onChange={changeReportFilters}
-          definitions={filterDefinitions}
-          searchPlaceholder="Search code, client, piece, or sales rep…"
-          resultCount={projectReport.total}
-          loading={projectReport.loading}
-        />
+        <ReportPagination page={reportPage} pageSize={24} total={projectReport.total} onPageChange={setReportPage} />
       </div>
 
-      {/* Project List */}
-      <div className={viewMode === 'GRID' ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
-        {projectReport.loading ? (
-          <ProjectCollectionMessage title="Loading projects" detail="Applying your authorized filters…" />
-        ) : projectReport.error ? (
-          <ProjectCollectionMessage title="Projects unavailable" detail={projectReport.error} />
-        ) : filteredProjects.length ? (
-          filteredProjects.map(project => viewMode === 'GRID'
-            ? (
-              <ProjectGridCard
-                key={project.id}
-                project={project}
-                onOpen={() => handleProjectClick(project.id)}
-                actions={projectActions(project)}
-              />
-            )
-            : (
-              <ProjectListRow
-                key={project.id}
-                project={project}
-                onOpen={() => handleProjectClick(project.id)}
-                actions={projectActions(project)}
-              />
-            )
-          )
-        ) : (
-          <ProjectCollectionMessage title="No projects found" detail="Try clearing or changing the active filters." />
-        )}
-      </div>
-      <ReportPagination page={reportPage} pageSize={24} total={projectReport.total} onPageChange={setReportPage} />
-      </div>
-
-      {/* Detail View (iPad/Desktop Split View) */}
+      {/* Detail View (iPad/Desktop Split View Quick Peek) */}
       {selectedProjectId && (
-        <div className="hidden lg:flex flex-col w-2/3 bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden relative">
+        <div className="hidden lg:flex flex-col w-2/3 liquid-glass-glow border border-lux-gold/30 rounded-3xl overflow-hidden relative shadow-[0_25px_80px_rgba(0,0,0,0.6)] animate-in slide-in-from-right-6 fade-in duration-300 z-40">
           <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
             <button 
               type="button"
               onClick={() => navigate(`/project/${selectedProjectId}`)}
-              className="min-w-11 min-h-11 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+              className="min-w-11 min-h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/20 hover:scale-105 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold shadow-lg"
               aria-label="Open selected project fullscreen"
               title="Open Fullscreen"
             >
@@ -305,7 +313,7 @@ const AllProjectsPage: React.FC = () => {
             <button 
               type="button"
               onClick={() => setSelectedProjectId(null)}
-              className="min-w-11 min-h-11 rounded-full bg-black/50 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold"
+              className="min-w-11 min-h-11 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/20 hover:scale-105 transition-all motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lux-gold shadow-lg"
               aria-label="Close project quick peek"
               title="Close Quick Peek"
             >
@@ -326,7 +334,7 @@ const AllProjectsPage: React.FC = () => {
           aria-modal="true"
           aria-labelledby="pickup-confirmation-title"
         >
-           <Card className="w-full max-w-sm p-6 border-amber-500/30 shadow-2xl animate-in zoom-in-95 rounded-[2.5rem]">
+           <Card className="w-full max-w-sm p-6 border-amber-500/30 shadow-2xl animate-in zoom-in-95 rounded-3xl">
               <div className="flex flex-col items-center text-center">
                  <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mb-4 border border-amber-500/20 text-amber-500">
                     <CheckCircle2 size={32} />
@@ -387,7 +395,7 @@ const AllProjectsPage: React.FC = () => {
           aria-modal="true"
           aria-labelledby="delete-project-title"
         >
-           <Card className="w-full max-w-sm p-6 border-red-500/30 shadow-2xl animate-in zoom-in-95 rounded-[2.5rem]">
+           <Card className="w-full max-w-sm p-6 border-red-500/30 shadow-2xl animate-in zoom-in-95 rounded-3xl">
               <div className="flex flex-col items-center text-center">
                  <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4 border border-red-500/20 text-red-500">
                     <AlertTriangle size={32} />

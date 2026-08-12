@@ -203,15 +203,15 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   loading?: boolean;
 }> = ({ children, variant = 'primary', size = 'md', className = '', icon, loading, disabled, onClick, type = 'button', ...props }) => {
   
-  const base = "inline-flex items-center justify-center rounded-2xl font-bold transition-all duration-300 focus:outline-none tracking-wide active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed select-none relative overflow-hidden touch-manipulation cursor-pointer z-10";
-  const sizes = { sm: "px-5 py-2 text-[12px] h-9", md: "px-7 py-3 text-[14px] h-12", lg: "px-10 py-5 text-base h-14" };
+  const base = "inline-flex items-center justify-center rounded-2xl font-bold transition-all duration-300 focus:outline-none tracking-wide active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed select-none relative overflow-hidden touch-manipulation cursor-pointer min-h-[44px] z-10";
+  const sizes = { sm: "px-5 py-2 text-[12px] h-10", md: "px-7 py-3 text-[14px] h-12", lg: "px-10 py-5 text-base h-14" };
   
   const variants = {
-    primary: "bg-lux-gold text-[#16171D] font-bold shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),_0_2px_8px_rgba(245,194,73,0.15)] hover:bg-[#ffd66e]",
-    secondary: "liquid-glass hover:bg-theme-table-hover text-theme-text-primary border-theme-border",
-    danger: "bg-red-500/10 backdrop-blur-3xl text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-500",
-    ghost: "bg-transparent text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-table-hover",
-    outline: "bg-transparent text-theme-text-primary border border-theme-border hover:bg-theme-table-hover",
+    primary: "bg-lux-gold text-black shadow-glow hover:shadow-glow-hover hover:bg-[#ffcf5c]",
+    secondary: "bg-white/5 backdrop-blur-md text-theme-text-primary border border-theme-border hover:bg-white/10",
+    danger: "bg-red-500/10 backdrop-blur-md text-red-400 border border-red-500/20 hover:bg-red-500/20",
+    ghost: "bg-transparent text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5",
+    outline: "bg-transparent text-theme-text-primary border border-theme-border hover:bg-white/5",
   };
   
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {

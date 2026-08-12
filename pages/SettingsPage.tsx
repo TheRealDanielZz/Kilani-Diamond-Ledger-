@@ -422,63 +422,8 @@ const SettingsPage: React.FC = () => {
               </div>
            </Card>
 
-           {isManager && (
-             <Card className="p-6 border-amber-700/40">
-               <div className="flex items-center justify-between gap-4 mb-3">
-                 <div>
-                   <h3 className="font-bold text-lg text-lux-cream">Phase 1 Inventory Safety</h3>
-                   <p className="text-xs text-zinc-500 mt-1">Audit Toronto Melee balances and rotate legacy evidence download tokens before activation.</p>
-                 </div>
-                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${phase1Audit?.ready ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
-                   {phase1Audit?.ready ? 'READY' : 'NOT AUDITED'}
-                 </span>
-               </div>
-               {phase1Audit && (
-                 <p className="text-xs text-zinc-400 mb-4">
-                   Checked {phase1Audit.specsChecked} Toronto Melee specs and {phase1Audit.evidenceChecked} evidence records. {phase1Audit.blockers.length + phase1Audit.legacyEvidenceBlockers.length} blocker(s).
-                 </p>
-               )}
-               <div className="flex flex-wrap gap-3">
-                 <Button variant="secondary" onClick={runPhase1Audit} disabled={phase1Busy}>
-                   {phase1Busy ? 'Working…' : 'Run Safety Audit'}
-                 </Button>
-                 <Button variant="danger" onClick={hardenLegacyEvidence} disabled={phase1Busy}>
-                   Rotate Legacy Evidence Tokens
-                 </Button>
-               </div>
-             </Card>
-           )}
 
-           {isManager && (
-             <Card className="p-6 border-blue-700/40">
-               <div className="flex items-center justify-between gap-4 mb-3">
-                 <div>
-                   <h3 className="font-bold text-lg text-lux-cream">Phase 6 Service Migration</h3>
-                   <p className="text-xs text-zinc-500 mt-1">Read-only classification audit. Production migration execution remains disabled pending approval.</p>
-                 </div>
-                 <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-500/15 text-blue-400">
-                   {phase6DryRun ? 'DRY RUN READY' : 'NOT RUN'}
-                 </span>
-               </div>
-               {phase6DryRun && (
-                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-xs">
-                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Projects</div><div className="text-lg font-bold text-white">{phase6DryRun.projectCount}</div></div>
-                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Custom Make</div><div className="text-lg font-bold text-white">{phase6DryRun.classificationCounts.CUSTOM_MAKE}</div></div>
-                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Repair</div><div className="text-lg font-bold text-white">{phase6DryRun.classificationCounts.REPAIR}</div></div>
-                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Manager Review</div><div className="text-lg font-bold text-amber-400">{phase6DryRun.ambiguousCount}</div></div>
-                   <div className="rounded-xl bg-zinc-900 p-3"><div className="text-zinc-500">Writes</div><div className="text-lg font-bold text-emerald-400">{phase6DryRun.writesPerformed}</div></div>
-                 </div>
-               )}
-               <div className="flex flex-wrap gap-3">
-                 <Button variant="secondary" onClick={runPhase6DryRun} disabled={phase6Busy}>
-                   {phase6Busy ? 'Auditing…' : 'Run Read-Only Dry Run'}
-                 </Button>
-                 <Button variant="secondary" onClick={downloadPhase6Backup} disabled={!phase6DryRun}>
-                   Download Backup Plan
-                 </Button>
-               </div>
-             </Card>
-           )}
+
 
            <div className="flex justify-end">
              <Button onClick={handleSaveGeneralSettings} icon={<Key size={18}/>}>Save All Settings</Button>

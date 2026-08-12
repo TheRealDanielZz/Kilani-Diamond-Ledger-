@@ -385,7 +385,7 @@ const EditMetricsModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="w-full max-w-lg liquid-glass rounded-[2rem] border border-lux-gold/30 bg-[#121318] p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+      <div className="w-full max-w-lg liquid-glass rounded-3xl border border-lux-gold/30 bg-[#121318] p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
         <div className="flex items-center justify-between border-b border-theme-border pb-4">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-lux-gold">Manager Override</div>
@@ -618,7 +618,7 @@ const TeamMemberProfile: React.FC<{
       </div>
 
       {/* Member Banner Card */}
-      <div className="relative overflow-hidden rounded-[2rem] border border-lux-gold/20 bg-gradient-to-br from-[#1a1812] via-[#14161b] to-[#101115] p-6 sm:p-8 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
+      <div className="relative overflow-hidden rounded-3xl border border-lux-gold/20 bg-gradient-to-br from-[#1a1812] via-[#14161b] to-[#101115] p-6 sm:p-8 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
         <div className="absolute -right-20 -top-20 w-64 h-64 rounded-full bg-lux-gold/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-6">
           <SetterAvatar
@@ -983,7 +983,7 @@ export const StaffPerformanceDashboard: React.FC<{
   return (
     <section aria-labelledby="team-heading" className="space-y-6">
       {/* Header Banner */}
-      <div className="relative overflow-hidden rounded-[2rem] border border-lux-gold/20 bg-gradient-to-br from-[#1a1812] via-[#14161b] to-[#101115] p-5 sm:p-8 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
+      <div className="relative overflow-hidden rounded-3xl border border-lux-gold/20 bg-gradient-to-br from-[#1a1812] via-[#14161b] to-[#101115] p-5 sm:p-8 shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
         <div className="absolute -right-24 -top-28 w-72 h-72 rounded-full bg-lux-gold/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-end justify-between gap-6">
           <div className="max-w-2xl">
