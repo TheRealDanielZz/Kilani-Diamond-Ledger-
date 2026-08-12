@@ -224,16 +224,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const reportUsers = store.getUsers();
    const reportProjects = store.getProjects();
    const reportSpecs = store.getSpecs();
-   const requestFilterDefinitions: ReportFilterDefinition[] = [
-      { field: 'requesterId', label: 'Requester', options: reportUsers.map(user => ({ value: user.id, label: user.name })) },
-      { field: 'projectId', label: 'Project', options: reportProjects.map(project => ({ value: project.id, label: project.code })) },
-      { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => ({ value: spec.id, label: spec.label })) },
-   ];
-   const returnFilterDefinitions: ReportFilterDefinition[] = [
-      { field: 'holderId', label: 'Holder', options: reportUsers.map(user => ({ value: user.id, label: user.name })) },
-      { field: 'projectId', label: 'Project', options: reportProjects.map(project => ({ value: project.id, label: project.code })) },
-      { field: 'specId', label: 'Diamond Size', options: reportSpecs.map(spec => ({ value: spec.id, label: spec.label })) },
-   ];
+   const requestFilterDefinitions: ReportFilterDefinition[] = [];
+   const returnFilterDefinitions: ReportFilterDefinition[] = [];
    const requestQueryFilters: ReportFilterState = {
       ...requestFilters,
       selections: { ...requestFilters.selections, status: ['OPEN'] },
