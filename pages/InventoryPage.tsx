@@ -1621,16 +1621,17 @@ const InventoryPage: React.FC = () => {
 
                   {/* Mobile View All Modal */}
                   {mobileFullListOpen && (
-                    <div className="fixed inset-0 z-[9999] flex flex-col bg-theme-bg" onClick={() => setMobileFullListOpen(false)}>
-                      <div className="pt-safe-top bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0">
-                         <div className="px-5 py-4 flex justify-between items-center">
-                           <h2 className="font-bold text-white text-lg">All Inventory</h2>
-                           <button onClick={() => setMobileFullListOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-zinc-400 hover:text-white transition-colors">
-                             <X size={20} />
+                    <div className="fixed inset-0 z-[9999] flex flex-col justify-end">
+                      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in" onClick={() => setMobileFullListOpen(false)}></div>
+                      <div className="relative w-full h-[92vh] bg-[#121318] border-t border-white/10 rounded-t-[32px] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-full duration-300">
+                        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 rounded-full bg-white/20"></div>
+                        <div className="pt-8 pb-4 px-6 flex justify-between items-center border-b border-white/5 bg-black/20 shrink-0">
+                           <h2 className="font-bold text-white text-xl tracking-tight">All Inventory</h2>
+                           <button onClick={() => setMobileFullListOpen(false)} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 text-zinc-300 hover:text-white hover:bg-white/20 transition-colors active:scale-95">
+                             <X size={18} />
                            </button>
-                         </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-3 space-y-4 no-scrollbar pb-safe-bottom" onClick={e => e.stopPropagation()}>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-safe-bottom" onClick={e => e.stopPropagation()}>
                          {isMeleeView 
                             ? filteredAndSortedSummary.map((item, i) => (
                       <div 
@@ -1842,6 +1843,7 @@ const InventoryPage: React.FC = () => {
                          }
                       </div>
                     </div>
+                  </div>
                   )}
                 </div>
                 {/* ═══════════════════════════════════════════════════════════════════
