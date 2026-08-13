@@ -87,6 +87,7 @@ const InventoryPage: React.FC = () => {
   const [selectedShapeFilter, setSelectedShapeFilter] = useState<string | null>(null);
   const [expandedDiamondId, setExpandedDiamondId] = useState<string | null>(null);
   const [expandedMeleeSpecId, setExpandedMeleeSpecId] = useState<string | null>(null);
+  const [mobileFullListOpen, setMobileFullListOpen] = useState(false);
   const [inlinePlaceValues, setInlinePlaceValues] = useState<{ [key: string]: string }>({});
   const [inlineCodeValues, setInlineCodeValues] = useState<{ [key: string]: string }>({});
   const [inlineNotesValues, setInlineNotesValues] = useState<{ [key: string]: string }>({});
@@ -1374,9 +1375,12 @@ const InventoryPage: React.FC = () => {
                    ═══════════════════════════════════════════════════════════════════ */}
                 <div className="block md:hidden p-3 space-y-4">
                   {isMeleeView ? (
-                    filteredAndSortedSummary.length > 0 ? filteredAndSortedSummary.map((item, i) => (
+                    filteredAndSortedSummary.length > 0 ? (
+                      <>
+                        {filteredAndSortedSummary.slice(0, 6).map((item, i) => (
+                          
                       <div 
-                        key={i}
+                        key={item.spec.id || i}
                         className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
                         style={{ borderWidth: '1px' }}
                         onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
@@ -1453,11 +1457,26 @@ const InventoryPage: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                    )) : (
+
+                        ))}
+                        
+                        {filteredAndSortedSummary.length > 6 && (
+                           <button 
+                             onClick={() => setMobileFullListOpen(true)} 
+                             className="w-full mt-2 min-h-[50px] flex items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-sm font-bold text-white hover:bg-white/10 active:scale-95 transition-all"
+                           >
+                             View All ({filteredAndSortedSummary.length - 6} more)
+                           </button>
+                        )}
+                      </>
+                    ) : (
                       <div className="py-12 text-center text-zinc-500 font-mono text-sm">No matching melee stock found</div>
                     )
                   ) : (
-                    filteredAndSortedDiamonds.length > 0 ? filteredAndSortedDiamonds.map((d) => (
+                    filteredAndSortedDiamonds.length > 0 ? (
+                      <>
+                        {filteredAndSortedDiamonds.slice(0, 6).map((d, i) => (
+                          
                       <div 
                         key={d.id}
                         className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedDiamondId === d.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
@@ -1583,9 +1602,246 @@ const InventoryPage: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                    )) : (
+
+                        ))}
+                        
+                        {filteredAndSortedDiamonds.length > 6 && (
+                           <button 
+                             onClick={() => setMobileFullListOpen(true)} 
+                             className="w-full mt-2 min-h-[50px] flex items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-sm font-bold text-white hover:bg-white/10 active:scale-95 transition-all"
+                           >
+                             View All ({filteredAndSortedDiamonds.length - 6} more)
+                           </button>
+                        )}
+                      </>
+                    ) : (
                       <div className="py-12 text-center text-zinc-500 font-mono text-sm">No matching diamonds found</div>
                     )
+                  )}
+
+                  {/* Mobile View All Modal */}
+                  {mobileFullListOpen && (
+                    <div className="fixed inset-0 z-[9999] flex flex-col bg-theme-bg" onClick={() => setMobileFullListOpen(false)}>
+                      <div className="pt-safe-top bg-black/40 border-b border-white/10 backdrop-blur-xl shrink-0">
+                         <div className="px-5 py-4 flex justify-between items-center">
+                           <h2 className="font-bold text-white text-lg">All Inventory</h2>
+                           <button onClick={() => setMobileFullListOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-zinc-400 hover:text-white transition-colors">
+                             <X size={20} />
+                           </button>
+                         </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-3 space-y-4 no-scrollbar pb-safe-bottom" onClick={e => e.stopPropagation()}>
+                         {isMeleeView 
+                            ? filteredAndSortedSummary.map((item, i) => (
+                      <div 
+                        key={item.spec.id || i}
+                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
+                        style={{ borderWidth: '1px' }}
+                        onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
+                      >
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
+                                <DiamondShapeIcon shape={item.spec.shape || 'Round'} size={22} />
+                              </div>
+                              <div>
+                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
+                                  {item.spec.label}
+                                  {item.spec.inventoryNote && <StickyNote size={14} className="text-lux-gold shrink-0" />}
+                                </div>
+                                <div className="text-[11px] text-zinc-500 font-medium uppercase tracking-widest">{item.spec.shape || 'Round'} • {item.spec.sizeMm}mm</div>
+                              </div>
+                            </div>
+
+                            <div className="text-right flex flex-col justify-center">
+                              <div className={`font-mono text-xl font-black tracking-tight leading-none ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                                {item.pcs > 0 ? item.pcs.toLocaleString() : '0'}
+                              </div>
+                              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Pieces</div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs pt-3 border-t border-white/10">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Weight</span>
+                              <span className="font-mono text-lux-cream">{item.ct.toFixed(3)} ct</span>
+                            </div>
+                            <div className="flex flex-col text-right">
+                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Est Value</span>
+                              <span className="font-mono text-emerald-400 font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Mobile Details (iOS Bottom Sheet Style) */}
+                        <div 
+                          className={`grid transition-all duration-300 ease-out ${expandedMeleeSpecId === item.spec.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                        >
+                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
+                            <div className="p-4 space-y-4" onClick={e => e.stopPropagation()}>
+                              {isManager && (
+                                <button
+                                  onClick={() => { setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
+                                  className="w-full min-h-[48px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-lux-gold text-black active:scale-95 transition-all shadow-[0_4px_20px_rgba(245,194,73,0.3)]"
+                                >
+                                  <Edit2 size={16} /> Correct Balance
+                                </button>
+                              )}
+
+                              <InventoryNotesSection
+                                item={item.spec}
+                                itemType="spec"
+                                currentUser={currentUser}
+                                onSave={async (text) => {
+                                  const nowStr = new Date().toISOString();
+                                  const authorId = currentUser?.id || 'unknown';
+                                  const authorName = currentUser?.name || 'Unknown';
+                                  const note = { text, authorId, authorName, createdAt: item.spec.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: !!item.spec.inventoryNote };
+                                  const auditEntry = { id: 'audit-' + Math.random().toString(36).substr(2, 9), action: item.spec.inventoryNote ? 'edited' : 'created', timestamp: nowStr, userId: authorId, userName: authorName, userRole: currentUser?.role || 'SYSTEM', prevValue: item.spec.inventoryNote?.text || '', newValue: text, location: 'Melee' } as NoteAuditEntry;
+                                  await store.updateSpec(item.spec.id, { inventoryNote: note, noteAuditTrail: [...(item.spec.noteAuditTrail || []), auditEntry] });
+                                  showToast('Note updated');
+                                }}
+                                onDelete={async () => {
+                                  await store.updateSpec(item.spec.id, { inventoryNote: undefined });
+                                  showToast('Note deleted');
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+))
+                            : filteredAndSortedDiamonds.map((d, i) => (
+                      <div 
+                        key={d.id}
+                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedDiamondId === d.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
+                        style={{ borderWidth: '1px' }}
+                        onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
+                      >
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedDiamondId === d.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
+                                <DiamondShapeIcon shape={d.shape} size={22} />
+                              </div>
+                              <div>
+                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
+                                  {d.shape}
+                                  <span className="font-mono text-lux-gold text-sm ml-1">{d.size.toFixed(2)}ct</span>
+                                  {(d.notes || d.inventoryNote) && <StickyNote size={14} className="text-lux-gold shrink-0" />}
+                                </div>
+                                <div className="text-[11px] text-zinc-500 font-medium tracking-wide">
+                                  {d.color || '-'} / {d.clarity || '-'} {d.cut ? `• ${d.cut}` : ''}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              {d.sold ? (
+                                <span className="px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 font-black uppercase tracking-widest text-[9px] border border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
+                                  Sold
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 font-black uppercase tracking-widest text-[9px] border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                  Available
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Quick Specs Bar */}
+                          <div className="flex items-center justify-between bg-black/40 rounded-xl p-2.5 mt-3 border border-white/5">
+                            <div className="flex flex-col">
+                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Place</span>
+                              <span className="text-xs font-mono text-lux-cream">{d.place || '-'}</span>
+                            </div>
+                            <div className="w-px h-6 bg-white/10"></div>
+                            <div className="flex flex-col text-center">
+                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Mount</span>
+                              <span className="text-xs font-mono text-lux-cream">{d.mountLoose || 'LOOSE'}</span>
+                            </div>
+                            <div className="w-px h-6 bg-white/10"></div>
+                            <div className="flex flex-col text-right">
+                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Code</span>
+                              <span className="text-xs font-mono text-lux-cream truncate max-w-[80px]">{d.code || '-'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Mobile Details */}
+                        <div 
+                          className={`grid transition-all duration-300 ease-out ${expandedDiamondId === d.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                        >
+                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
+                            <div className="p-4 space-y-5" onClick={e => e.stopPropagation()}>
+                              
+                              {/* Touch Action Buttons */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  onClick={() => toggleSoldStatus(d.id, d.sold)}
+                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.sold ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
+                                >
+                                  {d.sold ? 'Mark Available' : 'Mark Sold'}
+                                </button>
+                                <button
+                                  onClick={() => toggleMountState(d.id, d.mountLoose)}
+                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/40' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}
+                                >
+                                  {d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'Mounted' : 'Loose'}
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4 text-xs bg-white/[0.02] p-3 rounded-2xl border border-white/5">
+                                <div>
+                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">GIA Cert #</span>
+                                  {d.certNumber ? (
+                                    <a href={`https://www.gia.edu/report-check?reportno=${d.certNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-lux-gold underline font-mono flex items-center gap-1 mt-1">
+                                      {d.certNumber} <ExternalLink size={10} />
+                                    </a>
+                                  ) : <span className="text-zinc-600 italic mt-1 block">N/A</span>}
+                                </div>
+                                <div>
+                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Measurements</span>
+                                  <span className="text-lux-cream font-mono mt-1 block">{d.measurements || 'N/A'}</span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Cabinet Place</label>
+                                  <input type="text" value={inlinePlaceValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlinePlaceValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Place" />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Item Code</label>
+                                  <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Code" />
+                                </div>
+                              </div>
+
+                              <InventoryNotesSection
+                                item={{
+                                  ...d,
+                                  inventoryNote: d.inventoryNote || (d.notes ? { text: d.notes, authorId: 'legacy', authorName: 'Legacy Note', createdAt: new Date().toISOString(), lastEditedAt: new Date().toISOString(), edited: false } : undefined)
+                                }}
+                                itemType="diamond"
+                                currentUser={currentUser}
+                                onSave={async (text) => {
+                                  const nowStr = new Date().toISOString();
+                                  const authorId = currentUser?.id || 'unknown';
+                                  const authorName = currentUser?.name || 'Unknown';
+                                  const note = { text, authorId, authorName, createdAt: d.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: true } as InventoryNote;
+                                  await store.updateDiamond(d.id, { inventoryNote: note, notes: text });
+                                  showToast('Note updated');
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+))
+                         }
+                      </div>
+                    </div>
                   )}
                 </div>
                 {/* ═══════════════════════════════════════════════════════════════════
