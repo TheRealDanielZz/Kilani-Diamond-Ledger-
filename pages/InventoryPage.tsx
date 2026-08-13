@@ -93,6 +93,11 @@ const InventoryPage: React.FC = () => {
   const [inlineCodeValues, setInlineCodeValues] = useState<{ [key: string]: string }>({});
   const [inlineNotesValues, setInlineNotesValues] = useState<{ [key: string]: string }>({});
   const [actionHistory, setActionHistory] = useState<{ id: string; prevData: Partial<Diamond> }[]>([]);
+  
+  // Global Activity Filters & Expand State
+  const [activitySearch, setActivitySearch] = useState('');
+  const [activityTypeFilter, setActivityTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'UPDATE'>('ALL');
+  const [isActivityExpanded, setIsActivityExpanded] = useState(false);
 
   // Inline Operations
   const toggleSoldStatus = async (diamondId: string, currentStatus: string) => {
@@ -238,6 +243,30 @@ const InventoryPage: React.FC = () => {
       shapesList
     };
   }, [summary, isMeleeView]);
+
+  // Filtered Global Activity Movements
+  const filteredMovements = React.useMemo(() => {
+    return movements.filter(mv => {
+      const isPositive = mv.type.includes('IN') || mv.type === 'RETURN' || mv.type === 'BULK_RETURN_INTAKE' || mv.type === 'DIAMOND_ADD';
+      const isNegative = mv.type === 'ISSUE' || mv.type === 'BROKEN_OUT' || mv.type === 'DIAMOND_DELETE' || mv.type === 'MELEE_SPEC_DELETE';
+      const isNeutral = mv.type === 'DIAMOND_UPDATE';
+
+      if (activityTypeFilter === 'IN' && !isPositive) return false;
+      if (activityTypeFilter === 'OUT' && !isNegative) return false;
+      if (activityTypeFilter === 'UPDATE' && !isNeutral) return false;
+
+      if (activitySearch.trim()) {
+        const q = activitySearch.toLowerCase().trim();
+        const userName = (store.getUser(mv.createdById)?.name || 'System').toLowerCase();
+        const notes = (mv.notes || '').toLowerCase();
+        const bag = (mv.referenceBagNumber || '').toLowerCase();
+        const type = mv.type.toLowerCase();
+        return userName.includes(q) || notes.includes(q) || bag.includes(q) || type.includes(q);
+      }
+
+      return true;
+    });
+  }, [movements, activityTypeFilter, activitySearch]);
 
   // Filter and sort current stock (Melee)
   const filteredAndSortedSummary = React.useMemo(() => {
@@ -2075,62 +2104,7 @@ const InventoryPage: React.FC = () => {
              </div>
           </Card>
           
-          {/* Recent Movements Side Panel */}
-          <Card className="w-full flex flex-col h-[400px] p-0 overflow-hidden border-white/5 liquid-glass">
-             <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Global Activity</h3>
-                <div className="px-2 py-1 bg-zinc-800 rounded-lg text-[9px] font-bold text-zinc-500 border border-white/5">LIVE</div>
-             </div>
-             <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
-                {movements.length > 0 ? movements.slice(0, 30).map(mv => {
-                  const isPositive = mv.type.includes('IN') || mv.type === 'RETURN' || mv.type === 'BULK_RETURN_INTAKE' || mv.type === 'DIAMOND_ADD';
-                  const isNegative = mv.type === 'ISSUE' || mv.type === 'BROKEN_OUT' || mv.type === 'DIAMOND_DELETE' || mv.type === 'MELEE_SPEC_DELETE';
-                  const isNeutral = mv.type === 'DIAMOND_UPDATE';
-                  
-                  return (
-                    <div key={mv.id} className="relative p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:border-lux-gold/20 transition-all group overflow-hidden">
-                       <div className="flex justify-between items-start mb-3">
-                          <div className="flex items-center gap-3">
-                             <div className={`w-8 h-8 flex items-center justify-center rounded-xl ${isPositive ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20' : isNegative ? 'bg-red-950/40 text-red-400 border border-red-500/20' : 'bg-blue-950/40 text-blue-400 border border-blue-500/20'}`}>
-                               {isPositive ? <ArrowDownLeft size={14} /> : isNegative ? <AlertOctagon size={14} /> : <ArrowUpRight size={14} />}
-                             </div>
-                             <div>
-                                <span className={`text-[10px] font-black uppercase tracking-tight ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-blue-400'}`}>
-                                   {mv.type.replace(/_/g, ' ')}
-                                </span>
-                                <div className="text-[9px] text-zinc-600 mt-0.5 font-mono uppercase tracking-widest">{new Date(mv.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                             </div>
-                          </div>
-                          <div className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : isNegative ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
-                             {isPositive ? '+' : isNegative ? '-' : ''}{mv.lines?.reduce((a,b)=>a+(b.ct||0),0).toFixed(2)} ct
-                          </div>
-                       </div>
-                       
-                       {mv.notes && (
-                         <div className="text-[11px] text-zinc-400 leading-normal pl-11 line-clamp-2 italic opacity-80 group-hover:opacity-100 transition-opacity">
-                            "{mv.notes}"
-                         </div>
-                       )}
-                       
-                       <div className="mt-3 pl-11 flex items-center justify-between">
-                          <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight flex items-center gap-1.5 overflow-hidden">
-                             <div className="w-1 h-1 rounded-full bg-zinc-700" />
-                             <span className="truncate">By {store.getUser(mv.createdById)?.name || 'System'}</span>
-                          </div>
-                          {mv.referenceBagNumber && (
-                             <div className="text-[9px] bg-lux-gold/10 text-lux-gold px-1.5 py-0.5 rounded border border-lux-gold/20 font-bold">BAG #{mv.referenceBagNumber}</div>
-                          )}
-                       </div>
-                    </div>
-                  );
-                }) : (
-                  <div className="h-full flex flex-col items-center justify-center opacity-10 gap-3">
-                     <History size={40} />
-                     <span className="text-xs uppercase font-black tracking-widest">No Activity</span>
-                  </div>
-                )}
-             </div>
-          </Card>
+          
           {/* 
             ======================================================================
             MOBILE PREMIUM NATIVE LIST VIEW (< md screens)
@@ -2366,6 +2340,125 @@ const InventoryPage: React.FC = () => {
               )
             )}
           </div>
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              GLOBAL ACTIVITY COLLAPSIBLE & FILTERABLE PANEL (Below Lists)
+             ═══════════════════════════════════════════════════════════════════ */}
+          <Card className="w-full flex flex-col p-0 overflow-hidden border-white/5 liquid-glass mt-4 mb-8">
+            <button 
+              onClick={() => setIsActivityExpanded(!isActivityExpanded)}
+              className="w-full p-4 sm:p-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-lux-gold/10 text-lux-gold border border-lux-gold/20 flex items-center justify-center shrink-0">
+                  <History size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white tracking-tight">Global Activity</h3>
+                    <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full text-[10px] font-bold border border-emerald-500/20">LIVE</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 font-medium">Tap to {isActivityExpanded ? 'collapse' : 'view full history & filter log'}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2 text-zinc-400">
+                <span className="text-xs font-mono font-bold text-zinc-500">{filteredMovements.length} log{filteredMovements.length !== 1 ? 's' : ''}</span>
+                <div className={`p-1.5 rounded-lg bg-white/5 transition-transform duration-300 ${isActivityExpanded ? 'rotate-180 text-lux-gold' : ''}`}>
+                  <ChevronDown size={16} />
+                </div>
+              </div>
+            </button>
+
+            {isActivityExpanded && (
+              <div className="p-4 sm:p-5 space-y-4 border-t border-white/5 bg-black/20 animate-in slide-in-from-top-2 duration-300">
+                
+                {/* Search & Filter Bar */}
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Search activity by user, bag #, note..."
+                      value={activitySearch}
+                      onChange={e => setActivitySearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-lux-cream focus:border-lux-gold/50 outline-none placeholder:text-zinc-600 transition-all"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                    {[
+                      { id: 'ALL', label: 'All' },
+                      { id: 'IN', label: 'Added (+)' },
+                      { id: 'OUT', label: 'Removed (-)' },
+                      { id: 'UPDATE', label: 'Updates' },
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => setActivityTypeFilter(f.id as any)}
+                        className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border ${activityTypeFilter === f.id ? 'bg-lux-gold text-black border-lux-gold shadow-sm' : 'bg-white/5 text-zinc-400 border-white/5 hover:text-white'}`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Movement Entries */}
+                <div className="max-h-[450px] overflow-y-auto space-y-3 no-scrollbar pr-1">
+                  {filteredMovements.length > 0 ? (
+                    filteredMovements.map(mv => {
+                      const isPositive = mv.type.includes('IN') || mv.type === 'RETURN' || mv.type === 'BULK_RETURN_INTAKE' || mv.type === 'DIAMOND_ADD';
+                      const isNegative = mv.type === 'ISSUE' || mv.type === 'BROKEN_OUT' || mv.type === 'DIAMOND_DELETE' || mv.type === 'MELEE_SPEC_DELETE';
+                      const isNeutral = mv.type === 'DIAMOND_UPDATE';
+                      
+                      return (
+                        <div key={mv.id} className="relative p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-lux-gold/20 transition-all group">
+                           <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-3">
+                                 <div className={`w-8 h-8 flex items-center justify-center rounded-xl shrink-0 ${isPositive ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20' : isNegative ? 'bg-red-950/40 text-red-400 border border-red-500/20' : 'bg-blue-950/40 text-blue-400 border border-blue-500/20'}`}>
+                                   {isPositive ? <ArrowDownLeft size={14} /> : isNegative ? <AlertOctagon size={14} /> : <ArrowUpRight size={14} />}
+                                 </div>
+                                 <div>
+                                    <span className={`text-[10px] font-black uppercase tracking-tight ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-blue-400'}`}>
+                                       {mv.type.replace(/_/g, ' ')}
+                                    </span>
+                                    <div className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">{new Date(mv.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                                 </div>
+                              </div>
+                              <div className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold shrink-0 ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : isNegative ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
+                                 {isPositive ? '+' : isNegative ? '-' : ''}{mv.lines?.reduce((a,b)=>a+(b.ct||0),0).toFixed(2)} ct
+                              </div>
+                           </div>
+                           
+                           {mv.notes && (
+                             <div className="text-[11px] text-zinc-400 leading-normal pl-11 line-clamp-2 italic opacity-80 group-hover:opacity-100 transition-opacity">
+                                "{mv.notes}"
+                             </div>
+                           )}
+                           
+                           <div className="mt-2.5 pl-11 flex items-center justify-between">
+                              <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight flex items-center gap-1.5 overflow-hidden">
+                                 <div className="w-1 h-1 rounded-full bg-zinc-700" />
+                                 <span className="truncate">By {store.getUser(mv.createdById)?.name || 'System'}</span>
+                              </div>
+                              {mv.referenceBagNumber && (
+                                 <div className="text-[9px] bg-lux-gold/10 text-lux-gold px-1.5 py-0.5 rounded border border-lux-gold/20 font-bold">BAG #{mv.referenceBagNumber}</div>
+                              )}
+                           </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-12 flex flex-col items-center justify-center opacity-30 gap-2">
+                       <History size={32} />
+                       <span className="text-xs uppercase font-black tracking-widest">No Activity Matching Filter</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 
