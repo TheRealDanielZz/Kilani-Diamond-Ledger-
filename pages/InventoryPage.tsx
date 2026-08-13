@@ -5,7 +5,7 @@ import { InventoryMovementType, DiamondSpec, InventoryMovement, Project, Diamond
 import { Card, Button, StatusPill, Input } from '../components/UI';
 import { FastEntryGrid } from '../components/FastEntryGrid';
 import { isMeleeLocation } from '../services/inventoryMath';
-import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown } from 'lucide-react';
+import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown, X } from 'lucide-react';
 import { useToast } from '../App';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { InventoryNotesSection } from '../components/InventoryNotesSection';
