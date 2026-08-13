@@ -1219,115 +1219,14 @@ const InventoryPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Desktop Control Bar (Hidden on Mobile) */}
-          <Card className="hidden md:flex w-full overflow-hidden border-white/5 shadow-glass flex-col min-h-[500px] md:h-[650px] liquid-glass">
-             <div className="p-4 border-b border-white/5 flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
-                <div className="flex items-center gap-4 flex-wrap">
-                   <div className="relative group">
-                      <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-zinc-500 group-focus-within:text-lux-gold transition-colors" />
-                      <input 
-                        type="text" 
-                        placeholder={isMeleeView ? "Filter specs..." : "Filter diamonds..."}
-                        value={filterText}
-                        onChange={e => setFilterText(e.target.value)}
-                        className="pl-10 text-sm bg-black/40 border border-white/5 text-lux-cream rounded-2xl py-2 w-48 focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none transition-all placeholder:text-zinc-600" 
-                      />
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Location:</span>
-                     <select 
-                       value={selectedLocation}
-                       onChange={e => setSelectedLocation(e.target.value)}
-                       className="bg-[#16171D] border border-white/5 text-lux-cream rounded-xl px-3 py-1.5 text-xs font-bold focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none cursor-pointer"
-                     >
-                       {locations.filter(l => l !== 'Melee').map(loc => (
-                         <option key={loc} value={loc}>{loc}</option>
-                       ))}
-                       <option value="Melee">Melee</option>
-                     </select>
-                   </div>
-                   <button
-                      onClick={() => setShowAnalytics(!showAnalytics)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${showAnalytics ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/30' : 'bg-[#16171D] text-zinc-400 border-white/5 hover:text-white'}`}
-                    >
-                      <BarChart3 size={12} className={showAnalytics ? 'text-lux-gold' : 'text-zinc-500'} />
-                      <span>Analytics</span>
-                    </button>
-                    <button
-                      onClick={exportCurrentStockCSV}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
-                      title="Export current stock to CSV"
-                    >
-                      <Download size={12} className="text-zinc-500" />
-                      <span>Export CSV</span>
-                    </button>
-                    <button
-                      onClick={exportCurrentStockPDF}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
-                      title="Export current stock to PDF"
-                    >
-                      <FileDown size={12} className="text-zinc-500" />
-                      <span>Export PDF</span>
-                    </button>
-                    {isManager && isMeleeView && (
-                      <button
-                        onClick={runAudit}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
-                        title="Audit balance integrity (manager)"
-                      >
-                        <AlertOctagon size={12} className="text-zinc-500" />
-                        <span>Reconcile</span>
-                      </button>
-                    )}
-                   {selectedShapeFilter && (
-                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lux-gold/5 border border-lux-gold/10 rounded-xl">
-                        <Tag size={12} className="text-lux-gold" />
-                        <span className="text-[10px] font-bold text-lux-gold uppercase tracking-wider">{selectedShapeFilter}</span>
-                        <button onClick={() => setSelectedShapeFilter(null)} className="ml-1 text-zinc-500 hover:text-white text-[10px] font-bold">✕</button>
-                     </div>
-                   )}
-                </div>
-                <div className="flex items-center gap-3">
-                   <div className="flex flex-col items-end mr-3">
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">
-                        {isMeleeView ? 'Total Specs' : 'Total Diamonds'}
-                      </span>
-                      <span className="text-sm font-mono font-bold text-lux-cream">
-                         {isMeleeView
-                           ? (filteredAndSortedSummary.length !== summary.length ? `${filteredAndSortedSummary.length}/${summary.length}` : summary.length)
-                           : (filteredAndSortedDiamonds.length !== diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length
-                               ? `${filteredAndSortedDiamonds.length}/${diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length}`
-                               : diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length)}
-                      </span>
-                   </div>
-                   {isMeleeView ? (
-                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setActiveTab('add_stock')}>
-                        <Plus size={14} className="mr-1" /> Add
-                     </Button>
-                   ) : (
-                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setIsCreatingDiamond(true)}>
-                        <Plus size={14} className="mr-1" /> Add Stone
-                     </Button>
-                   )}
-                </div>
-             </div>
+          {/* Analytics Panel (Visible on Mobile & Desktop) */}
+          {(showAnalytics && ((!isMeleeView && analyticsData) || (isMeleeView && meleeAnalyticsData))) && (
+            <div className="mb-6 animate-in slide-in-from-top-4 duration-300">
 
-             <style>{`
-               @keyframes subtle-pulse {
-                 0%, 100% { opacity: 1; transform: scale(1); }
-                 50% { opacity: 0.85; transform: scale(0.98); }
-               }
-               .animate-pulse-subtle {
-                 animation: subtle-pulse 3s infinite ease-in-out;
-               }
-               .legend-bar-hover:hover {
-                 background-color: rgba(255, 255, 255, 0.05);
-               }
-             `}</style>
 
              {/* Collapsible Analytics Panel */}
              {!isMeleeView && showAnalytics && analyticsData && (
-               <div className="p-6 border-b border-white/5 bg-black/30 grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
+               <div className="p-4 sm:p-6 rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-glass grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
                   {/* Donut Chart */}
                   <div className="flex flex-col items-center justify-center bg-white/[0.01] border border-white/5 p-4 rounded-2xl relative overflow-hidden group">
                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">Shape Distribution</div>
@@ -1451,7 +1350,7 @@ const InventoryPage: React.FC = () => {
 
               {/* Melee Analytics Panel */}
               {isMeleeView && showAnalytics && meleeAnalyticsData && (
-                <div className="p-6 border-b border-white/5 bg-black/30 grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
+                <div className="p-4 sm:p-6 rounded-3xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-glass grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
                    {/* Shape Distribution Donut */}
                    <div className="flex flex-col items-center justify-center bg-white/[0.01] border border-white/5 p-4 rounded-2xl relative overflow-hidden group">
                       <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4">Shape Distribution (by Pcs)</div>
@@ -1564,7 +1463,114 @@ const InventoryPage: React.FC = () => {
                       </div>
                    </div>
                 </div>
-              )}
+              )}            </div>
+          )}
+
+          {/* Desktop Control Bar (Hidden on Mobile) */}
+          <Card className="hidden md:flex w-full overflow-hidden border-white/5 shadow-glass flex-col min-h-[500px] md:h-[650px] liquid-glass">
+             <div className="p-4 border-b border-white/5 flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
+                <div className="flex items-center gap-4 flex-wrap">
+                   <div className="relative group">
+                      <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-zinc-500 group-focus-within:text-lux-gold transition-colors" />
+                      <input 
+                        type="text" 
+                        placeholder={isMeleeView ? "Filter specs..." : "Filter diamonds..."}
+                        value={filterText}
+                        onChange={e => setFilterText(e.target.value)}
+                        className="pl-10 text-sm bg-black/40 border border-white/5 text-lux-cream rounded-2xl py-2 w-48 focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none transition-all placeholder:text-zinc-600" 
+                      />
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Location:</span>
+                     <select 
+                       value={selectedLocation}
+                       onChange={e => setSelectedLocation(e.target.value)}
+                       className="bg-[#16171D] border border-white/5 text-lux-cream rounded-xl px-3 py-1.5 text-xs font-bold focus:border-lux-gold/50 focus:ring-2 focus:ring-lux-gold/10 outline-none cursor-pointer"
+                     >
+                       {locations.filter(l => l !== 'Melee').map(loc => (
+                         <option key={loc} value={loc}>{loc}</option>
+                       ))}
+                       <option value="Melee">Melee</option>
+                     </select>
+                   </div>
+                   <button
+                      onClick={() => setShowAnalytics(!showAnalytics)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${showAnalytics ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/30' : 'bg-[#16171D] text-zinc-400 border-white/5 hover:text-white'}`}
+                    >
+                      <BarChart3 size={12} className={showAnalytics ? 'text-lux-gold' : 'text-zinc-500'} />
+                      <span>Analytics</span>
+                    </button>
+                    <button
+                      onClick={exportCurrentStockCSV}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                      title="Export current stock to CSV"
+                    >
+                      <Download size={12} className="text-zinc-500" />
+                      <span>Export CSV</span>
+                    </button>
+                    <button
+                      onClick={exportCurrentStockPDF}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                      title="Export current stock to PDF"
+                    >
+                      <FileDown size={12} className="text-zinc-500" />
+                      <span>Export PDF</span>
+                    </button>
+                    {isManager && isMeleeView && (
+                      <button
+                        onClick={runAudit}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border bg-[#16171D] text-zinc-400 border-white/5 hover:text-white"
+                        title="Audit balance integrity (manager)"
+                      >
+                        <AlertOctagon size={12} className="text-zinc-500" />
+                        <span>Reconcile</span>
+                      </button>
+                    )}
+                   {selectedShapeFilter && (
+                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-lux-gold/5 border border-lux-gold/10 rounded-xl">
+                        <Tag size={12} className="text-lux-gold" />
+                        <span className="text-[10px] font-bold text-lux-gold uppercase tracking-wider">{selectedShapeFilter}</span>
+                        <button onClick={() => setSelectedShapeFilter(null)} className="ml-1 text-zinc-500 hover:text-white text-[10px] font-bold">✕</button>
+                     </div>
+                   )}
+                </div>
+                <div className="flex items-center gap-3">
+                   <div className="flex flex-col items-end mr-3">
+                      <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">
+                        {isMeleeView ? 'Total Specs' : 'Total Diamonds'}
+                      </span>
+                      <span className="text-sm font-mono font-bold text-lux-cream">
+                         {isMeleeView
+                           ? (filteredAndSortedSummary.length !== summary.length ? `${filteredAndSortedSummary.length}/${summary.length}` : summary.length)
+                           : (filteredAndSortedDiamonds.length !== diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length
+                               ? `${filteredAndSortedDiamonds.length}/${diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length}`
+                               : diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length)}
+                      </span>
+                   </div>
+                   {isMeleeView ? (
+                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setActiveTab('add_stock')}>
+                        <Plus size={14} className="mr-1" /> Add
+                     </Button>
+                   ) : (
+                     <Button variant="secondary" size="sm" className="rounded-xl border-white/5" onClick={() => setIsCreatingDiamond(true)}>
+                        <Plus size={14} className="mr-1" /> Add Stone
+                     </Button>
+                   )}
+                </div>
+             </div>
+
+             <style>{`
+               @keyframes subtle-pulse {
+                 0%, 100% { opacity: 1; transform: scale(1); }
+                 50% { opacity: 0.85; transform: scale(0.98); }
+               }
+               .animate-pulse-subtle {
+                 animation: subtle-pulse 3s infinite ease-in-out;
+               }
+               .legend-bar-hover:hover {
+                 background-color: rgba(255, 255, 255, 0.05);
+               }
+             `}</style>
              
              <div className="flex-1 overflow-auto no-scrollbar">
                 {/* ═══════════════════════════════════════════════════════════════════
