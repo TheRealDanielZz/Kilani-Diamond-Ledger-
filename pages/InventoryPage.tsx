@@ -5,7 +5,7 @@ import { InventoryMovementType, DiamondSpec, InventoryMovement, Project, Diamond
 import { Card, Button, StatusPill, Input } from '../components/UI';
 import { FastEntryGrid } from '../components/FastEntryGrid';
 import { isMeleeLocation } from '../services/inventoryMath';
-import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown, X } from 'lucide-react';
+import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown, X, MoreHorizontal } from 'lucide-react';
 import { useToast } from '../App';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { InventoryNotesSection } from '../components/InventoryNotesSection';
@@ -87,6 +87,7 @@ const InventoryPage: React.FC = () => {
   const [selectedShapeFilter, setSelectedShapeFilter] = useState<string | null>(null);
   const [expandedDiamondId, setExpandedDiamondId] = useState<string | null>(null);
   const [expandedMeleeSpecId, setExpandedMeleeSpecId] = useState<string | null>(null);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [mobileFullListOpen, setMobileFullListOpen] = useState(false);
   const [inlinePlaceValues, setInlinePlaceValues] = useState<{ [key: string]: string }>({});
   const [inlineCodeValues, setInlineCodeValues] = useState<{ [key: string]: string }>({});
@@ -981,9 +982,25 @@ const InventoryPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 safe-pt pb-24">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 safe-pt pb-24">
+      {/* 
+        ======================================================================
+        PREMIUM MOBILE + DESKTOP HEADER & CONTROLS
+        ======================================================================
+      */}
+      
+      {/* Mobile Sticky Header */}
+      <div className="md:hidden sticky top-0 z-50 -mx-4 px-4 py-3 bg-theme-bg/80 backdrop-blur-xl border-b border-white/5 mb-4 shadow-sm flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-lux-gold/10 rounded-xl flex items-center justify-center border border-lux-gold/20">
+            <LayoutGrid className="text-lux-gold" size={18} />
+          </div>
+          <h1 className="text-xl font-bold text-lux-cream tracking-tight">Inventory</h1>
+        </div>
+      </div>
+
+      {/* Desktop Header (Hidden on Mobile) */}
+      <div className="hidden md:flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 mt-6">
         <div data-tour="inventory-header">
           <h1 className="text-3xl font-bold text-lux-cream tracking-tight flex items-center gap-3">
              <div className="w-10 h-10 bg-lux-gold/10 rounded-2xl flex items-center justify-center border border-lux-gold/20">
@@ -1020,10 +1037,161 @@ const InventoryPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Mobile Segmented Control (iOS Style) */}
+      <div className="md:hidden flex bg-black/40 p-1 rounded-xl border border-white/5 mb-6 shadow-inner">
+         <button 
+           onClick={() => setActiveTab('stock')} 
+           className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${activeTab === 'stock' ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-500'}`}
+         >
+           Stock
+         </button>
+         {isManager && (
+           <button 
+             onClick={() => setActiveTab('add_stock')} 
+             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${activeTab === 'add_stock' ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-500'}`}
+           >
+             Add
+           </button>
+         )}
+         {isManager && (
+           <button 
+             onClick={() => setActiveTab('broken')} 
+             className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${activeTab === 'broken' ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-500'}`}
+           >
+             Breakage
+           </button>
+         )}
+      </div>
+
       {activeTab === 'stock' && (
-        <div className="flex flex-col gap-8 animate-in fade-in duration-300">
-          {/* Main Stock Table */}
-          <Card className="w-full overflow-hidden border-white/5 shadow-glass flex flex-col min-h-[500px] md:h-[650px] liquid-glass">
+        <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+          
+          {/* Mobile Premium Control Panel (Search, Locations, Actions) */}
+          <div className="md:hidden flex flex-col gap-4 mb-2">
+            {/* Search */}
+            <div className="relative w-full group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-lux-gold transition-colors" />
+              <input 
+                type="text" 
+                placeholder={isMeleeView ? "Search melee specs..." : "Search diamonds by shape, code, or cert..."}
+                value={filterText}
+                onChange={e => setFilterText(e.target.value)}
+                className="w-full pl-11 pr-4 py-3.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl text-sm text-lux-cream focus:border-lux-gold/50 focus:bg-black/60 outline-none transition-all placeholder:text-zinc-600 shadow-glass"
+              />
+            </div>
+            
+            {/* Scrollable Location Pills */}
+            <div className="-mx-4 px-4 overflow-x-auto no-scrollbar flex items-center gap-2 pb-2">
+              {[...locations.filter(l => l !== 'Melee'), 'Melee'].map(loc => (
+                <button
+                  key={loc}
+                  onClick={() => setSelectedLocation(loc)}
+                  className={`shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border ${selectedLocation === loc ? 'bg-lux-gold text-black border-lux-gold shadow-[0_4px_12px_rgba(245,194,73,0.2)]' : 'bg-black/40 text-zinc-400 border-white/10 hover:text-white'}`}
+                >
+                  {loc}
+                </button>
+              ))}
+            </div>
+
+            {/* Mobile Action Controls */}
+            <div className="flex items-center gap-2 pb-1">
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all border ${showAnalytics ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/30' : 'bg-white/[0.03] text-zinc-300 border-white/10 active:scale-95'}`}
+              >
+                <BarChart3 size={15} /> Analytics
+              </button>
+
+              <button
+                onClick={() => setMobileActionsOpen(true)}
+                className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-white/[0.03] text-zinc-300 border border-white/10 active:scale-95 transition-all"
+              >
+                <MoreHorizontal size={16} /> More
+              </button>
+            </div>
+
+            {/* Mobile Actions Bottom Sheet Modal */}
+            {mobileActionsOpen && (
+              <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setMobileActionsOpen(false)}>
+                <div className="w-full max-w-lg bg-[#16171D] border-t border-white/10 rounded-t-[32px] p-6 shadow-2xl animate-in slide-in-from-bottom duration-300 space-y-4" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-lux-gold"></div>
+                      <h3 className="text-base font-bold text-white">Stock Actions</h3>
+                    </div>
+                    <button onClick={() => setMobileActionsOpen(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white"><X size={16} /></button>
+                  </div>
+
+                  <div className="space-y-2.5 pt-1">
+                    <button
+                      onClick={() => { exportCurrentStockPDF(); setMobileActionsOpen(false); }}
+                      className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 text-lux-cream hover:bg-white/5 text-left font-bold text-sm transition-all"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-lux-gold/10 text-lux-gold flex items-center justify-center">
+                        <FileDown size={18} />
+                      </div>
+                      <div>
+                        <div>Export PDF Stock Report</div>
+                        <div className="text-[11px] text-zinc-500 font-normal">Formatted print-ready document</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => { exportCurrentStockCSV(); setMobileActionsOpen(false); }}
+                      className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 text-lux-cream hover:bg-white/5 text-left font-bold text-sm transition-all"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                        <Download size={18} />
+                      </div>
+                      <div>
+                        <div>Export CSV Spreadsheet</div>
+                        <div className="text-[11px] text-zinc-500 font-normal">Raw data for Excel or Sheets</div>
+                      </div>
+                    </button>
+
+                    {isManager && isMeleeView && (
+                      <button
+                        onClick={() => { runAudit(); setMobileActionsOpen(false); }}
+                        className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-left font-bold text-sm transition-all"
+                      >
+                        <div className="w-9 h-9 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center">
+                          <AlertOctagon size={18} />
+                        </div>
+                        <div>
+                          <div>Audit Balance Integrity</div>
+                          <div className="text-[11px] text-red-400/70 font-normal">Reconcile melee weight vs stock logs</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {selectedShapeFilter && (
+              <div className="flex items-center justify-between px-3 py-2 bg-lux-gold/5 border border-lux-gold/10 rounded-xl">
+                 <div className="flex items-center gap-1.5">
+                   <Tag size={12} className="text-lux-gold" />
+                   <span className="text-xs font-bold text-lux-gold uppercase tracking-wider">{selectedShapeFilter}</span>
+                 </div>
+                 <button onClick={() => setSelectedShapeFilter(null)} className="w-6 h-6 flex items-center justify-center rounded-full bg-black/20 text-zinc-400 hover:text-white"><X size={12} /></button>
+              </div>
+            )}
+            
+            <div className="flex items-center justify-between px-1 mt-2">
+              <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">{isMeleeView ? 'Melee Stock' : 'Certified Diamonds'}</span>
+              <span className="text-xs font-mono font-bold text-lux-cream">
+                 {isMeleeView
+                   ? (filteredAndSortedSummary.length !== summary.length ? `${filteredAndSortedSummary.length}/${summary.length}` : summary.length)
+                   : (filteredAndSortedDiamonds.length !== diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length
+                       ? `${filteredAndSortedDiamonds.length}/${diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length}`
+                       : diamonds.filter(d => d.location.toLowerCase() === selectedLocation.toLowerCase()).length)} Items
+              </span>
+            </div>
+          </div>
+
+          {/* Desktop Control Bar (Hidden on Mobile) */}
+          <Card className="hidden md:flex w-full overflow-hidden border-white/5 shadow-glass flex-col min-h-[500px] md:h-[650px] liquid-glass">
              <div className="p-4 border-b border-white/5 flex flex-wrap gap-4 justify-between items-center bg-white/[0.02]">
                 <div className="flex items-center gap-4 flex-wrap">
                    <div className="relative group">
@@ -1371,481 +1539,8 @@ const InventoryPage: React.FC = () => {
              
              <div className="flex-1 overflow-auto no-scrollbar">
                 {/* ═══════════════════════════════════════════════════════════════════
-                    MOBILE NATIVE CARD LIST VIEW (< md screens)
+                    DESKTOP DATA TABLE VIEW (hidden on mobile < md)
                    ═══════════════════════════════════════════════════════════════════ */}
-                <div className="block md:hidden p-3 space-y-4">
-                  {isMeleeView ? (
-                    filteredAndSortedSummary.length > 0 ? (
-                      <>
-                        {filteredAndSortedSummary.slice(0, 6).map((item, i) => (
-                          
-                      <div 
-                        key={item.spec.id || i}
-                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
-                        style={{ borderWidth: '1px' }}
-                        onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
-                      >
-                        <div className="p-4">
-                          <div className="flex items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
-                                <DiamondShapeIcon shape={item.spec.shape || 'Round'} size={22} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
-                                  {item.spec.label}
-                                  {item.spec.inventoryNote && <StickyNote size={14} className="text-lux-gold shrink-0" />}
-                                </div>
-                                <div className="text-[11px] text-zinc-500 font-medium uppercase tracking-widest">{item.spec.shape || 'Round'} • {item.spec.sizeMm}mm</div>
-                              </div>
-                            </div>
-
-                            <div className="text-right flex flex-col justify-center">
-                              <div className={`font-mono text-xl font-black tracking-tight leading-none ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>
-                                {item.pcs > 0 ? item.pcs.toLocaleString() : '0'}
-                              </div>
-                              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Pieces</div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between text-xs pt-3 border-t border-white/10">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Weight</span>
-                              <span className="font-mono text-lux-cream">{item.ct.toFixed(3)} ct</span>
-                            </div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Est Value</span>
-                              <span className="font-mono text-emerald-400 font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Mobile Details (iOS Bottom Sheet Style) */}
-                        <div 
-                          className={`grid transition-all duration-300 ease-out ${expandedMeleeSpecId === item.spec.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-                        >
-                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
-                            <div className="p-4 space-y-4" onClick={e => e.stopPropagation()}>
-                              {isManager && (
-                                <button
-                                  onClick={() => { setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
-                                  className="w-full min-h-[48px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-lux-gold text-black active:scale-95 transition-all shadow-[0_4px_20px_rgba(245,194,73,0.3)]"
-                                >
-                                  <Edit2 size={16} /> Correct Balance
-                                </button>
-                              )}
-
-                              <InventoryNotesSection
-                                item={item.spec}
-                                itemType="spec"
-                                currentUser={currentUser}
-                                onSave={async (text) => {
-                                  const nowStr = new Date().toISOString();
-                                  const authorId = currentUser?.id || 'unknown';
-                                  const authorName = currentUser?.name || 'Unknown';
-                                  const note = { text, authorId, authorName, createdAt: item.spec.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: !!item.spec.inventoryNote };
-                                  const auditEntry = { id: 'audit-' + Math.random().toString(36).substr(2, 9), action: item.spec.inventoryNote ? 'edited' : 'created', timestamp: nowStr, userId: authorId, userName: authorName, userRole: currentUser?.role || 'SYSTEM', prevValue: item.spec.inventoryNote?.text || '', newValue: text, location: 'Melee' } as NoteAuditEntry;
-                                  await store.updateSpec(item.spec.id, { inventoryNote: note, noteAuditTrail: [...(item.spec.noteAuditTrail || []), auditEntry] });
-                                  showToast('Note updated');
-                                }}
-                                onDelete={async () => {
-                                  await store.updateSpec(item.spec.id, { inventoryNote: undefined });
-                                  showToast('Note deleted');
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                        ))}
-                        
-                        {filteredAndSortedSummary.length > 6 && (
-                           <button 
-                             onClick={() => setMobileFullListOpen(true)} 
-                             className="w-full mt-2 min-h-[50px] flex items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-sm font-bold text-white hover:bg-white/10 active:scale-95 transition-all"
-                           >
-                             View All ({filteredAndSortedSummary.length - 6} more)
-                           </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="py-12 text-center text-zinc-500 font-mono text-sm">No matching melee stock found</div>
-                    )
-                  ) : (
-                    filteredAndSortedDiamonds.length > 0 ? (
-                      <>
-                        {filteredAndSortedDiamonds.slice(0, 6).map((d, i) => (
-                          
-                      <div 
-                        key={d.id}
-                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedDiamondId === d.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
-                        style={{ borderWidth: '1px' }}
-                        onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
-                      >
-                        <div className="p-4">
-                          <div className="flex items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedDiamondId === d.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
-                                <DiamondShapeIcon shape={d.shape} size={22} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
-                                  {d.shape}
-                                  <span className="font-mono text-lux-gold text-sm ml-1">{d.size.toFixed(2)}ct</span>
-                                  {(d.notes || d.inventoryNote) && <StickyNote size={14} className="text-lux-gold shrink-0" />}
-                                </div>
-                                <div className="text-[11px] text-zinc-500 font-medium tracking-wide">
-                                  {d.color || '-'} / {d.clarity || '-'} {d.cut ? `• ${d.cut}` : ''}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div>
-                              {d.sold ? (
-                                <span className="px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 font-black uppercase tracking-widest text-[9px] border border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
-                                  Sold
-                                </span>
-                              ) : (
-                                <span className="px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 font-black uppercase tracking-widest text-[9px] border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                                  Available
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Quick Specs Bar */}
-                          <div className="flex items-center justify-between bg-black/40 rounded-xl p-2.5 mt-3 border border-white/5">
-                            <div className="flex flex-col">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Place</span>
-                              <span className="text-xs font-mono text-lux-cream">{d.place || '-'}</span>
-                            </div>
-                            <div className="w-px h-6 bg-white/10"></div>
-                            <div className="flex flex-col text-center">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Mount</span>
-                              <span className="text-xs font-mono text-lux-cream">{d.mountLoose || 'LOOSE'}</span>
-                            </div>
-                            <div className="w-px h-6 bg-white/10"></div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Code</span>
-                              <span className="text-xs font-mono text-lux-cream truncate max-w-[80px]">{d.code || '-'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Mobile Details */}
-                        <div 
-                          className={`grid transition-all duration-300 ease-out ${expandedDiamondId === d.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-                        >
-                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
-                            <div className="p-4 space-y-5" onClick={e => e.stopPropagation()}>
-                              
-                              {/* Touch Action Buttons */}
-                              <div className="grid grid-cols-2 gap-3">
-                                <button
-                                  onClick={() => toggleSoldStatus(d.id, d.sold)}
-                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.sold ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
-                                >
-                                  {d.sold ? 'Mark Available' : 'Mark Sold'}
-                                </button>
-                                <button
-                                  onClick={() => toggleMountState(d.id, d.mountLoose)}
-                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/40' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}
-                                >
-                                  {d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'Mounted' : 'Loose'}
-                                </button>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4 text-xs bg-white/[0.02] p-3 rounded-2xl border border-white/5">
-                                <div>
-                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">GIA Cert #</span>
-                                  {d.certNumber ? (
-                                    <a href={`https://www.gia.edu/report-check?reportno=${d.certNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-lux-gold underline font-mono flex items-center gap-1 mt-1">
-                                      {d.certNumber} <ExternalLink size={10} />
-                                    </a>
-                                  ) : <span className="text-zinc-600 italic mt-1 block">N/A</span>}
-                                </div>
-                                <div>
-                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Measurements</span>
-                                  <span className="text-lux-cream font-mono mt-1 block">{d.measurements || 'N/A'}</span>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Cabinet Place</label>
-                                  <input type="text" value={inlinePlaceValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlinePlaceValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Place" />
-                                </div>
-                                <div>
-                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Item Code</label>
-                                  <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Code" />
-                                </div>
-                              </div>
-
-                              <InventoryNotesSection
-                                item={{
-                                  ...d,
-                                  inventoryNote: d.inventoryNote || (d.notes ? { text: d.notes, authorId: 'legacy', authorName: 'Legacy Note', createdAt: new Date().toISOString(), lastEditedAt: new Date().toISOString(), edited: false } : undefined)
-                                }}
-                                itemType="diamond"
-                                currentUser={currentUser}
-                                onSave={async (text) => {
-                                  const nowStr = new Date().toISOString();
-                                  const authorId = currentUser?.id || 'unknown';
-                                  const authorName = currentUser?.name || 'Unknown';
-                                  const note = { text, authorId, authorName, createdAt: d.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: true } as InventoryNote;
-                                  await store.updateDiamond(d.id, { inventoryNote: note, notes: text });
-                                  showToast('Note updated');
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                        ))}
-                        
-                        {filteredAndSortedDiamonds.length > 6 && (
-                           <button 
-                             onClick={() => setMobileFullListOpen(true)} 
-                             className="w-full mt-2 min-h-[50px] flex items-center justify-center rounded-2xl bg-white/5 border border-white/10 text-sm font-bold text-white hover:bg-white/10 active:scale-95 transition-all"
-                           >
-                             View All ({filteredAndSortedDiamonds.length - 6} more)
-                           </button>
-                        )}
-                      </>
-                    ) : (
-                      <div className="py-12 text-center text-zinc-500 font-mono text-sm">No matching diamonds found</div>
-                    )
-                  )}
-
-                  {/* Mobile View All Modal */}
-                  {mobileFullListOpen && (
-                    <div className="fixed inset-0 z-[9999] flex flex-col justify-end">
-                      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in" onClick={() => setMobileFullListOpen(false)}></div>
-                      <div className="relative w-full h-[92vh] bg-[#121318] border-t border-white/10 rounded-t-[32px] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-full duration-300">
-                        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 rounded-full bg-white/20"></div>
-                        <div className="pt-8 pb-4 px-6 flex justify-between items-center border-b border-white/5 bg-black/20 shrink-0">
-                           <h2 className="font-bold text-white text-xl tracking-tight">All Inventory</h2>
-                           <button onClick={() => setMobileFullListOpen(false)} className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 text-zinc-300 hover:text-white hover:bg-white/20 transition-colors active:scale-95">
-                             <X size={18} />
-                           </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar pb-safe-bottom" onClick={e => e.stopPropagation()}>
-                         {isMeleeView 
-                            ? filteredAndSortedSummary.map((item, i) => (
-                      <div 
-                        key={item.spec.id || i}
-                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
-                        style={{ borderWidth: '1px' }}
-                        onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
-                      >
-                        <div className="p-4">
-                          <div className="flex items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
-                                <DiamondShapeIcon shape={item.spec.shape || 'Round'} size={22} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
-                                  {item.spec.label}
-                                  {item.spec.inventoryNote && <StickyNote size={14} className="text-lux-gold shrink-0" />}
-                                </div>
-                                <div className="text-[11px] text-zinc-500 font-medium uppercase tracking-widest">{item.spec.shape || 'Round'} • {item.spec.sizeMm}mm</div>
-                              </div>
-                            </div>
-
-                            <div className="text-right flex flex-col justify-center">
-                              <div className={`font-mono text-xl font-black tracking-tight leading-none ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>
-                                {item.pcs > 0 ? item.pcs.toLocaleString() : '0'}
-                              </div>
-                              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Pieces</div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between text-xs pt-3 border-t border-white/10">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Weight</span>
-                              <span className="font-mono text-lux-cream">{item.ct.toFixed(3)} ct</span>
-                            </div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Est Value</span>
-                              <span className="font-mono text-emerald-400 font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Mobile Details (iOS Bottom Sheet Style) */}
-                        <div 
-                          className={`grid transition-all duration-300 ease-out ${expandedMeleeSpecId === item.spec.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-                        >
-                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
-                            <div className="p-4 space-y-4" onClick={e => e.stopPropagation()}>
-                              {isManager && (
-                                <button
-                                  onClick={() => { setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
-                                  className="w-full min-h-[48px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-lux-gold text-black active:scale-95 transition-all shadow-[0_4px_20px_rgba(245,194,73,0.3)]"
-                                >
-                                  <Edit2 size={16} /> Correct Balance
-                                </button>
-                              )}
-
-                              <InventoryNotesSection
-                                item={item.spec}
-                                itemType="spec"
-                                currentUser={currentUser}
-                                onSave={async (text) => {
-                                  const nowStr = new Date().toISOString();
-                                  const authorId = currentUser?.id || 'unknown';
-                                  const authorName = currentUser?.name || 'Unknown';
-                                  const note = { text, authorId, authorName, createdAt: item.spec.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: !!item.spec.inventoryNote };
-                                  const auditEntry = { id: 'audit-' + Math.random().toString(36).substr(2, 9), action: item.spec.inventoryNote ? 'edited' : 'created', timestamp: nowStr, userId: authorId, userName: authorName, userRole: currentUser?.role || 'SYSTEM', prevValue: item.spec.inventoryNote?.text || '', newValue: text, location: 'Melee' } as NoteAuditEntry;
-                                  await store.updateSpec(item.spec.id, { inventoryNote: note, noteAuditTrail: [...(item.spec.noteAuditTrail || []), auditEntry] });
-                                  showToast('Note updated');
-                                }}
-                                onDelete={async () => {
-                                  await store.updateSpec(item.spec.id, { inventoryNote: undefined });
-                                  showToast('Note deleted');
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-))
-                            : filteredAndSortedDiamonds.map((d, i) => (
-                      <div 
-                        key={d.id}
-                        className={`relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedDiamondId === d.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-white/[0.03] border-white/10'}`}
-                        style={{ borderWidth: '1px' }}
-                        onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
-                      >
-                        <div className="p-4">
-                          <div className="flex items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedDiamondId === d.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-black/40 text-zinc-300 border-white/10'}`}>
-                                <DiamondShapeIcon shape={d.shape} size={22} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
-                                  {d.shape}
-                                  <span className="font-mono text-lux-gold text-sm ml-1">{d.size.toFixed(2)}ct</span>
-                                  {(d.notes || d.inventoryNote) && <StickyNote size={14} className="text-lux-gold shrink-0" />}
-                                </div>
-                                <div className="text-[11px] text-zinc-500 font-medium tracking-wide">
-                                  {d.color || '-'} / {d.clarity || '-'} {d.cut ? `• ${d.cut}` : ''}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div>
-                              {d.sold ? (
-                                <span className="px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 font-black uppercase tracking-widest text-[9px] border border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
-                                  Sold
-                                </span>
-                              ) : (
-                                <span className="px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 font-black uppercase tracking-widest text-[9px] border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                                  Available
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Quick Specs Bar */}
-                          <div className="flex items-center justify-between bg-black/40 rounded-xl p-2.5 mt-3 border border-white/5">
-                            <div className="flex flex-col">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Place</span>
-                              <span className="text-xs font-mono text-lux-cream">{d.place || '-'}</span>
-                            </div>
-                            <div className="w-px h-6 bg-white/10"></div>
-                            <div className="flex flex-col text-center">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Mount</span>
-                              <span className="text-xs font-mono text-lux-cream">{d.mountLoose || 'LOOSE'}</span>
-                            </div>
-                            <div className="w-px h-6 bg-white/10"></div>
-                            <div className="flex flex-col text-right">
-                              <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Code</span>
-                              <span className="text-xs font-mono text-lux-cream truncate max-w-[80px]">{d.code || '-'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Mobile Details */}
-                        <div 
-                          className={`grid transition-all duration-300 ease-out ${expandedDiamondId === d.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
-                        >
-                          <div className="overflow-hidden bg-black/40 border-t border-white/10">
-                            <div className="p-4 space-y-5" onClick={e => e.stopPropagation()}>
-                              
-                              {/* Touch Action Buttons */}
-                              <div className="grid grid-cols-2 gap-3">
-                                <button
-                                  onClick={() => toggleSoldStatus(d.id, d.sold)}
-                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.sold ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
-                                >
-                                  {d.sold ? 'Mark Available' : 'Mark Sold'}
-                                </button>
-                                <button
-                                  onClick={() => toggleMountState(d.id, d.mountLoose)}
-                                  className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/40' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}
-                                >
-                                  {d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'Mounted' : 'Loose'}
-                                </button>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4 text-xs bg-white/[0.02] p-3 rounded-2xl border border-white/5">
-                                <div>
-                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">GIA Cert #</span>
-                                  {d.certNumber ? (
-                                    <a href={`https://www.gia.edu/report-check?reportno=${d.certNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-lux-gold underline font-mono flex items-center gap-1 mt-1">
-                                      {d.certNumber} <ExternalLink size={10} />
-                                    </a>
-                                  ) : <span className="text-zinc-600 italic mt-1 block">N/A</span>}
-                                </div>
-                                <div>
-                                  <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Measurements</span>
-                                  <span className="text-lux-cream font-mono mt-1 block">{d.measurements || 'N/A'}</span>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Cabinet Place</label>
-                                  <input type="text" value={inlinePlaceValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlinePlaceValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Place" />
-                                </div>
-                                <div>
-                                  <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Item Code</label>
-                                  <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Code" />
-                                </div>
-                              </div>
-
-                              <InventoryNotesSection
-                                item={{
-                                  ...d,
-                                  inventoryNote: d.inventoryNote || (d.notes ? { text: d.notes, authorId: 'legacy', authorName: 'Legacy Note', createdAt: new Date().toISOString(), lastEditedAt: new Date().toISOString(), edited: false } : undefined)
-                                }}
-                                itemType="diamond"
-                                currentUser={currentUser}
-                                onSave={async (text) => {
-                                  const nowStr = new Date().toISOString();
-                                  const authorId = currentUser?.id || 'unknown';
-                                  const authorName = currentUser?.name || 'Unknown';
-                                  const note = { text, authorId, authorName, createdAt: d.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: true } as InventoryNote;
-                                  await store.updateDiamond(d.id, { inventoryNote: note, notes: text });
-                                  showToast('Note updated');
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-))
-                         }
-                      </div>
-                    </div>
-                  </div>
-                  )}
-                </div>
                 {/* ═══════════════════════════════════════════════════════════════════
                     DESKTOP DATA TABLE VIEW (hidden on mobile < md)
                    ═══════════════════════════════════════════════════════════════════ */}
@@ -2436,6 +2131,241 @@ const InventoryPage: React.FC = () => {
                 )}
              </div>
           </Card>
+          {/* 
+            ======================================================================
+            MOBILE PREMIUM NATIVE LIST VIEW (< md screens)
+            ======================================================================
+          */}
+          <div className="md:hidden pb-12 space-y-4">
+            {isMeleeView ? (
+              filteredAndSortedSummary.length > 0 ? (
+                filteredAndSortedSummary.map((item, i) => (
+                  <div 
+                    key={item.spec.id || i}
+                    className={`relative rounded-[24px] overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-black/40 border-white/10'}`}
+                    style={{ borderWidth: '1px' }}
+                    onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
+                  >
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-white/5 text-zinc-300 border-white/10'}`}>
+                            <DiamondShapeIcon shape={item.spec.shape || 'Round'} size={22} />
+                          </div>
+                          <div>
+                            <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
+                              {item.spec.label}
+                              {item.spec.inventoryNote && <StickyNote size={14} className="text-lux-gold shrink-0" />}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 font-medium uppercase tracking-widest">{item.spec.shape || 'Round'} • {item.spec.sizeMm}mm</div>
+                          </div>
+                        </div>
+
+                        <div className="text-right flex flex-col justify-center">
+                          <div className={`font-mono text-xl font-black tracking-tight leading-none ${item.pcs > 50 ? 'text-emerald-400' : item.pcs > 10 ? 'text-lux-gold' : item.pcs > 0 ? 'text-orange-400' : 'text-red-400'}`}>
+                            {item.pcs > 0 ? item.pcs.toLocaleString() : '0'}
+                          </div>
+                          <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Pieces</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs pt-3 border-t border-white/10">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Weight</span>
+                          <span className="font-mono text-lux-cream">{item.ct.toFixed(3)} ct</span>
+                        </div>
+                        <div className="flex flex-col text-right">
+                          <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Est Value</span>
+                          <span className="font-mono text-emerald-400 font-bold">${(item.ct * (item.spec.defaultCostPerCtUsd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Mobile Details (iOS Bottom Sheet Style) */}
+                    <div 
+                      className={`grid transition-all duration-300 ease-out ${expandedMeleeSpecId === item.spec.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                    >
+                      <div className="overflow-hidden bg-black/40 border-t border-white/10">
+                        <div className="p-4 space-y-4" onClick={e => e.stopPropagation()}>
+                          {isManager && (
+                            <button
+                              onClick={() => { setEditingStock(item.spec.id); setEditMode('PCS'); setEditPcs(item.pcs.toString()); setEditCt(item.ct.toFixed(3)); setEditReason(''); }}
+                              className="w-full min-h-[48px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-lux-gold text-black active:scale-95 transition-all shadow-[0_4px_20px_rgba(245,194,73,0.3)]"
+                            >
+                              <Edit2 size={16} /> Correct Balance
+                            </button>
+                          )}
+
+                          <InventoryNotesSection
+                            item={item.spec}
+                            itemType="spec"
+                            currentUser={currentUser}
+                            onSave={async (text) => {
+                              const nowStr = new Date().toISOString();
+                              const authorId = currentUser?.id || 'unknown';
+                              const authorName = currentUser?.name || 'Unknown';
+                              const note = { text, authorId, authorName, createdAt: item.spec.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: !!item.spec.inventoryNote };
+                              const auditEntry = { id: 'audit-' + Math.random().toString(36).substr(2, 9), action: item.spec.inventoryNote ? 'edited' : 'created', timestamp: nowStr, userId: authorId, userName: authorName, userRole: currentUser?.role || 'SYSTEM', prevValue: item.spec.inventoryNote?.text || '', newValue: text, location: 'Melee' } as NoteAuditEntry;
+                              await store.updateSpec(item.spec.id, { inventoryNote: note, noteAuditTrail: [...(item.spec.noteAuditTrail || []), auditEntry] });
+                              showToast('Note updated');
+                            }}
+                            onDelete={async () => {
+                              await store.updateSpec(item.spec.id, { inventoryNote: undefined });
+                              showToast('Note deleted');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-24 flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <Search className="w-8 h-8 text-zinc-600" />
+                  </div>
+                  <span className="text-zinc-500 font-mono text-sm">No matching melee stock found</span>
+                </div>
+              )
+            ) : (
+              filteredAndSortedDiamonds.length > 0 ? (
+                filteredAndSortedDiamonds.map((d, i) => (
+                  <div 
+                    key={d.id}
+                    className={`relative rounded-[24px] overflow-hidden backdrop-blur-xl transition-all duration-300 transform active:scale-[0.98] cursor-pointer ${expandedDiamondId === d.id ? 'bg-lux-gold/10 border-lux-gold/30 shadow-[0_8px_32px_rgba(245,194,73,0.1)]' : 'bg-black/40 border-white/10'}`}
+                    style={{ borderWidth: '1px' }}
+                    onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
+                  >
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border transition-colors ${expandedDiamondId === d.id ? 'bg-lux-gold text-black border-lux-gold' : 'bg-white/5 text-zinc-300 border-white/10'}`}>
+                            <DiamondShapeIcon shape={d.shape} size={22} />
+                          </div>
+                          <div>
+                            <div className="font-bold text-base text-white flex items-center gap-1.5 tracking-tight">
+                              {d.shape}
+                              <span className="font-mono text-lux-gold text-sm ml-1">{d.size.toFixed(2)}ct</span>
+                              {(d.notes || d.inventoryNote) && <StickyNote size={14} className="text-lux-gold shrink-0" />}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 font-medium tracking-wide">
+                              {d.color || '-'} / {d.clarity || '-'} {d.cut ? `• ${d.cut}` : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          {d.sold ? (
+                            <span className="px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 font-black uppercase tracking-widest text-[9px] border border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
+                              Sold
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 font-black uppercase tracking-widest text-[9px] border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                              Available
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Specs Bar */}
+                      <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-2.5 mt-3 border border-white/5">
+                        <div className="flex flex-col">
+                          <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Place</span>
+                          <span className="text-xs font-mono text-lux-cream">{d.place || '-'}</span>
+                        </div>
+                        <div className="w-px h-6 bg-white/10"></div>
+                        <div className="flex flex-col text-center">
+                          <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Mount</span>
+                          <span className="text-xs font-mono text-lux-cream">{d.mountLoose || 'LOOSE'}</span>
+                        </div>
+                        <div className="w-px h-6 bg-white/10"></div>
+                        <div className="flex flex-col text-right">
+                          <span className="text-[8px] uppercase font-bold text-zinc-500 tracking-wider">Code</span>
+                          <span className="text-xs font-mono text-lux-cream truncate max-w-[80px]">{d.code || '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Mobile Details */}
+                    <div 
+                      className={`grid transition-all duration-300 ease-out ${expandedDiamondId === d.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                    >
+                      <div className="overflow-hidden bg-black/40 border-t border-white/10">
+                        <div className="p-4 space-y-5" onClick={e => e.stopPropagation()}>
+                          
+                          {/* Touch Action Buttons */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              onClick={() => toggleSoldStatus(d.id, d.sold)}
+                              className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.sold ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}`}
+                            >
+                              {d.sold ? 'Mark Available' : 'Mark Sold'}
+                            </button>
+                            <button
+                              onClick={() => toggleMountState(d.id, d.mountLoose)}
+                              className={`min-h-[48px] px-3 py-2 rounded-2xl text-xs font-bold transition-all border active:scale-95 ${d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'bg-lux-gold/20 text-lux-gold border-lux-gold/40' : 'bg-blue-500/10 text-blue-400 border-blue-500/30'}`}
+                            >
+                              {d.mountLoose?.toUpperCase() === 'MOUNTED' ? 'Mounted' : 'Loose'}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 text-xs bg-white/[0.02] p-3 rounded-2xl border border-white/5">
+                            <div>
+                              <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">GIA Cert #</span>
+                              {d.certNumber ? (
+                                <a href={`https://www.gia.edu/report-check?reportno=${d.certNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-lux-gold underline font-mono flex items-center gap-1 mt-1">
+                                  {d.certNumber} <ExternalLink size={10} />
+                                </a>
+                              ) : <span className="text-zinc-600 italic mt-1 block">N/A</span>}
+                            </div>
+                            <div>
+                              <span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Measurements</span>
+                              <span className="text-lux-cream font-mono mt-1 block">{d.measurements || 'N/A'}</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Cabinet Place</label>
+                              <input type="text" value={inlinePlaceValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlinePlaceValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updatePlaceInline(d.id, inlinePlaceValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Place" />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1.5">Item Code</label>
+                              <input type="text" value={inlineCodeValues[d.id] ?? ''} onChange={e => { const val = e.target.value; setInlineCodeValues(prev => ({ ...prev, [d.id]: val })); }} onBlur={() => updateCodeInline(d.id, inlineCodeValues[d.id] ?? '')} className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-lux-gold/50 transition-colors" placeholder="Code" />
+                            </div>
+                          </div>
+
+                          <InventoryNotesSection
+                            item={{
+                              ...d,
+                              inventoryNote: d.inventoryNote || (d.notes ? { text: d.notes, authorId: 'legacy', authorName: 'Legacy Note', createdAt: new Date().toISOString(), lastEditedAt: new Date().toISOString(), edited: false } : undefined)
+                            }}
+                            itemType="diamond"
+                            currentUser={currentUser}
+                            onSave={async (text) => {
+                              const nowStr = new Date().toISOString();
+                              const authorId = currentUser?.id || 'unknown';
+                              const authorName = currentUser?.name || 'Unknown';
+                              const note = { text, authorId, authorName, createdAt: d.inventoryNote?.createdAt || nowStr, lastEditedAt: nowStr, edited: true } as InventoryNote;
+                              await store.updateDiamond(d.id, { inventoryNote: note, notes: text });
+                              showToast('Note updated');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-24 flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <Search className="w-8 h-8 text-zinc-600" />
+                  </div>
+                  <span className="text-zinc-500 font-mono text-sm">No matching diamonds found</span>
+                </div>
+              )
+            )}
+          </div>
         </div>
       )}
 
