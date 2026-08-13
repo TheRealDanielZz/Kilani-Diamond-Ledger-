@@ -634,85 +634,113 @@ export const DailyDiamondStatement: React.FC = () => {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const PAGE_W = 210;
       const PAGE_H = 297;
-      const MARGIN = 18;
+      const MARGIN = 16;
       const CONTENT_W = PAGE_W - MARGIN * 2;
       let y = 0;
 
       const GOLD = [212, 175, 55] as const;
       const DARK = [15, 15, 20] as const;
-      const DARK2 = [30, 30, 38] as const;
-      const LIGHT_GREY = [200, 200, 205] as const;
+      const DARK2 = [28, 28, 36] as const;
+      const LIGHT_GREY = [210, 210, 215] as const;
       const MID_GREY = [140, 140, 148] as const;
       const WHITE = [255, 255, 255] as const;
       const GREEN = [52, 211, 153] as const;
       const RED = [248, 113, 113] as const;
+      const ORANGE = [251, 146, 60] as const;
 
       const usd = (v: number) =>
         '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const ct4 = (v: number) => v.toFixed(3) + ' ct';
+      const ct3 = (v: number) => v.toFixed(3) + ' ct';
+      const pcsFmt = (v: number) => v.toLocaleString() + ' pcs';
+
       const nowStr = new Date().toLocaleString('en-US', {
         timeZone: 'America/New_York',
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
       });
 
+      const drawFooter = (pageNum: number, totalPages: number) => {
+        doc.setFillColor(...DARK);
+        doc.rect(0, PAGE_H - 12, PAGE_W, 12, 'F');
+        doc.setFillColor(...GOLD);
+        doc.rect(0, PAGE_H - 12, PAGE_W, 0.5, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...MID_GREY);
+        doc.text('Kilani Diamond Reporter — Executive Daily Statement — CONFIDENTIAL', MARGIN, PAGE_H - 5);
+        doc.text(`Page ${pageNum} of ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 5, { align: 'right' });
+      };
+
+      const drawRunningHeader = () => {
+        doc.setFillColor(...DARK);
+        doc.rect(0, 0, PAGE_W, 14, 'F');
+        doc.setFillColor(...GOLD);
+        doc.rect(0, 14, PAGE_W, 0.4, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...GOLD);
+        doc.text('KILANI DIAMOND REPORTER', MARGIN, 9);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...LIGHT_GREY);
+        doc.text(`DAILY STATEMENT (${periodHeaderString})`, PAGE_W - MARGIN, 9, { align: 'right' });
+      };
+
       const checkNewPage = (needed: number = 20) => {
-        if (y + needed > PAGE_H - 14) {
+        if (y + needed > PAGE_H - 16) {
           doc.addPage();
-          // Footer on previous page
-          doc.setFontSize(7);
-          doc.setTextColor(...MID_GREY);
-          doc.text('Kilani Diamond Reporter — Confidential', MARGIN, PAGE_H - 6);
-          doc.text(`Page ${(doc as any).internal.getCurrentPageInfo().pageNumber - 1}`, PAGE_W - MARGIN, PAGE_H - 6, { align: 'right' });
-          y = 18;
+          drawRunningHeader();
+          y = 22;
         }
       };
 
       // ═══════════════════════════════════════
-      // PAGE 1: COVER / EXECUTIVE SUMMARY HEADER
+      // PAGE 1: COVER / EXECUTIVE HEADER
       // ═══════════════════════════════════════
-      // Dark header band
       doc.setFillColor(...DARK);
-      doc.rect(0, 0, PAGE_W, 58, 'F');
+      doc.rect(0, 0, PAGE_W, 60, 'F');
 
-      // Gold accent bar at top
       doc.setFillColor(...GOLD);
-      doc.rect(0, 0, PAGE_W, 3, 'F');
+      doc.rect(0, 0, PAGE_W, 3.5, 'F');
 
-      // Company name
+      // Company title & Branding
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(22);
       doc.setTextColor(...GOLD);
       doc.text('KILANI DIAMOND', MARGIN, 20);
 
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setTextColor(...MID_GREY);
+      doc.setFont('helvetica', 'bold');
       doc.text('MELEE INVENTORY MANAGEMENT SYSTEM', MARGIN, 27);
 
-      // Report title
+      // Report Title
       doc.setFontSize(17);
       doc.setTextColor(...WHITE);
       doc.setFont('helvetica', 'bold');
-      doc.text('Daily Diamond Statement', MARGIN, 40);
+      doc.text('Executive Daily Diamond Statement', MARGIN, 41);
 
       doc.setFontSize(9);
       doc.setTextColor(...LIGHT_GREY);
       doc.setFont('helvetica', 'normal');
-      doc.text(periodHeaderString, MARGIN, 48);
+      doc.text(periodHeaderString, MARGIN, 49);
 
-      // Generated timestamp (right side)
+      // Timestamp (Right Aligned)
       doc.setFontSize(7.5);
       doc.setTextColor(...MID_GREY);
-      doc.text(`Generated: ${nowStr} ET`, PAGE_W - MARGIN, 48, { align: 'right' });
-      doc.text('CONFIDENTIAL — FOR INTERNAL USE ONLY', PAGE_W - MARGIN, 54, { align: 'right' });
+      doc.text(`Generated: ${nowStr} ET`, PAGE_W - MARGIN, 43, { align: 'right' });
+      doc.text('CONFIDENTIAL — INTERNAL EXECUTIVE REPORT', PAGE_W - MARGIN, 49, { align: 'right' });
 
-      y = 68;
+      y = 70;
 
       // ═══════════════════════════════════════
-      // SECTION 1: EXECUTIVE SUMMARY BOX
+      // SECTION 1: EXECUTIVE SUMMARY GRID
       // ═══════════════════════════════════════
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.setTextColor(...GOLD);
       doc.text('SECTION 1 — EXECUTIVE SUMMARY', MARGIN, y);
       y += 5;
@@ -721,62 +749,61 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...MID_GREY);
       doc.text(
-        'A high-level snapshot of all melee diamond inventory during the selected period.',
+        'High-level snapshot of all active melee diamond stock, factory dispatch, and net movement.',
         MARGIN, y
       );
       y += 7;
 
-      // KPI card grid — 3 per row
       const kpis = [
-        { label: 'INVENTORY VALUE', value: usd(summaryTotals.value), sub: `${summaryTotals.pcs.toLocaleString()} pcs on hand`, color: GOLD },
-        { label: 'TOTAL WEIGHT ON HAND', value: ct4(summaryTotals.weight), sub: `${statementRows.length} size specs tracked`, color: WHITE },
-        { label: 'NET MOVEMENT', value: ct4(summaryTotals.incoming - summaryTotals.used), sub: netMovementTotal >= 0 ? '▲ Net gain this period' : '▼ Net reduction this period', color: netMovementTotal >= 0 ? GREEN : RED },
-        { label: 'DIAMONDS RECEIVED', value: ct4(summaryTotals.incoming), sub: usd(summaryTotals.incomingUsd) + ' value received', color: WHITE },
-        { label: 'SENT TO FACTORY', value: ct4(summaryTotals.factorySent), sub: 'Total dispatched to production', color: WHITE },
-        { label: 'USED IN FACTORY', value: ct4(summaryTotals.used), sub: 'Confirmed consumed in projects', color: WHITE },
+        { label: 'TOTAL INVENTORY VALUE', value: usd(summaryTotals.value), sub: `${pcsFmt(summaryTotals.pcs)} on hand`, color: GOLD },
+        { label: 'TOTAL WEIGHT ON HAND', value: ct3(summaryTotals.weight), sub: `${statementRows.length} diamond sizes tracked`, color: WHITE },
+        { label: 'NET MOVEMENT', value: (netMovementTotal >= 0 ? '+' : '') + ct3(summaryTotals.incoming - summaryTotals.used), sub: netMovementTotal >= 0 ? '▲ Net inventory gain' : '▼ Net stock consumed', color: netMovementTotal >= 0 ? GREEN : RED },
+        { label: 'DIAMONDS RECEIVED', value: ct3(summaryTotals.incoming), sub: `${usd(summaryTotals.incomingUsd)} received value`, color: GREEN },
+        { label: 'SENT TO FACTORY', value: ct3(summaryTotals.factorySent), sub: 'Total issued to production', color: ORANGE },
+        { label: 'USED IN FACTORY', value: ct3(summaryTotals.used), sub: 'Confirmed set in pieces', color: RED },
       ];
 
-      const kpiW = CONTENT_W / 3 - 2;
+      const kpiW = CONTENT_W / 3 - 2.5;
       kpis.forEach((kpi, idx) => {
         const col = idx % 3;
         const row = Math.floor(idx / 3);
-        const kx = MARGIN + col * (kpiW + 3);
-        const ky = y + row * 30;
+        const kx = MARGIN + col * (kpiW + 3.75);
+        const ky = y + row * 29;
 
         doc.setFillColor(...DARK2);
-        doc.roundedRect(kx, ky, kpiW, 26, 2, 2, 'F');
+        doc.roundedRect(kx, ky, kpiW, 25, 2, 2, 'F');
         doc.setDrawColor(...(GOLD as [number, number, number]));
         doc.setLineWidth(0.3);
-        doc.roundedRect(kx, ky, kpiW, 26, 2, 2, 'S');
+        doc.roundedRect(kx, ky, kpiW, 25, 2, 2, 'S');
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
         doc.setTextColor(...MID_GREY);
-        doc.text(kpi.label, kx + 4, ky + 7);
+        doc.text(kpi.label, kx + 4, ky + 6.5);
 
-        doc.setFontSize(13);
+        doc.setFontSize(12.5);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...(kpi.color as [number, number, number]));
-        doc.text(kpi.value, kx + 4, ky + 16);
+        doc.text(kpi.value, kx + 4, ky + 15.5);
 
         doc.setFontSize(6.5);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(...MID_GREY);
-        doc.text(kpi.sub, kx + 4, ky + 22);
+        doc.text(kpi.sub, kx + 4, ky + 21);
       });
 
-      y += 65;
+      y += 63;
 
-      // ─── Plain-language interpretation box ───
-      doc.setFillColor(30, 36, 30);
+      // ─── Interpretation Callout Box ───
+      doc.setFillColor(25, 32, 28);
       doc.setDrawColor(52, 211, 153);
       doc.setLineWidth(0.4);
-      doc.roundedRect(MARGIN, y, CONTENT_W, 26, 2, 2, 'FD');
+      doc.roundedRect(MARGIN, y, CONTENT_W, 25, 2, 2, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(...GREEN);
-      doc.text('WHAT DOES THIS MEAN?', MARGIN + 4, y + 7);
+      doc.text('EXECUTIVE TAKEAWAYS & ANALYSIS', MARGIN + 4, y + 7);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
@@ -785,57 +812,58 @@ export const DailyDiamondStatement: React.FC = () => {
       const netAbs = Math.abs(netMovementTotal).toFixed(3);
       const netDir = netMovementTotal >= 0 ? 'gained' : 'consumed';
       const interpretation = [
-        `During the selected period, Kilani held ${summaryTotals.pcs.toLocaleString()} melee diamond pieces weighing ${ct4(summaryTotals.weight)} in stock.`,
-        `The total estimated inventory value was ${usd(summaryTotals.value)}.  The factory ${netDir} a net ${netAbs} ct overall.`,
+        `• Active stock stands at ${pcsFmt(summaryTotals.pcs)} (${ct3(summaryTotals.weight)}) valued at ${usd(summaryTotals.value)}.`,
+        `• During this period, factory floor operations ${netDir} a net ${netAbs} ct overall.`,
       ];
       interpretation.forEach((line, li) => {
         doc.text(line, MARGIN + 4, y + 14 + li * 5.5);
       });
-      y += 34;
+      y += 33;
 
       // ═══════════════════════════════════════
-      // SECTION 2: DAILY ACTIVITY BREAKDOWN
+      // SECTION 2: DAY-BY-DAY ACTIVITY TABLE
       // ═══════════════════════════════════════
       checkNewPage(40);
-      y += 6;
+      y += 4;
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.setTextColor(...GOLD);
-      doc.text('SECTION 2 — DAY-BY-DAY ACTIVITY', MARGIN, y);
+      doc.text('SECTION 2 — DAY-BY-DAY ACTIVITY BREAKDOWN', MARGIN, y);
       y += 5;
 
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...MID_GREY);
       doc.text(
-        'Shows what happened each day: diamonds received, sent to factory, used, and the running inventory balance.',
+        'Daily progression showing stock receipts, factory dispatches, factory setting usage, and closing stock valuation.',
         MARGIN, y
       );
       y += 7;
 
-      // Table header
+      // Table Header Definitions with explicit alignment & widths
       const dailyCols = [
-        { label: 'DATE', w: 38 },
-        { label: 'RECEIVED (ct)', w: 30 },
-        { label: 'TO FACTORY (ct)', w: 32 },
-        { label: 'USED (ct)', w: 28 },
-        { label: 'CLOSING PCS', w: 25 },
-        { label: 'CLOSING VALUE', w: 0 }, // fill remainder
+        { label: 'DATE', w: 38, align: 'left' as const },
+        { label: 'RECEIVED', w: 28, align: 'right' as const },
+        { label: 'DISPATCHED', w: 28, align: 'right' as const },
+        { label: 'USED (SETTED)', w: 28, align: 'right' as const },
+        { label: 'CLOSING PCS', w: 26, align: 'right' as const },
+        { label: 'CLOSING VALUE', w: 0, align: 'right' as const },
       ];
-      // Calculate last column width
-      const dailyUsed = dailyCols.slice(0, -1).reduce((s, c) => s + c.w, 0);
-      dailyCols[dailyCols.length - 1].w = CONTENT_W - dailyUsed;
+      const dUsedWidth = dailyCols.slice(0, -1).reduce((s, c) => s + c.w, 0);
+      dailyCols[dailyCols.length - 1].w = CONTENT_W - dUsedWidth;
 
-      // Header bg
+      // Header background
       doc.setFillColor(...DARK2);
       doc.rect(MARGIN, y, CONTENT_W, 7.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       doc.setTextColor(...GOLD);
-      let cx = MARGIN + 3;
+
+      let cx = MARGIN;
       dailyCols.forEach(col => {
-        doc.text(col.label, cx, y + 5);
+        const textX = col.align === 'right' ? cx + col.w - 3 : cx + 3;
+        doc.text(col.label, textX, y + 5, { align: col.align });
         cx += col.w;
       });
       y += 8;
@@ -844,43 +872,46 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setFontSize(7.5);
 
       dailyBreakdownRows.forEach((day, idx) => {
-        checkNewPage(9);
+        checkNewPage(8.5);
         const bg = idx % 2 === 0 ? DARK : DARK2;
         doc.setFillColor(...(bg as [number, number, number]));
         doc.rect(MARGIN, y, CONTENT_W, 7.5, 'F');
 
         const cols_vals = [
           day.displayDate,
-          day.incomingCt > 0 ? ct4(day.incomingCt) : '—',
-          day.factorySentCt > 0 ? ct4(day.factorySentCt) : '—',
-          day.usedCt > 0 ? ct4(day.usedCt) : '—',
-          day.closingPcs.toLocaleString(),
+          day.incomingCt > 0 ? ct3(day.incomingCt) : '—',
+          day.factorySentCt > 0 ? ct3(day.factorySentCt) : '—',
+          day.usedCt > 0 ? ct3(day.usedCt) : '—',
+          pcsFmt(day.closingPcs),
           usd(day.closingValueUsd),
         ];
 
-        let dcx = MARGIN + 3;
+        let dcx = MARGIN;
         cols_vals.forEach((val, vi) => {
-          // Color activity columns
           const col = dailyCols[vi];
+          const textX = col.align === 'right' ? dcx + col.w - 3 : dcx + 3;
+
           if (vi === 1 && day.incomingCt > 0) doc.setTextColor(...GREEN);
-          else if ((vi === 2 || vi === 3) && (day.factorySentCt > 0 || day.usedCt > 0)) doc.setTextColor(...RED);
+          else if (vi === 2 && day.factorySentCt > 0) doc.setTextColor(...ORANGE);
+          else if (vi === 3 && day.usedCt > 0) doc.setTextColor(...RED);
           else if (vi === 5) doc.setTextColor(...GOLD);
           else doc.setTextColor(...LIGHT_GREY);
-          doc.text(val, dcx, y + 5.2);
+
+          doc.text(val, textX, y + 5.2, { align: col.align });
           dcx += col.w;
         });
 
-        // Activity indicator dot
         if (day.hasActivity) {
           doc.setFillColor(...GOLD);
-          doc.circle(MARGIN + 1.5, y + 3.5, 0.8, 'F');
+          doc.circle(MARGIN + 1.5, y + 3.8, 0.7, 'F');
         }
 
         y += 7.5;
       });
 
-      // Totals row
-      doc.setFillColor(40, 36, 20);
+      // Daily Table Totals Row
+      checkNewPage(10);
+      doc.setFillColor(38, 34, 18);
       doc.setDrawColor(...(GOLD as [number, number, number]));
       doc.setLineWidth(0.3);
       doc.rect(MARGIN, y, CONTENT_W, 8, 'FD');
@@ -888,28 +919,32 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(...GOLD);
+
       const dailyTotalVals = [
         'PERIOD TOTALS',
-        ct4(summaryTotals.incoming),
-        ct4(summaryTotals.factorySent),
-        ct4(summaryTotals.used),
-        summaryTotals.pcs.toLocaleString(),
+        ct3(summaryTotals.incoming),
+        ct3(summaryTotals.factorySent),
+        ct3(summaryTotals.used),
+        pcsFmt(summaryTotals.pcs),
         usd(summaryTotals.value),
       ];
-      let dtcx = MARGIN + 3;
+
+      let dtcx = MARGIN;
       dailyTotalVals.forEach((v, vi) => {
-        doc.text(v, dtcx, y + 5.5);
-        dtcx += dailyCols[vi].w;
+        const col = dailyCols[vi];
+        const textX = col.align === 'right' ? dtcx + col.w - 3 : dtcx + 3;
+        doc.text(v, textX, y + 5.5, { align: col.align });
+        dtcx += col.w;
       });
       y += 14;
 
       // ═══════════════════════════════════════
-      // SECTION 3: DIAMOND INVENTORY BY SIZE
+      // SECTION 3: DIAMOND INVENTORY BY SIZE & SHAPE
       // ═══════════════════════════════════════
       checkNewPage(40);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.setTextColor(...GOLD);
       doc.text('SECTION 3 — DIAMOND INVENTORY BY SIZE & SHAPE', MARGIN, y);
       y += 5;
@@ -918,33 +953,36 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...MID_GREY);
       doc.text(
-        'Detailed breakdown of every diamond size and cut we carry, showing current stock and factory activity this period.',
+        'Complete inventory breakdown across all diamond size specifications, cut shapes, unit costs, and period activity.',
         MARGIN, y
       );
       y += 7;
 
-      // Table headers
+      // Table Column Definitions with explicit Right Alignment for numbers
       const sizeCols = [
-        { label: 'SIZE', w: 18 },
-        { label: 'SHAPE', w: 30 },
-        { label: 'COST/CT', w: 24 },
-        { label: 'ON HAND', w: 20 },
-        { label: 'WEIGHT (ct)', w: 26 },
-        { label: 'RECEIVED (ct)', w: 28 },
-        { label: 'USED (ct)', w: 24 },
-        { label: 'VALUE', w: 0 },
+        { label: 'SIZE', w: 18, align: 'left' as const },
+        { label: 'SHAPE', w: 28, align: 'left' as const },
+        { label: 'COST/CT', w: 22, align: 'right' as const },
+        { label: 'ON HAND', w: 22, align: 'right' as const },
+        { label: 'WEIGHT', w: 24, align: 'right' as const },
+        { label: 'RECEIVED', w: 24, align: 'right' as const },
+        { label: 'USED', w: 22, align: 'right' as const },
+        { label: 'VALUE ($)', w: 0, align: 'right' as const },
       ];
-      const sizeUsed = sizeCols.slice(0, -1).reduce((s, c) => s + c.w, 0);
-      sizeCols[sizeCols.length - 1].w = CONTENT_W - sizeUsed;
+      const sUsedWidth = sizeCols.slice(0, -1).reduce((s, c) => s + c.w, 0);
+      sizeCols[sizeCols.length - 1].w = CONTENT_W - sUsedWidth;
 
+      // Header Background
       doc.setFillColor(...DARK2);
       doc.rect(MARGIN, y, CONTENT_W, 7.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       doc.setTextColor(...GOLD);
-      let sx = MARGIN + 3;
+
+      let sx = MARGIN;
       sizeCols.forEach(col => {
-        doc.text(col.label, sx, y + 5);
+        const textX = col.align === 'right' ? sx + col.w - 3 : sx + 3;
+        doc.text(col.label, textX, y + 5, { align: col.align });
         sx += col.w;
       });
       y += 8;
@@ -953,7 +991,7 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setFontSize(7.5);
 
       statementRows.sort((a, b) => a.size - b.size).forEach((row, idx) => {
-        checkNewPage(9);
+        checkNewPage(8.5);
         const bg = idx % 2 === 0 ? DARK : DARK2;
         doc.setFillColor(...(bg as [number, number, number]));
         doc.rect(MARGIN, y, CONTENT_W, 7.5, 'F');
@@ -962,29 +1000,33 @@ export const DailyDiamondStatement: React.FC = () => {
           `${row.size.toFixed(2)}mm`,
           row.shape,
           `$${row.costPerCt.toFixed(0)}/ct`,
-          row.quantityPcs.toLocaleString(),
-          ct4(row.weightCt),
-          row.incomingCt > 0 ? ct4(row.incomingCt) : '—',
-          row.usedCt > 0 ? ct4(row.usedCt) : '—',
+          pcsFmt(row.quantityPcs),
+          ct3(row.weightCt),
+          row.incomingCt > 0 ? ct3(row.incomingCt) : '—',
+          row.usedCt > 0 ? ct3(row.usedCt) : '—',
           usd(row.totalValueUsd),
         ];
 
-        let scx = MARGIN + 3;
+        let scx = MARGIN;
         rowVals.forEach((val, vi) => {
+          const col = sizeCols[vi];
+          const textX = col.align === 'right' ? scx + col.w - 3 : scx + 3;
+
           if (vi === 3) doc.setTextColor(...WHITE);
           else if (vi === 5 && row.incomingCt > 0) doc.setTextColor(...GREEN);
           else if (vi === 6 && row.usedCt > 0) doc.setTextColor(...RED);
           else if (vi === 7) doc.setTextColor(...GOLD);
           else doc.setTextColor(...LIGHT_GREY);
-          doc.text(val, scx, y + 5.2);
-          scx += sizeCols[vi].w;
+
+          doc.text(val, textX, y + 5.2, { align: col.align });
+          scx += col.w;
         });
         y += 7.5;
       });
 
-      // Grand total row
+      // Grand Total Row
       checkNewPage(12);
-      doc.setFillColor(40, 36, 20);
+      doc.setFillColor(38, 34, 18);
       doc.setDrawColor(...(GOLD as [number, number, number]));
       doc.setLineWidth(0.4);
       doc.rect(MARGIN, y, CONTENT_W, 8.5, 'FD');
@@ -993,41 +1035,43 @@ export const DailyDiamondStatement: React.FC = () => {
       doc.setTextColor(...GOLD);
 
       const grandVals = [
-        'TOTALS',
+        'GRAND TOTALS',
         '',
         '',
-        summaryTotals.pcs.toLocaleString() + ' pcs',
-        ct4(summaryTotals.weight),
-        ct4(summaryTotals.incoming),
-        ct4(summaryTotals.used),
+        pcsFmt(summaryTotals.pcs),
+        ct3(summaryTotals.weight),
+        ct3(summaryTotals.incoming),
+        ct3(summaryTotals.used),
         usd(summaryTotals.value),
       ];
-      let gcx = MARGIN + 3;
+
+      let gcx = MARGIN;
       grandVals.forEach((v, vi) => {
-        doc.text(v, gcx, y + 5.8);
-        gcx += sizeCols[vi].w;
+        const col = sizeCols[vi];
+        const textX = col.align === 'right' ? gcx + col.w - 3 : gcx + 3;
+        doc.text(v, textX, y + 5.8, { align: col.align });
+        gcx += col.w;
       });
       y += 14;
 
       // ═══════════════════════════════════════
-      // SECTION 4: NOTES FOR THE CEO
+      // SECTION 4: EXECUTIVE DEFINITIONS & NOTES
       // ═══════════════════════════════════════
       checkNewPage(60);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.setTextColor(...GOLD);
-      doc.text('SECTION 4 — NOTES & KEY DEFINITIONS', MARGIN, y);
+      doc.text('SECTION 4 — KEY DEFINITIONS & AUDIT METRICS', MARGIN, y);
       y += 5;
 
       const notes = [
-        ['Inventory Value', 'The total estimated dollar value of all melee diamonds currently on hand, calculated using each stone\'s size, weight, and our cost-per-carat rate.'],
-        ['Received', 'Diamonds physically added to our melee inventory during the period. This includes stock purchases and confirmed deliveries.'],
-        ['Sent to Factory', 'Diamonds dispatched to the factory floor for use in customer jewelry projects. These are still tracked as ours until confirmed used.'],
-        ['Used in Factory', 'Diamonds confirmed as consumed in finished jewelry. These have been deducted from our inventory balance.'],
-        ['Net Movement', 'The net change in diamond carats: Received minus Used. A positive number means we added more than we consumed (good). Negative means we consumed more than we received.'],
-        ['Closing Value', 'The estimated total inventory value at the end of each day, reflecting all activity up to that point.'],
-        ['Melee Diamonds', 'Small diamonds (under 0.20ct each) used as accent stones in jewelry. We track these by size (mm) and cut shape as they are handled in bulk.'],
+        ['Inventory Value', 'Total dollar valuation of active melee diamond stock calculated as: Weight (ct) × Default Cost/Ct ($).'],
+        ['Received', 'Diamonds physically received and ingested into Toronto Melee inventory during the selected date range.'],
+        ['Dispatched to Factory', 'Diamonds issued in active job bags and transferred to factory production for setting.'],
+        ['Used (Setted)', 'Diamonds confirmed consumed and permanently set into client jewelry pieces.'],
+        ['Net Movement', 'Net change in inventory weight (Received ct minus Used ct). Positive indicates net stock accumulation.'],
+        ['Melee Diamonds', 'Small accent diamonds (0.50mm to 3.50mm) tracked by size spec and cut shape in real time.'],
       ];
 
       notes.forEach(([term, def]) => {
@@ -1049,25 +1093,16 @@ export const DailyDiamondStatement: React.FC = () => {
       });
 
       // ═══════════════════════════════════════
-      // LAST PAGE: FOOTER ON EACH PAGE
+      // FOOTER ON EACH PAGE
       // ═══════════════════════════════════════
       const totalPages = (doc as any).internal.getNumberOfPages();
       for (let p = 1; p <= totalPages; p++) {
         doc.setPage(p);
-        doc.setFillColor(...DARK);
-        doc.rect(0, PAGE_H - 10, PAGE_W, 10, 'F');
-        doc.setFillColor(...GOLD);
-        doc.rect(0, PAGE_H - 10, PAGE_W, 0.5, 'F');
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        doc.setTextColor(...MID_GREY);
-        doc.text('Kilani Diamond Reporter — Daily Diamond Statement — CONFIDENTIAL', MARGIN, PAGE_H - 4);
-        doc.text(`Page ${p} of ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 4, { align: 'right' });
+        drawFooter(p, totalPages);
       }
 
       // Save PDF
-      const filename = `Kilani_Diamond_Statement_${startDate}_to_${endDate}.pdf`;
+      const filename = `Kilani_Daily_Diamond_Statement_${startDate}_to_${endDate}.pdf`;
       doc.save(filename);
     });
   };

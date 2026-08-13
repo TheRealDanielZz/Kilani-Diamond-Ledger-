@@ -243,6 +243,20 @@
     scrollbar-color: rgba(245,194,73,0.2) transparent;
   }
   
+  
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+
   *:focus-visible {
     outline: 2px solid var(--color-accent) !important;
     outline-offset: 2px !important;

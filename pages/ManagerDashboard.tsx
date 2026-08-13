@@ -739,10 +739,10 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowAllRequests(false)}>
                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
                <div
-                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass rounded-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/80 via-indigo-500 to-cyan-400 z-10"></div>
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/80 via-indigo-500 to-cyan-400 z-10 rounded-t-2xl"></div>
                   <div className="px-5 py-4 flex justify-between items-center border-b border-white/5">
                      <div className="flex items-center gap-2.5">
                         <div className="bg-blue-500/10 text-blue-400 p-2 rounded-xl border border-blue-500/20"><Inbox size={18} /></div>
@@ -811,10 +811,10 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowAllReturns(false)}>
                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
                <div
-                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+                  className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass rounded-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500/80 via-orange-500 to-yellow-400 z-10"></div>
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500/80 via-orange-500 to-yellow-400 z-10 rounded-t-2xl"></div>
                   <div className="px-5 py-4 flex justify-between items-center border-b border-white/5">
                      <div className="flex items-center gap-2.5">
                         <div className="bg-amber-500/10 text-amber-500 p-2 rounded-xl border border-amber-500/20"><PackageCheck size={18} /></div>

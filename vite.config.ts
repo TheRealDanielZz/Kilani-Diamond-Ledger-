@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@firebase/util': path.resolve(__dirname, 'node_modules/@firebase/util'),
       }
     }
   };
