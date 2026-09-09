@@ -98,19 +98,27 @@ function movementLine(spec: InventorySpec, specId: string, pieces: number) {
   };
 }
 
-function requireInitializedMeleeSpec(snap: FirebaseFirestore.DocumentSnapshot): InventorySpec & { id: string } {
+function requireInitializedMeleeSpec(snap: FirebaseFirestore.DocumentSnapshot, allowAutoInit = false): InventorySpec & { id: string } {
   if (!snap.exists) throw new HttpsError('not-found', `Specification ${snap.id} was not found.`);
   const spec = { ...snap.data(), id: snap.id } as InventorySpec & { id: string };
-  if (!isTorontoMeleeLocation(spec.location)) {
+  if (!allowAutoInit && !isTorontoMeleeLocation(spec.location)) {
     throw new HttpsError('failed-precondition', 'Large stones cannot be used for setter bag requests.');
   }
   if (!Number.isSafeInteger(spec.pcs) || typeof spec.ct !== 'number' || !Number.isFinite(spec.ct)) {
-    throw new HttpsError(
-      'failed-precondition',
-      `Inventory balance for ${spec.label || spec.id} is not initialized. Run the Phase 1 balance bootstrap first.`
-    );
+    if (allowAutoInit) {
+      spec.pcs = 0;
+      spec.ct = 0;
+    } else {
+      throw new HttpsError(
+        'failed-precondition',
+        `Inventory balance for ${spec.label || spec.id} is not initialized. Run the Phase 1 balance bootstrap first.`
+      );
+    }
   }
-  if (spec.pcs! < 0 || spec.ct! < 0) {
+  if (allowAutoInit) {
+    spec.pcs = Math.max(0, spec.pcs || 0);
+    spec.ct = Math.max(0, spec.ct || 0);
+  } else if (spec.pcs! < 0 || spec.ct! < 0) {
     throw new HttpsError('failed-precondition', `Inventory balance for ${spec.label || spec.id} is invalid.`);
   }
   return spec;
@@ -293,7 +301,14 @@ async function canonicalUidForProfileId(profileId: string): Promise<string> {
 export const getMyInventoryContext = onCall(CALLABLE_OPTIONS, async (request) => {
   const actor = await requireActor(request);
   const db = getFirestore();
-  const acceptedIds = [...new Set([actor.uid, ...(actor.profile.legacyProfileIds || [])])];
+  const actorName = typeof actor.profile.name === 'string' ? actor.profile.name.trim() : '';
+  const actorEmail = typeof actor.profile.email === 'string' ? actor.profile.email.trim() : '';
+  const acceptedIds = [...new Set([
+    actor.uid,
+    ...(actor.profile.legacyProfileIds || []),
+    ...(actorName ? [actorName, actorName.toLowerCase()] : []),
+    ...(actorEmail ? [actorEmail, actorEmail.toLowerCase()] : []),
+  ])];
   const [specsSnap, bagSnaps, requestSnaps] = await Promise.all([
     db.collection('specs').get(),
     Promise.all(acceptedIds.map((id) => db.collection('bags').where('issuedToId', '==', id).get())),
@@ -389,9 +404,17 @@ export const cancelInventoryRequest = onCall(CALLABLE_OPTIONS, async (request) =
     const requestSnap = await tx.get(requestRef);
     if (!requestSnap.exists) throw new HttpsError('not-found', 'Request not found.');
     const requestData = requestSnap.data() || {};
-    if (requestData.status !== 'OPEN') throw new HttpsError('failed-precondition', 'Only open requests may be cancelled.');
-    const acceptedIds = new Set([actor.uid, ...(actor.profile.legacyProfileIds || [])]);
-    if (actor.profile.role !== 'Manager' && !acceptedIds.has(String(requestData.requestedById))) {
+    const actorName = typeof actor.profile.name === 'string' ? actor.profile.name.trim().toLowerCase() : '';
+    const actorEmail = typeof actor.profile.email === 'string' ? actor.profile.email.trim().toLowerCase() : '';
+    const acceptedIds = new Set([
+      actor.uid,
+      ...(actor.profile.legacyProfileIds || []),
+      ...(actorName ? [actorName] : []),
+      ...(actorEmail ? [actorEmail] : []),
+    ]);
+    const reqById = String(requestData.requestedById || '').trim();
+    const isRequestedByActor = acceptedIds.has(reqById) || (reqById ? acceptedIds.has(reqById.toLowerCase()) : false);
+    if (actor.profile.role !== 'Manager' && !isRequestedByActor) {
       throw new HttpsError('permission-denied', 'You cannot cancel this request.');
     }
     const result = { requestId, status: 'CANCELLED' };
@@ -683,8 +706,18 @@ export const submitInventoryReturn = onCall(CALLABLE_OPTIONS, async (request) =>
     const bagSnap = await tx.get(bagRef);
     if (!bagSnap.exists) throw new HttpsError('not-found', 'Issued bag not found.');
     const bag = bagSnap.data() || {};
-    const acceptedIds = new Set([actor.uid, ...(actor.profile.legacyProfileIds || [])]);
-    if (bag.projectId !== projectId || !acceptedIds.has(String(bag.issuedToId))) {
+    const isManager = actor.profile.role === 'Manager';
+    const actorName = typeof actor.profile.name === 'string' ? actor.profile.name.trim().toLowerCase() : '';
+    const actorEmail = typeof actor.profile.email === 'string' ? actor.profile.email.trim().toLowerCase() : '';
+    const acceptedIds = new Set([
+      actor.uid,
+      ...(actor.profile.legacyProfileIds || []),
+      ...(actorName ? [actorName] : []),
+      ...(actorEmail ? [actorEmail] : []),
+    ]);
+    const issuedToRaw = String(bag.issuedToId || '').trim();
+    const isIssuedToActor = acceptedIds.has(issuedToRaw) || (issuedToRaw ? acceptedIds.has(issuedToRaw.toLowerCase()) : false);
+    if (bag.projectId !== projectId || (!isManager && !isIssuedToActor)) {
       throw new HttpsError('permission-denied', 'This bag is not issued to you for the selected project.');
     }
     if (bag.status !== 'Issued') throw new HttpsError('failed-precondition', 'This bag cannot accept another return.');
@@ -790,7 +823,7 @@ export const confirmInventoryReturn = onCall(CALLABLE_OPTIONS, async (request) =
       throw new HttpsError('failed-precondition', 'Return was already confirmed or does not exist.');
     }
     const pendingReturn = returns[returnIndex] as Record<string, unknown>;
-    if (pendingReturn.projectId !== bag.projectId || pendingReturn.bagId !== bagId || pendingReturn.setterId !== bag.issuedToId) {
+    if (pendingReturn.projectId !== bag.projectId || pendingReturn.bagId !== bagId || String(pendingReturn.setterId) !== String(bag.issuedToId)) {
       throw new HttpsError('failed-precondition', 'Return identity does not match the issued bag.');
     }
     const pendingLines = (Array.isArray(pendingReturn.lines) ? pendingReturn.lines : []) as Array<{ specId: string; returnedPcs: number }>;
@@ -928,7 +961,7 @@ export const recordInventoryMovement = onCall(CALLABLE_OPTIONS, async (request) 
   const weightAuthoritative = input.weightAuthoritative === true;
   const lines = rawLines.map((line, index) => ({
     specId: typeof line.specId === 'string' && line.specId ? line.specId : undefined,
-    pcs: line.pcs === undefined ? 0 : requirePieceCount(line.pcs, `lines[${index}].pcs`, true),
+    pcs: (line.pcs === undefined || line.pcs === null || line.pcs === '') ? 0 : requirePieceCount(line.pcs, `lines[${index}].pcs`, true),
     ct: typeof line.ct === 'number' && Number.isFinite(line.ct) && line.ct >= 0 ? roundCarats(line.ct) : 0,
     costPerCtUsd: typeof line.costPerCtUsd === 'number' && Number.isFinite(line.costPerCtUsd) ? line.costPerCtUsd : undefined,
   }));
@@ -940,7 +973,8 @@ export const recordInventoryMovement = onCall(CALLABLE_OPTIONS, async (request) 
     if (prior) return prior;
     const specIds = [...new Set(lines.flatMap((line) => line.specId ? [line.specId] : []))];
     const specSnaps = specIds.length > 0 ? await tx.getAll(...specIds.map((id) => db.doc(`specs/${id}`))) : [];
-    const specs = new Map(specSnaps.map((snap) => [snap.id, requireInitializedMeleeSpec(snap)]));
+    const isAdditive = type === 'SHIPMENT_IN' || type === 'DIAMOND_ADD';
+    const specs = new Map(specSnaps.map((snap) => [snap.id, requireInitializedMeleeSpec(snap, isAdditive)]));
     const normalizedLines: Array<{
       specId?: string;
       pcs?: number;
@@ -951,9 +985,8 @@ export const recordInventoryMovement = onCall(CALLABLE_OPTIONS, async (request) 
       if (!line.specId) return { ct: line.ct };
       const spec = specs.get(line.specId)!;
       const average = Number(spec.ctPerStone || 0);
-      // Preserve the existing piece-versus-weight contract. Weight-authoritative
-      // entries may intentionally change carats without inventing a piece count.
-      const pieces = line.pcs || 0;
+      // In weight-authoritative mode, derive estimated pieces from average weight if pieces was omitted/0
+      const pieces = line.pcs || (weightAuthoritative && average > 0 && line.ct > 0 ? Math.round(line.ct / average) : 0);
       const ct = weightAuthoritative && line.ct > 0 ? line.ct : roundCarats(pieces * average);
       return {
         specId: line.specId,
@@ -994,13 +1027,54 @@ export const recordInventoryMovement = onCall(CALLABLE_OPTIONS, async (request) 
       lines: normalizedLines,
     });
     if (type === 'SHIPMENT_IN' || (type === 'BROKEN_OUT' && !referenceProjectId)) {
-      normalizedLines.forEach((line) => {
+      const sign = type === 'SHIPMENT_IN' ? 1 : -1;
+
+      // 1. Create diamond_transactions entries with unique per-line index
+      normalizedLines.forEach((line, lineIndex) => {
         if (!line.specId) return;
         const spec = specs.get(line.specId)!;
-        const sign = type === 'SHIPMENT_IN' ? 1 : -1;
-        tx.update(db.doc(`specs/${line.specId}`), {
-          pcs: spec.pcs! + sign * Number(line.pcs || 0),
-          ct: roundCarats(spec.ct! + sign * Number(line.ct || 0)),
+        const linePcs = sign * Number(line.pcs || 0);
+        const lineCt = roundCarats(sign * Number(line.ct || 0));
+        const txId = `tx-${movementId}-${line.specId}-${lineIndex}`;
+        tx.create(db.doc(`diamond_transactions/${txId}`), {
+          id: txId,
+          operationId,
+          createdAt: nowIso,
+          serverCreatedAt: FieldValue.serverTimestamp(),
+          createdById: actor.uid,
+          specId: line.specId,
+          color: spec.color || 'White',
+          quantity: linePcs,
+          carats: lineCt,
+          movementType: type === 'SHIPMENT_IN' ? 'added' : 'broken',
+          unitCost: line.costPerCtUsd || spec.defaultCostPerCtUsd || 0,
+          totalValue: roundCarats(Math.abs(lineCt) * (line.costPerCtUsd || spec.defaultCostPerCtUsd || 0)),
+          averageWeightSnapshot: line.averageWeightSnapshot || Number(spec.ctPerStone || 0),
+          notes: notes || (type === 'SHIPMENT_IN' ? 'Shipment In' : 'Breakage'),
+          mainStockChange: linePcs,
+          wipStockChange: 0,
+          status: 'active',
+          sourceRecordPath: `movements/${movementId}`,
+        });
+      });
+
+      // 2. Aggregate deltas per specId to safely perform a single update per spec document
+      const specDeltas = new Map<string, { pcs: number; ct: number }>();
+      normalizedLines.forEach((line) => {
+        if (!line.specId) return;
+        const current = specDeltas.get(line.specId) || { pcs: 0, ct: 0 };
+        current.pcs += sign * Number(line.pcs || 0);
+        current.ct = roundCarats(current.ct + sign * Number(line.ct || 0));
+        specDeltas.set(line.specId, current);
+      });
+
+      specDeltas.forEach((delta, specId) => {
+        const spec = specs.get(specId)!;
+        const basePcs = Math.max(0, spec.pcs || 0);
+        const baseCt = Math.max(0, spec.ct || 0);
+        tx.update(db.doc(`specs/${specId}`), {
+          pcs: Math.max(0, basePcs + delta.pcs),
+          ct: roundCarats(Math.max(0, baseCt + delta.ct)),
           stockVersion: FieldValue.increment(1),
           stockUpdatedAt: FieldValue.serverTimestamp(),
           lastInventoryOperationId: operationId,
@@ -1085,8 +1159,11 @@ export const applyInventoryCorrection = onCall(CALLABLE_OPTIONS, async (request)
     const prior = await readOperation(tx, db, operationId, 'CORRECTION', hash);
     if (prior) return prior;
     const specRef = db.doc(`specs/${specId}`);
-    const spec = requireInitializedMeleeSpec(await tx.get(specRef));
-    if (spec.pcs !== previousPcs || Math.abs(spec.ct! - previousCt) > 0.000001) {
+    const canAutoInit = previousPcs === 0 && previousCt === 0;
+    const spec = requireInitializedMeleeSpec(await tx.get(specRef), canAutoInit);
+    const specPcs = Number.isSafeInteger(spec.pcs) ? spec.pcs! : 0;
+    const specCt = typeof spec.ct === 'number' && Number.isFinite(spec.ct) ? spec.ct! : 0;
+    if (specPcs !== previousPcs || Math.abs(specCt - previousCt) > 0.000001) {
       throw new HttpsError('aborted', 'Inventory changed after the audit. Refresh the reconciliation screen and try again.');
     }
     const average = Number(spec.ctPerStone || 0);

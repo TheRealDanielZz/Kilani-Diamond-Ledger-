@@ -30,7 +30,16 @@ export const TORONTO_MELEE = 'TORONTO_MELEE';
  *  variants (undefined, null, '', 'Melee') AND the canonical 'TORONTO_MELEE'
  *  that the cloud function returns to setter clients via `sanitizedSpec`. */
 export function isMeleeLocation(location: string | undefined | null): boolean {
-    return !location || location === 'Melee' || location === TORONTO_MELEE;
+  if (!location) return true;
+  const trimmed = location.trim().toLowerCase();
+  return (
+    trimmed === 'melee' ||
+    trimmed === 'toronto_melee' ||
+    trimmed === 'toronto' ||
+    trimmed === 'active' ||
+    trimmed.includes('melee') ||
+    trimmed.includes('toronto')
+  );
 }
 
 /** Carats are displayed to 3 decimals. Any residual balance smaller than half
@@ -166,7 +175,7 @@ export interface NormalizedBalance {
  * The flags let callers (reconciliation, audits) distinguish harmless float
  * cleanup from genuine discrepancies that need manager review.
  */
-export function normalizeBalance(raw: RawBalance, specId?: string): NormalizedBalance {
+export function normalizeBalance(raw: RawBalance, specId?: string, ctPerStone?: number): NormalizedBalance {
   const isMixed = specId === MIXED_UNSORTED_SPEC_ID;
 
   let pcs = raw.pcs;
@@ -183,10 +192,14 @@ export function normalizeBalance(raw: RawBalance, specId?: string): NormalizedBa
 
   if (!isMixed) {
     if (pcs <= 0) {
-      // 0 (or negative) pieces ⇒ carats MUST resolve to exactly 0.
-      if (Math.abs(ct) > CT_EPSILON) normalizedStaleCarats = true;
-      pcs = Math.max(0, pcs);
-      ct = 0;
+      if (ct > CT_EPSILON && ctPerStone && ctPerStone > 0) {
+        pcs = Math.max(1, Math.round(ct / ctPerStone));
+      } else {
+        // 0 (or negative) pieces ⇒ carats MUST resolve to exactly 0.
+        if (Math.abs(ct) > CT_EPSILON) normalizedStaleCarats = true;
+        pcs = Math.max(0, pcs);
+        ct = 0;
+      }
     } else {
       // Pieces remain: strip harmless float residue, never allow negative carats.
       if (Math.abs(ct) < CT_EPSILON) ct = 0;
@@ -206,6 +219,10 @@ export function normalizeBalance(raw: RawBalance, specId?: string): NormalizedBa
  * current spec average. Mixed unsorted stock remains carat-authoritative. */
 export function calculateCurrentStockCarats(specId: string | undefined, pcs: number, ctPerStone: number, exactCt = 0): number {
   if (specId === MIXED_UNSORTED_SPEC_ID) return roundCt(exactCt);
+  if (exactCt > 0 && Math.abs(exactCt - (pcs * ctPerStone)) > 0.0001 && pcs > 0) {
+    return roundCt(exactCt);
+  }
+  if (exactCt > 0 && pcs > 0) return roundCt(exactCt);
   return roundCt(Math.max(0, Math.round(pcs || 0)) * (ctPerStone || 0));
 }
 

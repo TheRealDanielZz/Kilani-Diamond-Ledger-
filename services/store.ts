@@ -371,15 +371,34 @@ class StoreService {
                 active: directData?.active !== undefined ? directData.active : (matchingLegacyDocs[0]?.data.active !== undefined ? matchingLegacyDocs[0]?.data.active : true)
             };
 
-            await setDoc(directDocRef, deepCopySafe(mergedProfile), { merge: true });
+            const isManager = finalRole === Role.MANAGER || isOwnerEmail;
+            // When updating /users/{u.uid} from client, Firestore rules permit non-managers
+            // to update only non-restricted fields. Protected fields ('role', 'active', 'authUid', 'legacyProfileIds')
+            // are initialized and managed by ensureSecurityProfile on the server.
+            const updatePayload: Partial<User> = isManager
+                ? deepCopySafe(mergedProfile)
+                : {
+                    name: mergedProfile.name,
+                    email: mergedProfile.email,
+                    ...(mergedProfile.profilePhoto ? { profilePhoto: mergedProfile.profilePhoto } : {}),
+                    ...(mergedProfile.setterColor ? { setterColor: mergedProfile.setterColor } : {}),
+                };
 
-            // Ensure legacy profile docs are cleaned up or maintain authUid link
-            for (const m of matchingLegacyDocs) {
-                if (m.id !== u.uid) {
-                    if (m.id.startsWith('temp-')) {
-                        await deleteDoc(doc(db, 'users', m.id)).catch(console.error);
-                    } else {
-                        await setDoc(doc(db, 'users', m.id), { authUid: u.uid }, { merge: true }).catch(console.error);
+            try {
+                await setDoc(directDocRef, deepCopySafe(updatePayload), { merge: true });
+            } catch (err) {
+                console.warn("Client-side user doc update failed (handled by rules or server):", err);
+            }
+
+            // Only managers can modify other legacy user documents
+            if (isManager) {
+                for (const m of matchingLegacyDocs) {
+                    if (m.id !== u.uid) {
+                        if (m.id.startsWith('temp-')) {
+                            await deleteDoc(doc(db, 'users', m.id)).catch(console.error);
+                        } else {
+                            await setDoc(doc(db, 'users', m.id), { authUid: u.uid }, { merge: true }).catch(console.error);
+                        }
                     }
                 }
             }
@@ -2342,7 +2361,8 @@ class StoreService {
         let evidencePath: string | undefined;
         if (positiveItems.length > 0) {
             if (!photo?.startsWith('data:')) throw new Error('A new evidence image is required.');
-            evidencePath = await uploadInventoryEvidence({ dataUrl: photo, kind: 'issues', uploaderUid: this.currentUser.id, operationId, projectId });
+            const uploaderUid = auth.currentUser?.uid || this.currentUser.authUid || this.currentUser.id;
+            evidencePath = await uploadInventoryEvidence({ dataUrl: photo, kind: 'issues', uploaderUid, operationId, projectId });
         }
         await inventoryApi.confirmIssue({
             operationId,
@@ -2374,13 +2394,22 @@ class StoreService {
         const bag = this.bags.find(b => b.projectId === projectId && (b.bagNumber === bagNumber || b.bagNumber.replace(/#/g, '').trim().toLowerCase() === targetBagNum));
 
         if (!this.isDemoMode) {
-            if (!this.currentUser || this.currentUser.id !== userId) throw new Error('Return identity does not match the signed-in user.');
+            const uploaderUid = auth.currentUser?.uid || this.currentUser?.authUid || this.currentUser?.id;
+            const acceptedUserIds = new Set([
+                this.currentUser?.id,
+                this.currentUser?.authUid,
+                ...(this.currentUser?.legacyProfileIds || []),
+            ].filter(Boolean));
+            if (!this.currentUser || (!acceptedUserIds.has(userId) && this.currentUser.role !== Role.MANAGER)) {
+                throw new Error('Return identity does not match the signed-in user.');
+            }
             if (!bag) throw new Error('The selected issued bag was not found.');
             if (!photo?.startsWith('data:')) throw new Error('A new return evidence image is required.');
+            if (!uploaderUid) throw new Error('Sign in is required to upload evidence.');
             const evidencePath = await uploadInventoryEvidence({
                 dataUrl: photo,
                 kind: 'returns',
-                uploaderUid: this.currentUser.id,
+                uploaderUid,
                 operationId,
                 projectId,
             });
@@ -3069,12 +3098,47 @@ class StoreService {
     async createInventoryMovement(mov: Partial<InventoryMovement> & { weightAuthoritative?: boolean }, tx?: any) {
         if (!this.isDemoMode) {
             if (tx) throw new Error('Client-side inventory transactions are disabled. Use a protected Phase 1 backend operation.');
-            if (!this.currentUser || this.currentUser.role !== Role.MANAGER) throw new Error('Only Managers can record inventory movements.');
+            const actor = this.currentUser || (mov.createdById ? this.getUser(mov.createdById) : null);
+            if (!actor || actor.role !== Role.MANAGER) throw new Error('Only Managers can record inventory movements.');
+            const opId = mov.operationId || newOperationId();
             await inventoryApi.recordMovement({
                 ...mov,
-                operationId: mov.operationId || newOperationId(),
-                createdById: this.currentUser.id,
+                operationId: opId,
+                createdById: actor.id,
             });
+            if (mov.lines && (mov.type === InventoryMovementType.SHIPMENT_IN || (mov.type === InventoryMovementType.BROKEN_OUT && !mov.referenceProjectId))) {
+                const sign = mov.type === InventoryMovementType.SHIPMENT_IN ? 1 : -1;
+                mov.lines.forEach(l => {
+                    if (!l.specId) return;
+                    const s = this.specs.find(sp => sp.id === l.specId);
+                    if (s) {
+                        const linePcs = Number(l.pcs || (s.ctPerStone > 0 && l.ct ? Math.round(l.ct / s.ctPerStone) : 0));
+                        s.pcs = Math.max(0, (s.pcs || 0) + sign * linePcs);
+                        s.ct = roundCt(Math.max(0, (s.ct || 0) + sign * Number(l.ct || 0)));
+                    }
+                });
+            }
+            const enrichedLines = (mov.lines || []).map(l =>
+                l.specId ? this.enrichMovementLine(l, !!mov.weightAuthoritative) : l
+            );
+            const safeMov: any = {
+                id: `mov-${opId}`,
+                operationId: opId,
+                type: mov.type,
+                actionType: mov.type,
+                createdAt: new Date().toISOString(),
+                createdById: actor.id,
+                location: mov.location || 'Melee',
+                supplier: mov.supplier || '',
+                invoiceNo: mov.invoiceNo || '',
+                notes: mov.notes || '',
+                weightAuthoritative: mov.weightAuthoritative,
+                lines: enrichedLines,
+            };
+            if (!this.movements.some(m => m.id === safeMov.id)) {
+                this.movements.unshift(safeMov);
+            }
+            this.notify();
             return;
         }
         const id = mov.id || 'mov-' + Math.random().toString(36).substr(2, 9);
@@ -3205,10 +3269,7 @@ class StoreService {
                 // Phase 1: Update the spec document's pcs and ct cache (if Melee spec)
                 const isMelee = !spec || isMeleeLocation(spec.location);
                 if (isMelee) {
-                    let mainCaratChange = 0;
-                    if (mainStockChange !== 0) {
-                        mainCaratChange = cts;
-                    }
+                    let mainCaratChange = cts;
                     if (this.isDemoMode) {
                         const s = this.specs.find(sp => sp.id === line.specId);
                         if (s) {
@@ -3589,9 +3650,24 @@ class StoreService {
             });
         });
 
-        return Array.from(raw.entries()).map(([specId, data]) => {
+        const relevantSpecs = this.specs.filter(s =>
+            isMeleeLocation(location) ? isMeleeLocation(s.location) : (s.location || 'Melee') === location
+        );
+
+        const allSpecIds = new Set([
+            ...relevantSpecs.map(s => s.id),
+            ...raw.keys(),
+        ]);
+
+        return Array.from(allSpecIds).map((specId) => {
             const spec = this.specs.find(s => s.id === specId) || { id: specId, label: 'Unknown', sizeMm: 0, ctPerStone: 0, defaultCostPerCtUsd: 0 };
-            const norm = normalizeBalance(data, specId);
+            const data = raw.get(specId) || { pcs: spec.pcs ?? 0, ct: spec.ct ?? 0 };
+
+            const authorPcs = Number.isSafeInteger(spec.pcs) ? spec.pcs! : data.pcs;
+            const authorCt = typeof spec.ct === 'number' && Number.isFinite(spec.ct) ? spec.ct : data.ct;
+            const resolvedData = { pcs: authorPcs, ct: authorCt };
+
+            const norm = normalizeBalance(resolvedData, specId, spec.ctPerStone);
             const displayCt = calculateCurrentStockCarats(specId, norm.pcs, spec.ctPerStone || 0, norm.ct);
             return {
                 spec,
@@ -3668,17 +3744,24 @@ class StoreService {
             return;
         }
 
+        const authoritativePreviousPcs = Number.isSafeInteger(spec.pcs) ? spec.pcs! : input.previousPcs;
+        const authoritativePreviousCt = typeof spec.ct === 'number' && Number.isFinite(spec.ct) ? roundCt(spec.ct) : roundCt(input.previousCt);
+
         await inventoryApi.applyCorrection({
             operationId: newOperationId(),
             specId: input.specId,
             reason: input.reason.trim(),
             mode: input.mode,
-            previousPcs: input.previousPcs,
-            previousCt: input.previousCt,
+            previousPcs: authoritativePreviousPcs,
+            previousCt: authoritativePreviousCt,
             targetPcs,
             targetCt,
             reconciliation: input.reconciliation,
         });
+
+        spec.pcs = targetPcs;
+        spec.ct = targetCt;
+        this.notify();
         return;
 
         // Production / Firestore Mode: Run inside a true transaction to prevent concurrent correction drift

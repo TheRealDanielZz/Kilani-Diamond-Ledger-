@@ -9,8 +9,8 @@ interface InventoryNotesSectionProps {
   itemType: 'diamond' | 'spec';
   currentUser: User | null;
   onSave: (text: string) => Promise<void>;
-  onDelete: () => Promise<void>;
-  onRestore: (prevValue: string) => Promise<void>;
+  onDelete?: () => Promise<void>;
+  onRestore?: (prevValue: string) => Promise<void>;
 }
 
 export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
@@ -193,7 +193,7 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
               <Edit3 size={12} />
             </button>
           )}
-          {item.inventoryNote && isManager && (
+          {item.inventoryNote && isManager && onDelete && (
             <button 
               onClick={onDelete} 
               className="text-zinc-500 hover:text-red-400 transition-colors p-0.5 cursor-pointer"
@@ -316,7 +316,7 @@ export const InventoryNotesSection: React.FC<InventoryNotesSectionProps> = ({
                       )}
                     </div>
 
-                    {isManager && entry.action !== 'deleted' && entry.action !== 'transferred' && entry.newValue !== item.inventoryNote?.text && (
+                    {isManager && onRestore && entry.action !== 'deleted' && entry.action !== 'transferred' && entry.newValue !== item.inventoryNote?.text && (
                       <div className="flex justify-end pt-0.5">
                         <button
                           onClick={() => onRestore(entry.newValue)}

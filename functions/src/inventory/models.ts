@@ -59,6 +59,7 @@ export interface InventorySpec {
   ctPerStone?: number;
   defaultCostPerCtUsd?: number;
   location?: string;
+  color?: string;
   pcs?: number;
   ct?: number;
   active?: boolean;
@@ -89,6 +90,18 @@ export interface ProjectInventoryUsage {
 }
 
 export function isTorontoMeleeLocation(location: unknown): boolean {
-  return location === undefined || location === null || location === '' || location === 'Melee' || location === TORONTO_MELEE;
+  if (location === undefined || location === null || location === '') return true;
+  if (typeof location === 'string') {
+    const trimmed = location.trim().toLowerCase();
+    return (
+      trimmed === 'melee' ||
+      trimmed === 'toronto_melee' ||
+      trimmed === 'toronto' ||
+      trimmed === 'active' ||
+      trimmed.includes('melee') ||
+      trimmed.includes('toronto')
+    );
+  }
+  return false;
 }
 

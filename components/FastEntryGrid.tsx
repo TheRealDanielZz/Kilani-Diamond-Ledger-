@@ -26,16 +26,22 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
   // Auto-add the first entry line once specs finish loading
   // (covers Setters/Jewellers whose specs arrive asynchronously)
   useEffect(() => {
-    if (specs.length > 0 && lines.length === 0 && !initialLines?.length) {
-      const firstLine: EntryLine = {
-        id: Math.random().toString(36).substr(2, 9),
-        specId: specs[0].id,
-        pcs: 0,
-        ct: 0,
-        cost: specs[0].defaultCostPerCtUsd || 0
-      };
-      setLines([firstLine]);
-      onLinesChange([firstLine]);
+    if (specs.length > 0) {
+      if (lines.length === 0 && !initialLines?.length) {
+        const firstLine: EntryLine = {
+          id: Math.random().toString(36).substr(2, 9),
+          specId: specs[0].id,
+          pcs: 0,
+          ct: 0,
+          cost: specs[0].defaultCostPerCtUsd || 0
+        };
+        setLines([firstLine]);
+        onLinesChange([firstLine]);
+      } else if (lines.length > 0 && !lines[0].specId) {
+        const updated = lines.map(l => l.specId ? l : { ...l, specId: specs[0].id, cost: specs[0].defaultCostPerCtUsd || 0 });
+        setLines(updated);
+        onLinesChange(updated);
+      }
     }
   }, [specs]);
 
@@ -71,11 +77,13 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
       }
 
       if (mode === 'PCS' && field === 'pcs' && spec) {
-        newLine.ct = parseFloat((value * spec.ctPerStone).toFixed(3));
+        const avg = Number(spec.ctPerStone || 0.005);
+        newLine.ct = parseFloat((value * avg).toFixed(3));
       }
 
-      if (mode === 'WEIGHT' && field === 'ct' && spec && spec.ctPerStone > 0) { // Safety check > 0
-         newLine.pcs = Math.round(value / spec.ctPerStone);
+      if (mode === 'WEIGHT' && field === 'ct' && spec) {
+        const avg = Number(spec.ctPerStone || 0.005);
+        newLine.pcs = Math.round(value / avg);
       }
 
       return newLine;

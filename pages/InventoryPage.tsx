@@ -4,7 +4,7 @@ import { store } from '../services/store';
 import { InventoryMovementType, DiamondSpec, InventoryMovement, Project, Diamond, InventorySummaryItem, InventoryNote, NoteAuditEntry } from '../types';
 import { Card, Button, StatusPill, Input } from '../components/UI';
 import { FastEntryGrid } from '../components/FastEntryGrid';
-import { isMeleeLocation } from '../services/inventoryMath';
+import { isMeleeLocation, roundCt } from '../services/inventoryMath';
 import { PackagePlus, History, ArrowDownLeft, ArrowUpRight, Edit2, Filter, Search, AlertOctagon, Scale, LayoutGrid, Settings, Plus, ChevronDown, ChevronUp, BarChart3, Tag, ExternalLink, StickyNote, Download, FileDown, X, MoreHorizontal } from 'lucide-react';
 import { useToast } from '../App';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -554,38 +554,57 @@ const InventoryPage: React.FC = () => {
       showToast("Only managers can record shipments or add stock");
       return;
     }
-    const validLines = shipmentLines.filter(l => l.ct > 0);
-    if (validLines.length === 0) return;
+    const validLines = shipmentLines.filter(l => l && (Number(l.pcs) > 0 || Number(l.ct) > 0));
+    if (validLines.length === 0) {
+      showToast("Please enter a piece count or carat weight before submitting");
+      return;
+    }
     if (shipmentSubmitting) return;
 
     const isQuickAdd = !supplier && !invoice;
 
     setShipmentSubmitting(true);
     try {
+      const mappedLines = validLines.map(l => {
+        const spec = specs.find(s => s.id === l.specId);
+        const avgWeight = Number(spec?.ctPerStone || 0);
+        let pcs = Number(l.pcs || 0);
+        let ct = Number(l.ct || 0);
+        if (pcs <= 0 && entryMode === 'WEIGHT' && avgWeight > 0 && ct > 0) {
+          pcs = Math.round(ct / avgWeight);
+        }
+        if (ct <= 0 && pcs > 0 && avgWeight > 0) {
+          ct = roundCt(pcs * avgWeight);
+        }
+        return {
+          specId: l.specId,
+          pcs: pcs > 0 ? pcs : undefined,
+          ct: ct > 0 ? ct : 0.001,
+          costPerCtUsd: typeof l.cost === 'number' && Number.isFinite(l.cost) ? l.cost : undefined
+        };
+      });
+
       await store.createInventoryMovement({
         type: InventoryMovementType.SHIPMENT_IN,
         createdById: getCurrentUserId(),
-        // Weight mode: entered carat weight is authoritative and preserved exactly.
-        // Pieces mode: carats are re-derived full-precision from the snapshot.
         weightAuthoritative: entryMode === 'WEIGHT',
         supplier: supplier || 'Internal',
         invoiceNo: invoice || 'Quick Add',
         notes: isQuickAdd
           ? `Manual Stock Add (${entryMode === 'WEIGHT' ? 'Weight' : 'Pcs'})`
           : `Shipment from ${supplier} (${entryMode === 'WEIGHT' ? 'By Weight' : 'By Pieces'})`,
-        lines: validLines.map(l => ({
-          specId: l.specId,
-          pcs: l.pcs > 0 ? l.pcs : undefined,
-          ct: l.ct,
-          costPerCtUsd: l.cost
-        })),
-        location: selectedLocation
+        lines: mappedLines,
+        location: 'Melee'
       });
       showToast("Stock Added Successfully");
       setShipmentLines([]);
       setSupplier('');
       setInvoice('');
+      setSelectedLocation('Melee');
       setActiveTab('stock');
+      refreshData();
+    } catch (err: any) {
+      showToast(err?.message || "Failed to record stock shipment");
     } finally {
       setShipmentSubmitting(false);
     }
@@ -739,13 +758,16 @@ const InventoryPage: React.FC = () => {
 
     if (!editReason.trim()) { showToast("A correction reason is required"); return; }
 
-    let newPcs = item.pcs;
-    let newCt = item.ct;
+    const authoritativePreviousPcs = Number.isSafeInteger(spec.pcs) ? spec.pcs! : item.pcs;
+    const authoritativePreviousCt = typeof spec.ct === 'number' && Number.isFinite(spec.ct) ? spec.ct : item.ct;
+
+    let newPcs = authoritativePreviousPcs;
+    let newCt = authoritativePreviousCt;
     if (editMode === 'WEIGHT') {
       const ct = parseFloat(editCt);
       if (isNaN(ct) || ct < 0) { showToast("Enter a valid carat weight"); return; }
       newCt = ct;
-      newPcs = spec.ctPerStone > 0 ? Math.round(ct / spec.ctPerStone) : item.pcs;
+      newPcs = spec.ctPerStone > 0 ? Math.round(ct / spec.ctPerStone) : authoritativePreviousPcs;
     } else {
       const qty = parseInt(editPcs);
       if (isNaN(qty) || qty < 0) { showToast("Enter a valid piece count"); return; }
@@ -759,8 +781,8 @@ const InventoryPage: React.FC = () => {
         specId: editingStock,
         location: 'Melee',
         mode: editMode,
-        previousPcs: item.pcs,
-        previousCt: item.ct,
+        previousPcs: authoritativePreviousPcs,
+        previousCt: authoritativePreviousCt,
         newPcs,
         newCt,
         reason: editReason.trim(),
@@ -771,8 +793,10 @@ const InventoryPage: React.FC = () => {
       setEditReason('');
       setEditPcs('');
       setEditCt('');
+      refreshData();
     } catch (err: any) {
       showToast(err?.message || "Correction failed");
+      refreshData();
     } finally {
       setCorrectionSubmitting(false);
     }
@@ -2596,8 +2620,8 @@ const InventoryPage: React.FC = () => {
       {editingStock && (() => {
         const cItem = summary.find(s => s.spec.id === editingStock);
         const cSpec = specs.find(s => s.id === editingStock);
-        const prevPcs = cItem?.pcs ?? 0;
-        const prevCt = cItem?.ct ?? 0;
+        const prevPcs = Number.isSafeInteger(cSpec?.pcs) ? cSpec!.pcs! : (cItem?.pcs ?? 0);
+        const prevCt = typeof cSpec?.ct === 'number' && Number.isFinite(cSpec?.ct) ? cSpec!.ct! : (cItem?.ct ?? 0);
         const avg = cSpec?.ctPerStone || 0;
         // Live preview of the resulting balance from the entered value.
         let nextPcs = prevPcs;

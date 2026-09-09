@@ -561,7 +561,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
   const submitRequest = async () => {
     const valid = requestLines.filter(l => l.pcs > 0);
-    if(!valid.length) return;
+    if(!valid.length) {
+      showToast('Please specify a piece count for at least one item');
+      return;
+    }
     const stableOperationId = requestOperationId || crypto.randomUUID();
     if (!requestOperationId) setRequestOperationId(stableOperationId);
     setLoadingAction(true);
@@ -623,7 +626,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       showToast("Return Submitted"); 
     } catch(e: any) {
       console.error(e);
-      showToast(e.message || "Error submitting return");
+      const errMsg = e?.details?.message || e?.message || "Error submitting return";
+      showToast(errMsg);
     } finally {
       setLoadingAction(false);
     }
