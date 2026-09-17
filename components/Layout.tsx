@@ -2,7 +2,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Role } from '../types';
-import { LogOut, Users, LayoutDashboard, Settings, PackageOpen, FileBarChart, Layers, Briefcase, Menu, X, User as UserIcon } from 'lucide-react';
+import { LogOut, Users, LayoutDashboard, Settings, PackageOpen, FileBarChart, Layers, Briefcase, Menu, X, User as UserIcon, Clock } from 'lucide-react';
 import { SetterAvatar } from './UI';
 import { NotificationCenter } from './NotificationCenter';
 import { ThemeToggle } from './ThemeToggle';
@@ -90,6 +90,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
           <nav>
             <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest px-4 mb-2 font-mono">Workspace</div>
             <NavItem to="/" icon={LayoutDashboard} label={isManager ? "Overview" : "My Work"} />
+            {!isManager && <NavItem to="/requests" icon={Clock} label="Request status" />}
             {(isManager || isDesigner) && <NavItem to="/projects" icon={Briefcase} label="All Projects" />}
             {(isManager || isDesigner) && <NavItem to="/inventory" icon={PackageOpen} label="Inventory" />}
           </nav>
@@ -189,6 +190,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
            {/* Texture Overlay */}
            <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
            <BottomNavItem to="/" icon={LayoutDashboard} label="Work" />
+           <BottomNavItem to="/requests" icon={Clock} label="Requests" />
            <BottomNavItem to="/profile" icon={UserIcon} label="Profile" dataTour="nav-profile" />
         </div>
       )}

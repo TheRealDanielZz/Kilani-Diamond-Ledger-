@@ -572,6 +572,7 @@ export interface IssueRequest {
     fulfilledById: string;
     operationId?: string;
     bagId?: string | null;
+    bagNumber?: string;
     lines: {
       specId: string;
       requestedPcs: number;

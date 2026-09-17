@@ -251,6 +251,10 @@ export const StatusPill: React.FC<{ status: string }> = ({ status }) => {
     case BagStatus.ISSUED: return <Badge color="blue">Issued</Badge>;
     case BagStatus.RETURNED_PENDING_COUNT: return <Badge color="amber">Pending</Badge>;
     case BagStatus.COUNTED_CONFIRMED: return <Badge color="green">Complete</Badge>;
+    case 'OPEN': return <Badge color="blue">Open</Badge>;
+    case 'CANCELLED': return <Badge color="red">Cancelled</Badge>;
+    case 'FULFILLED': return <Badge color="green">Fulfilled</Badge>;
+    case 'PARTIALLY_FULFILLED_CLOSED': return <Badge color="amber">Partial</Badge>;
     default: return <Badge color="gray">{status}</Badge>;
   }
 };

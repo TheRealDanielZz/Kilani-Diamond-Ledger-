@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { store } from '../services/store';
 import { Project, Role, DiamondBag, IssueRequest, DiamondSpec, ProjectCostSummary, ProgressStage, ProjectStatus, BagStatus, InventoryMovementType, ProjectNote, RepairDetailsV2, RepairStatus, EvidenceImage } from '../types';
 import { Card, Button, StatusPill, SetterAvatar, Badge, Input, Spinner, ProgressBar, SegmentedControl } from '../components/UI';
@@ -10,6 +10,7 @@ import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCir
 import { useToast } from '../App';
 import { FastEntryGrid } from '../components/FastEntryGrid';
 import { isMeleeLocation } from '../services/inventoryMath';
+import { recordProjectOpened } from '../utils/projectOpenedTracker';
 
 interface Props { 
   currentUser: any; 
@@ -106,6 +107,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false);
   const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
 
+  // Cancel Request State
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+  const [confirmCancelRequestId, setConfirmCancelRequestId] = useState<string | null>(null);
+
   // Slider State
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
   const [sliderPercent, setSliderPercent] = useState(0);
@@ -180,11 +185,12 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
   useEffect(() => {
     if (id) {
+       recordProjectOpened(id, currentUser?.id);
        const sync = () => refresh();
        sync();
        return store.subscribe(sync);
     }
-  }, [id]);
+  }, [id, currentUser?.id]);
 
   useEffect(() => {
     if (project) {
@@ -578,6 +584,21 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
       showToast(errMsg);
     } finally {
       setLoadingAction(false);
+    }
+  };
+
+  const cancelRequest = async (requestId: string) => {
+    setCancellingRequestId(requestId);
+    try {
+      await store.cancelInventoryRequest(requestId);
+      setConfirmCancelRequestId(null);
+      showToast('Request cancelled');
+    } catch (e: any) {
+      console.error('Error cancelling request:', e);
+      const errMsg = e?.details?.message || e?.message || 'Failed to cancel request';
+      showToast(errMsg);
+    } finally {
+      setCancellingRequestId(null);
     }
   };
 
@@ -1136,7 +1157,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   const isLocked = !canModifyProject || isProductionLocked || project.status !== ProjectStatus.ACTIVE;
   const lastWeight = project.progress?.filter(p => p.weightG).pop()?.weightG;
   const openRequests = requests.filter(r => r.status === 'OPEN');
-  const completedRequests = requests.filter(r => r.status === 'FULFILLED' || r.status === 'PARTIALLY_FULFILLED_CLOSED');
+  const completedRequests = requests.filter(r => r.status === 'FULFILLED' || r.status === 'PARTIALLY_FULFILLED_CLOSED' || r.status === 'CANCELLED');
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 pb-48 md:pb-32 safe-pb">
@@ -2075,32 +2096,71 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                 <div className="flex flex-col gap-3">
                  {openRequests.length === 0 ? <p className="text-zinc-500 italic p-4 text-center border border-dashed border-zinc-800 bg-transparent rounded-3xl">No active requests.</p> : 
                     openRequests.map(r => (
-                       <div key={r.id} className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-2xl border border-white/[0.05] p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all hover:bg-[#252830]/80">
-                          <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                                <PackagePlus className="text-blue-400" size={20} />
-                             </div>
-                             <div>
-                                <div className="font-bold text-white text-sm mb-0.5">Request from {store.getUser(r.requestedById)?.name}</div>
-                                <div className="text-[10px] text-zinc-500 font-mono tracking-wider">{formatDateTime(r.requestedAt)}</div>
-                             </div>
-                          </div>
-                          
-                          <div className="flex flex-wrap gap-2 p-2.5 rounded-2xl bg-black/30 border border-white/5 md:max-w-md w-full">
-                             {r.lines.map((l, i) => {
-                                 const spec = specs.find(s => s.id === l.specId);
-                                 return (
-                                     <div key={i} className="text-[10px] bg-white/5 px-2 py-1 rounded-lg text-zinc-300 font-mono font-bold flex items-center gap-1.5 border border-white/5 whitespace-nowrap">
-                                         <span className="text-blue-400">{l.requestedPcs}x</span> 
-                                         <span className="text-zinc-500 font-sans tracking-tight">{spec?.label}</span>
-                                     </div>
-                                 )
-                             })}
-                          </div>
-                          
-                          <div className="shrink-0 flex justify-end">
-                             <StatusPill status={r.status} />
-                          </div>
+                       <div key={r.id} className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-2xl border border-white/[0.05] p-5 flex flex-col gap-4 transition-all hover:bg-[#252830]/80 relative overflow-hidden">
+                           {/* Confirm Cancel Overlay */}
+                           <AnimatePresence>
+                              {confirmCancelRequestId === r.id && (
+                                 <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="absolute inset-0 z-20 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-5 rounded-2xl"
+                                 >
+                                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
+                                       <AlertCircle className="text-red-400" size={24} />
+                                    </div>
+                                    <p className="text-white font-bold text-sm mb-1">Cancel this request?</p>
+                                    <p className="text-zinc-400 text-xs text-center mb-5">This cannot be undone. The manager will no longer see this request.</p>
+                                    <div className="flex gap-3 w-full max-w-[260px]">
+                                       <Button variant="secondary" size="sm" onClick={() => setConfirmCancelRequestId(null)} className="flex-1" disabled={cancellingRequestId === r.id}>Keep</Button>
+                                       <Button variant="danger" size="sm" onClick={() => cancelRequest(r.id)} loading={cancellingRequestId === r.id} className="flex-1">Cancel Request</Button>
+                                    </div>
+                                 </motion.div>
+                              )}
+                           </AnimatePresence>
+
+                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+                                    <PackagePlus className="text-blue-400" size={20} />
+                                 </div>
+                                 <div>
+                                    <div className="font-bold text-white text-sm mb-0.5">Request from {store.getUser(r.requestedById)?.name}</div>
+                                    <div className="text-[10px] text-zinc-500 font-mono tracking-wider">{formatDateTime(r.requestedAt)}</div>
+                                 </div>
+                              </div>
+                              
+                              <div className="flex flex-wrap gap-2 p-2.5 rounded-2xl bg-black/30 border border-white/5 md:max-w-md w-full">
+                                 {r.lines.map((l, i) => {
+                                     const spec = specs.find(s => s.id === l.specId);
+                                     return (
+                                         <div key={i} className="text-[10px] bg-white/5 px-2 py-1 rounded-lg text-zinc-300 font-mono font-bold flex items-center gap-1.5 border border-white/5 whitespace-nowrap">
+                                             <span className="text-blue-400">{l.requestedPcs}x</span> 
+                                             <span className="text-zinc-500 font-sans tracking-tight">{spec?.label}</span>
+                                         </div>
+                                     )
+                                 })}
+                              </div>
+                              
+                              <div className="shrink-0 flex items-center gap-2 justify-end">
+                                 <StatusPill status={r.status} />
+                                 {/* Cancel button: visible to request owner or manager */}
+                                 {(isManager || (() => {
+                                    const accepted = new Set([currentUser.id, ...(currentUser.legacyProfileIds || []), currentUser.name?.toLowerCase(), currentUser.email?.toLowerCase()].filter(Boolean));
+                                    const reqBy = (r.requestedById || '').trim();
+                                    return accepted.has(reqBy) || accepted.has(reqBy.toLowerCase());
+                                 })()) && (
+                                    <button
+                                       onClick={() => setConfirmCancelRequestId(r.id)}
+                                       className="p-2 rounded-xl bg-red-500/0 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-zinc-600 hover:text-red-400 transition-all duration-200 active:scale-95"
+                                       title="Cancel this request"
+                                    >
+                                       <X size={16} />
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
                        </div>
                     ))
                  }
@@ -2116,11 +2176,20 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                     completedRequests.map(r => (
                        <div key={r.id} className="bg-[#1C1E24]/30 backdrop-blur-3xl rounded-2xl border border-white/[0.03] p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all">
                           <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-2xl bg-zinc-800/40 border border-zinc-700/20 flex items-center justify-center shrink-0">
-                                <CheckCircle2 className="text-emerald-400" size={20} />
+                             <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
+                                r.status === 'CANCELLED'
+                                   ? 'bg-red-500/10 border-red-500/20'
+                                   : 'bg-zinc-800/40 border-zinc-700/20'
+                             }`}>
+                                {r.status === 'CANCELLED'
+                                   ? <X className="text-red-400" size={20} />
+                                   : <CheckCircle2 className="text-emerald-400" size={20} />
+                                }
                              </div>
                              <div>
-                                <div className="font-bold text-white text-sm mb-0.5">Request fulfilled</div>
+                                <div className="font-bold text-white text-sm mb-0.5">
+                                   {r.status === 'CANCELLED' ? 'Request cancelled' : 'Request fulfilled'}
+                                </div>
                                 <div className="text-[10px] text-zinc-500 font-mono tracking-wider">{formatDateTime(r.requestedAt)}</div>
                              </div>
                           </div>

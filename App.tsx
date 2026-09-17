@@ -15,6 +15,7 @@ const TeamManagement = lazy(() => import('./pages/TeamManagement'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const RequestStatusPage = lazy(() => import('./pages/RequestStatusPage'));
 
 const AllProjectsPage = lazy(() => import('./pages/AllProjectsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
@@ -163,6 +164,8 @@ const App = () => {
                       user.role === Role.DESIGNER ? <DesignerDashboard currentUser={user} /> :
                       <SetterDashboard currentUser={user} />
                       } />
+                      <Route path="/requests" element={<ProtectedRoute user={user}><RequestStatusPage currentUser={user} /></ProtectedRoute>} />
+                      <Route path="/request-status" element={<Navigate to="/requests" replace />} />
                       <Route path="/profile" element={<ProtectedRoute user={user}><ProfilePage /></ProtectedRoute>} />
                       <Route path="/project/:id" element={<ProtectedRoute user={user}><ProjectDetail currentUser={user} /></ProtectedRoute>} />
                       <Route path="/verify/:projectId" element={<ProtectedRoute user={user}><VerificationFlow currentUser={user} /></ProtectedRoute>} />
