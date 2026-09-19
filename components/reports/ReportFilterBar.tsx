@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
 import './report-filter-date.css';
 import {
@@ -10,6 +11,13 @@ import {
   reportOptionLabel,
   toggleReportSelection,
 } from '../../services/reportFilters';
+
+function getLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 interface MultiSelectFilterProps {
   definition: ReportFilterDefinition;
@@ -135,13 +143,13 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
   const [tempTo, setTempTo] = useState(initialTo);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getLocalDateString(new Date()), []);
   const [navYear, setNavYear] = useState(() => {
-    if (initialFrom) return Number(initialFrom.split('-')[0]) || 2026;
+    if (initialFrom) return Number(initialFrom.split('-')[0]) || new Date().getFullYear();
     return new Date().getFullYear();
   });
   const [navMonth, setNavMonth] = useState(() => {
-    if (initialFrom) return (Number(initialFrom.split('-')[1]) - 1) || 7;
+    if (initialFrom) return (Number(initialFrom.split('-')[1]) - 1) || new Date().getMonth();
     return new Date().getMonth();
   });
 
@@ -155,9 +163,43 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
           setNavYear(y);
           setNavMonth(m - 1);
         }
+      } else {
+        const now = new Date();
+        setNavYear(now.getFullYear());
+        setNavMonth(now.getMonth());
       }
     }
   }, [isOpen, initialFrom, initialTo]);
+
+  // Handle ESC key to dismiss
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const activePreset = useMemo(() => {
+    const today = todayStr;
+    if (!tempFrom && !tempTo) return 'all';
+    if (tempFrom === today && tempTo === today) return 'today';
+    const yDate = new Date();
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = getLocalDateString(yDate);
+    if (tempFrom === yStr && tempTo === yStr) return 'yesterday';
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 6);
+    if (tempFrom === getLocalDateString(d7) && tempTo === today) return '7days';
+    const d30 = new Date();
+    d30.setDate(d30.getDate() - 29);
+    if (tempFrom === getLocalDateString(d30) && tempTo === today) return '30days';
+    const now = new Date();
+    const mStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    if (tempFrom === mStart && tempTo === today) return 'thisMonth';
+    return null;
+  }, [tempFrom, tempTo, todayStr]);
 
   const secondMonthInfo = useMemo(() => {
     let m = navMonth + 1;
@@ -209,18 +251,18 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
     } else if (preset === 'yesterday') {
       const y = new Date(today);
       y.setDate(y.getDate() - 1);
-      const yStr = y.toISOString().split('T')[0];
+      const yStr = getLocalDateString(y);
       setTempFrom(yStr);
       setTempTo(yStr);
     } else if (preset === '7days') {
       const d = new Date(today);
       d.setDate(d.getDate() - 6);
-      setTempFrom(d.toISOString().split('T')[0]);
+      setTempFrom(getLocalDateString(d));
       setTempTo(todayStr);
     } else if (preset === '30days') {
       const d = new Date(today);
       d.setDate(d.getDate() - 29);
-      setTempFrom(d.toISOString().split('T')[0]);
+      setTempFrom(getLocalDateString(d));
       setTempTo(todayStr);
     } else if (preset === 'thisMonth') {
       const yStr = today.getFullYear();
@@ -277,7 +319,7 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
                   }
                 }}
                 onMouseLeave={() => setHoverDate(null)}
-                className={`h-8 w-full flex items-center justify-center text-xs font-bold transition-all relative ${
+                className={`h-8 w-full flex items-center justify-center text-xs font-bold transition-all relative cursor-pointer ${
                   isStart || isEnd
                     ? 'bg-lux-gold text-black shadow-lg shadow-amber-400/40 z-10 font-black scale-105 rounded-full'
                     : isInRange
@@ -294,92 +336,116 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
       <div
-        className="relative w-full max-w-2xl bg-zinc-950 border border-amber-500/30 rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-2xl max-h-[92vh] flex flex-col bg-zinc-950 border border-amber-500/35 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
-          <div className="flex items-center gap-2">
-            <CalendarDays size={18} className="text-lux-gold" />
-            <h3 className="font-extrabold text-white text-base">Select Date Range</h3>
+        {/* Header (Pinned) */}
+        <div className="flex items-center justify-between border-b border-zinc-800/80 px-6 py-4 shrink-0 bg-zinc-950">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-lux-gold/15 border border-lux-gold/30 flex items-center justify-center text-lux-gold">
+              <CalendarDays size={18} />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-white text-base">Select Date Range</h3>
+              <p className="text-[11px] text-zinc-400 font-medium">Filter requests and fulfillment records</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            aria-label="Close date picker"
+            className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer active:scale-95"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Live Period Banner */}
-        <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-2xl flex items-center justify-between text-xs">
-          <span className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">Active Range:</span>
-          <span className="font-extrabold text-lux-gold">{formatDateRangeDisplay(tempFrom, tempTo)}</span>
-        </div>
-
-        {/* Quick Presets */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {[
-            { label: 'Today', key: 'today' },
-            { label: 'Yesterday', key: 'yesterday' },
-            { label: 'Last 7 Days', key: '7days' },
-            { label: 'Last 30 Days', key: '30days' },
-            { label: 'This Month', key: 'thisMonth' },
-            { label: 'All Time', key: 'all' },
-          ].map(p => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => applyPreset(p.key as any)}
-              className="px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900 text-xs font-bold text-zinc-300 hover:bg-lux-gold/15 hover:border-lux-gold/30 hover:text-lux-gold transition-all"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Dual Month Calendar View */}
-        <div className="relative border border-zinc-800/80 bg-zinc-900/40 rounded-2xl p-4">
-          <div className="flex items-center justify-between absolute left-4 right-4 top-4 pointer-events-none">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="pointer-events-auto w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="pointer-events-auto w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
-            >
-              <ChevronRight size={14} />
-            </button>
+        {/* Scrollable Body */}
+        <div className="px-6 py-4 overflow-y-auto space-y-4 flex-1">
+          {/* Live Period Banner */}
+          <div className="bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">Active Range:</span>
+              <span className="font-extrabold text-lux-gold text-sm">{formatDateRangeDisplay(tempFrom, tempTo)}</span>
+            </div>
+            <span className="text-[11px] text-amber-300/80 font-medium">
+              {tempFrom && tempFrom === tempTo ? '1 day selected' : tempFrom && tempTo ? 'Range selected' : 'All dates'}
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-            {renderMonthGrid(navYear, navMonth)}
-            {renderMonthGrid(secondMonthInfo.year, secondMonthInfo.monthIndex)}
+          {/* Quick Presets */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { label: 'Today', key: 'today' },
+              { label: 'Yesterday', key: 'yesterday' },
+              { label: 'Last 7 Days', key: '7days' },
+              { label: 'Last 30 Days', key: '30days' },
+              { label: 'This Month', key: 'thisMonth' },
+              { label: 'All Time', key: 'all' },
+            ].map(p => {
+              const isSelected = activePreset === p.key;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => applyPreset(p.key as any)}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                    isSelected
+                      ? 'bg-lux-gold text-black border-lux-gold shadow-sm font-extrabold'
+                      : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-lux-gold/15 hover:border-lux-gold/30 hover:text-lux-gold'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Dual Month Calendar View */}
+          <div className="relative border border-zinc-800/80 bg-zinc-900/40 rounded-2xl p-4">
+            <div className="flex items-center justify-between absolute left-4 right-4 top-4 pointer-events-none">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                aria-label="Previous month"
+                className="pointer-events-auto w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer active:scale-95"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                aria-label="Next month"
+                className="pointer-events-auto w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer active:scale-95"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              {renderMonthGrid(navYear, navMonth)}
+              {renderMonthGrid(secondMonthInfo.year, secondMonthInfo.monthIndex)}
+            </div>
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+        {/* Footer Actions (Permanently pinned at bottom of modal, never clipped) */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-800/80 bg-zinc-950 shrink-0">
           <button
             type="button"
             onClick={() => { setTempFrom(''); setTempTo(''); }}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5"
+            className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
           >
-            <RotateCcw size={13} /> Clear
+            <RotateCcw size={13} /> Reset
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-zinc-800 text-xs font-bold text-zinc-300 hover:bg-zinc-900 transition-colors"
+              className="px-4 py-2.5 rounded-xl border border-zinc-800 text-xs font-bold text-zinc-300 hover:bg-zinc-900 transition-colors cursor-pointer active:scale-95 min-h-[40px]"
             >
               Cancel
             </button>
@@ -389,14 +455,15 @@ const AirbnbDateModal: React.FC<AirbnbDateModalProps> = ({
                 onApply(tempFrom, tempTo);
                 onClose();
               }}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer min-h-[40px]"
             >
               Apply Filter
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
