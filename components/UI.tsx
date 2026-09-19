@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useId } from 'react';
 import { ProjectStatus, BagStatus } from '../types';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -265,6 +265,23 @@ export const SetterAvatar: React.FC<{ name: string; color?: string; size?: 'sm' 
   );
 };
 
+// Unified Field Label
+export const FieldLabel: React.FC<{
+  htmlFor?: string;
+  children: React.ReactNode;
+  required?: boolean;
+  className?: string;
+}> = ({ htmlFor, children, required, className = '' }) => (
+  <label
+    htmlFor={htmlFor}
+    className={`field-label block text-[10px] font-bold text-theme-text-secondary mb-2 uppercase tracking-[0.2em] ml-1 transition-colors group-focus-within:text-lux-gold font-mono ${className}`}
+  >
+    {children}
+    {required && <span className="text-lux-gold ml-1" title="Required">*</span>}
+  </label>
+);
+
+// Unified Input Field
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { 
   label?: string; 
   icon?: React.ReactNode; 
@@ -286,13 +303,9 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
     return (
       <div className="w-full group field-container">
         {label && (
-          <label 
-            htmlFor={inputId} 
-            className="field-label block text-[10px] font-bold text-theme-text-secondary mb-2 uppercase tracking-[0.2em] ml-1 transition-colors group-focus-within:text-lux-gold font-mono"
-          >
+          <FieldLabel htmlFor={inputId} required={required}>
             {label}
-            {required && <span className="text-lux-gold ml-1" title="Required">*</span>}
-          </label>
+          </FieldLabel>
         )}
         <div className="relative">
             {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-lux-gold transition-colors">{icon}</div>}
@@ -328,6 +341,135 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   }
 );
 Input.displayName = 'Input';
+
+// Unified Textarea Field
+export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  label?: string;
+  error?: string;
+  hint?: string;
+}>(
+  ({ label, className = '', id, error, hint, required, rows = 3, ...props }, ref) => {
+    const defaultId = useId();
+    const textareaId = id || defaultId;
+    const hintId = `${textareaId}-hint`;
+    const errorId = `${textareaId}-error`;
+
+    const describedBy = [
+      hint ? hintId : null,
+      error ? errorId : null,
+      props['aria-describedby'] || null
+    ].filter(Boolean).join(' ') || undefined;
+
+    return (
+      <div className="w-full group field-container">
+        {label && (
+          <FieldLabel htmlFor={textareaId} required={required}>
+            {label}
+          </FieldLabel>
+        )}
+        <textarea
+          ref={ref}
+          id={textareaId}
+          required={required}
+          rows={rows}
+          aria-describedby={describedBy}
+          aria-invalid={error ? 'true' : undefined}
+          className={`
+            block w-full rounded-2xl glass-input
+            text-theme-text-primary placeholder-zinc-600 
+            text-base p-4 transition-all shadow-inner resize-none
+            focus:ring-lux-gold focus:border-lux-gold
+            ${className}
+          `}
+          style={{ fontSize: '16px' }}
+          {...props}
+        />
+        {hint && !error && (
+          <p id={hintId} className="text-[11px] text-theme-text-muted mt-1.5 ml-1">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={errorId} className="text-[11px] text-red-400 mt-1.5 ml-1 flex items-center gap-1 font-medium animate-in fade-in">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+Textarea.displayName = 'Textarea';
+
+// Unified Select Field
+export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label?: string;
+  icon?: React.ReactNode;
+  error?: string;
+  hint?: string;
+  children: React.ReactNode;
+}>(
+  ({ label, icon, className = '', id, error, hint, required, children, ...props }, ref) => {
+    const defaultId = useId();
+    const selectId = id || defaultId;
+    const hintId = `${selectId}-hint`;
+    const errorId = `${selectId}-error`;
+
+    const describedBy = [
+      hint ? hintId : null,
+      error ? errorId : null,
+      props['aria-describedby'] || null
+    ].filter(Boolean).join(' ') || undefined;
+
+    return (
+      <div className="w-full group field-container">
+        {label && (
+          <FieldLabel htmlFor={selectId} required={required}>
+            {label}
+          </FieldLabel>
+        )}
+        <div className="relative">
+          {icon && (
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-lux-gold transition-colors pointer-events-none">
+              {icon}
+            </div>
+          )}
+          <select
+            ref={ref}
+            id={selectId}
+            required={required}
+            aria-describedby={describedBy}
+            aria-invalid={error ? 'true' : undefined}
+            className={`
+              block w-full rounded-2xl glass-input
+              text-theme-text-primary text-base py-3.5 transition-all shadow-inner
+              appearance-none cursor-pointer
+              ${icon ? 'pl-11 pr-10' : 'pl-4 pr-10'}
+              ${className}
+            `}
+            style={{ fontSize: '16px' }}
+            {...props}
+          >
+            {children}
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
+            <ChevronDown size={16} />
+          </div>
+        </div>
+        {hint && !error && (
+          <p id={hintId} className="text-[11px] text-theme-text-muted mt-1.5 ml-1">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={errorId} className="text-[11px] text-red-400 mt-1.5 ml-1 flex items-center gap-1 font-medium animate-in fade-in">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+Select.displayName = 'Select';
 
 export const ProgressBar: React.FC<{ progress: number; className?: string }> = ({ progress, className = '' }) => (
   <div className={`h-1.5 w-full bg-theme-input-bg border border-theme-border rounded-full overflow-hidden ${className}`}>
@@ -497,3 +639,175 @@ export const Modal: React.FC<{
 export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
   <div className={`skeleton rounded-2xl ${className}`} />
 );
+
+// Unified Section Title
+export const SectionTitle: React.FC<{
+  icon?: React.ReactNode;
+  title: string;
+  className?: string;
+}> = ({ icon, title, className = '' }) => (
+  <div className={`flex items-center gap-2 text-lux-gold ${className}`}>
+    {icon}
+    <h3 className="text-xs font-bold text-theme-text-secondary uppercase tracking-widest font-mono">
+      {title}
+    </h3>
+  </div>
+);
+
+// Unified Selection Chip
+export const SelectionChip: React.FC<{
+  selected: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  label: string;
+  badge?: React.ReactNode;
+  className?: string;
+}> = ({ selected, onClick, icon, label, badge, className = '' }) => {
+  const handleClick = () => {
+    triggerHaptic('selection');
+    onClick();
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={`
+        flex items-center gap-2 px-3.5 py-3 rounded-2xl border text-xs font-bold
+        transition-all active:scale-[0.97]
+        ${selected
+          ? 'bg-lux-gold/15 border-lux-gold text-lux-gold shadow-[0_0_15px_rgba(245,194,73,0.2)]'
+          : 'bg-theme-input-bg border-theme-border text-theme-text-muted hover:border-lux-gold/40 hover:text-theme-text-primary'
+        }
+        ${className}
+      `}
+    >
+      {icon && <span className="shrink-0">{icon}</span>}
+      <span className="truncate">{label}</span>
+      {badge && <span className="ml-auto shrink-0">{badge}</span>}
+    </button>
+  );
+};
+
+// Modal Header
+export const ModalHeader: React.FC<{
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  badge?: string;
+  onClose: () => void;
+}> = ({ title, subtitle, icon, badge, onClose }) => (
+  <div className="px-6 py-4.5 border-b border-theme-border flex items-center justify-between shrink-0 bg-theme-modal-bg/95 backdrop-blur-md">
+    <div className="flex items-center gap-3">
+      {icon && (
+        <div className="w-10 h-10 rounded-2xl bg-lux-gold/15 border border-lux-gold/30 flex items-center justify-center text-lux-gold shadow-[0_0_15px_rgba(245,194,73,0.2)] shrink-0">
+          {icon}
+        </div>
+      )}
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-theme-text-primary text-base md:text-lg tracking-tight">
+            {title}
+          </h3>
+          {badge && (
+            <span className="px-2.5 py-0.5 rounded-full bg-lux-gold/15 border border-lux-gold/35 font-mono font-black text-xs text-lux-gold shadow-sm">
+              {badge}
+            </span>
+          )}
+        </div>
+        {subtitle && (
+          <p className="text-xs text-theme-text-muted font-medium mt-0.5">
+            {subtitle}
+          </p>
+        )}
+      </div>
+    </div>
+    <button
+      type="button"
+      onClick={onClose}
+      className="w-9 h-9 rounded-xl bg-theme-input-bg border border-theme-border flex items-center justify-center text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-row-hover transition-all active:scale-95 shrink-0"
+      aria-label="Close modal"
+    >
+      <X size={18} />
+    </button>
+  </div>
+);
+
+// Unified Modal Shell (Apple-grade spring physics, bottom-sheet on mobile, centered on desktop)
+const MODAL_SIZES = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-xl',
+  xl: 'max-w-5xl'
+};
+
+export const ModalShell: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  children: React.ReactNode;
+  className?: string;
+  fullHeight?: boolean;
+}> = ({
+  isOpen,
+  onClose,
+  size = 'lg',
+  children,
+  className = '',
+  fullHeight = false
+}) => {
+  // ESC key support
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const isWide = size === 'xl';
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div
+          className={`fixed inset-0 z-[110] flex ${
+            isWide ? 'items-center p-3 sm:p-6' : 'items-end md:items-center p-0 md:p-4'
+          } justify-center overflow-hidden`}
+        >
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/75 backdrop-blur-md"
+          />
+
+          {/* Modal Container */}
+          <motion.div
+            initial={isWide ? { opacity: 0, scale: 0.95 } : { y: '100%', opacity: 0, scale: 0.96 }}
+            animate={isWide ? { opacity: 1, scale: 1 } : { y: 0, opacity: 1, scale: 1 }}
+            exit={isWide ? { opacity: 0, scale: 0.95 } : { y: '100%', opacity: 0, scale: 0.96 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 360 }}
+            className={`
+              relative z-10 w-full ${MODAL_SIZES[size]}
+              bg-theme-modal-bg border-t md:border border-lux-gold/30
+              ${isWide ? 'rounded-3xl shadow-2xl' : 'rounded-t-[28px] md:rounded-[28px] shadow-[0_0_60px_rgba(245,194,73,0.15)]'}
+              ${fullHeight ? 'h-[90vh]' : 'max-h-[92vh]'}
+              flex flex-col overflow-hidden transition-colors
+              ${className}
+            `}
+          >
+            {/* Mobile Drag Indicator (for bottom sheets) */}
+            {!isWide && (
+              <div className="w-12 h-1.5 rounded-full bg-lux-gold/40 mx-auto mt-3 mb-1 md:hidden shrink-0" />
+            )}
+            {children}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};

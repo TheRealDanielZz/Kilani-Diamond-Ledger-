@@ -1,8 +1,7 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, AlertTriangle, CheckCircle2, ChevronDown, Plus, Minus, PackageCheck, Info, ArrowRight, Gem } from 'lucide-react';
 import { IssueRequest } from '../types';
-import { Button, Input } from './UI';
+import { Button, Input, ModalShell, ModalHeader } from './UI';
 import { ImageUpload } from './ImageUpload';
 import { useTheme } from './ThemeContext';
 
@@ -106,57 +105,16 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
    };
 
    return (
-      <AnimatePresence>
-         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-end md:items-center justify-center p-0 md:p-4 overflow-hidden">
-            {/* Backdrop Click Close */}
-            <motion.div
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               exit={{ opacity: 0 }}
-               onClick={onClose}
-               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
+      <ModalShell isOpen={true} onClose={onClose} size="lg">
+         <ModalHeader
+            title="Issue Diamonds"
+            subtitle="Diamond Allocation Sheet"
+            icon={<PackageCheck size={20} />}
+            badge={`Job #${jobNumber}`}
+            onClose={onClose}
+         />
 
-            {/* Responsive Container (Optimized for Light and Dark Modes) */}
-            <motion.div
-               initial={{ y: '100%', opacity: 0 }}
-               animate={{ y: 0, opacity: 1 }}
-               exit={{ y: '100%', opacity: 0 }}
-               transition={{ type: 'spring', damping: 26, stiffness: 340 }}
-               className="relative z-10 w-full max-w-xl bg-[#0b0b0d] [data-theme=light]:bg-white border-t md:border border-lux-gold/25 [data-theme=light]:border-lux-gold/40 md:rounded-3xl rounded-t-3xl shadow-[0_0_50px_rgba(245,194,73,0.12)] [data-theme=light]:shadow-[0_20px_60px_rgba(0,0,0,0.15)] max-h-[92vh] flex flex-col overflow-hidden transition-colors"
-            >
-               {/* Mobile Touch Drag Handle */}
-               <div className="w-12 h-1.5 rounded-full bg-lux-gold/40 mx-auto mt-3 mb-1 md:hidden shrink-0" />
-
-               {/* Header Bar */}
-               <div className="px-5 py-4 border-b border-white/10 [data-theme=light]:border-black/10 flex items-center justify-between shrink-0 bg-[#121217] [data-theme=light]:bg-[#f8f8fc] backdrop-blur-md transition-colors">
-                  <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 rounded-2xl bg-lux-gold/15 border border-lux-gold/30 flex items-center justify-center text-lux-gold shadow-[0_0_15px_rgba(245,194,73,0.2)]">
-                        <PackageCheck size={20} />
-                     </div>
-                     <div>
-                        <div className="flex items-center gap-2">
-                           <h3 className="font-bold text-white [data-theme=light]:text-zinc-900 text-base md:text-lg tracking-tight">Issue Diamonds</h3>
-                           <span className="px-2.5 py-0.5 rounded-full bg-lux-gold/15 border border-lux-gold/35 font-mono font-black text-xs text-lux-gold shadow-sm">
-                              Job #{jobNumber}
-                           </span>
-                        </div>
-                        <p className="text-xs text-zinc-400 [data-theme=light]:text-zinc-600 font-medium">
-                           {theme === 'light' ? 'Light Mode Allocation Sheet' : 'Option B Obsidian Dark Allocation Sheet'}
-                        </p>
-                     </div>
-                  </div>
-
-                  <button
-                     onClick={onClose}
-                     className="w-9 h-9 rounded-xl bg-white/5 [data-theme=light]:bg-black/5 border border-white/10 [data-theme=light]:border-black/10 flex items-center justify-center text-zinc-400 [data-theme=light]:text-zinc-600 hover:text-white [data-theme=light]:hover:text-zinc-900 hover:bg-white/10 [data-theme=light]:hover:bg-black/10 transition-all touch-manipulation active:scale-95"
-                     aria-label="Close modal"
-                  >
-                     <X size={18} />
-                  </button>
-               </div>
-
-               {/* Scrollable Content Body */}
+         {/* Scrollable Content Body */}
                <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4">
                   {/* Line Items List */}
                   <div className="space-y-3">
@@ -374,7 +332,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                   </div>
 
                   {/* Bag Number & Photo Section */}
-                  <div className="bg-[#131317] [data-theme=light]:bg-[#f4f4f9] border border-white/10 [data-theme=light]:border-black/10 rounded-2xl p-4 space-y-4 shadow-sm">
+                  <div className="bg-theme-input-bg/40 border border-theme-border rounded-2xl p-4 space-y-4 shadow-sm">
                      <Input
                         label="Assign Bag Number *"
                         value={bagNum}
@@ -397,34 +355,32 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                   </div>
                </div>
 
-               {/* Floating CTA Action Bar */}
-               <div className="p-4 border-t border-white/10 [data-theme=light]:border-black/10 bg-[#121217] [data-theme=light]:bg-[#f8f8fc] shrink-0 space-y-2 transition-colors">
-                  <button
-                     type="button"
-                     onClick={onConfirm}
-                     disabled={!validation.isValid || loading}
-                     className="w-full py-4 px-6 rounded-2xl font-black text-black bg-gradient-to-r from-lux-gold via-amber-400 to-lux-gold hover:brightness-110 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none transition-all shadow-[0_10px_35px_rgba(245,194,73,0.25)] flex items-center justify-center gap-2 uppercase tracking-wider text-sm cursor-pointer"
-                  >
-                     <span>
-                        {loading 
-                           ? 'Processing Issue...' 
-                           : validation.isValid 
-                           ? `Confirm Issue (${totalIssuedCount} item${totalIssuedCount !== 1 ? 's' : ''})` 
-                           : (validation.reason || 'Confirm Issue')}
-                     </span>
-                     <ArrowRight size={18} />
-                  </button>
+            {/* Floating CTA Action Bar */}
+            <div className="p-4 border-t border-theme-border bg-theme-modal-bg/95 shrink-0 space-y-2 transition-colors">
+               <button
+                  type="button"
+                  onClick={onConfirm}
+                  disabled={!validation.isValid || loading}
+                  className="w-full py-4 px-6 rounded-2xl font-black text-black bg-gradient-to-r from-lux-gold via-amber-400 to-lux-gold hover:brightness-110 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none transition-all shadow-[0_10px_35px_rgba(245,194,73,0.25)] flex items-center justify-center gap-2 uppercase tracking-wider text-sm cursor-pointer"
+               >
+                  <span>
+                     {loading 
+                        ? 'Processing Issue...' 
+                        : validation.isValid 
+                        ? `Confirm Issue (${totalIssuedCount} item${totalIssuedCount !== 1 ? 's' : ''})` 
+                        : (validation.reason || 'Confirm Issue')}
+                  </span>
+                  <ArrowRight size={18} />
+               </button>
 
-                  <button
-                     type="button"
-                     onClick={onClose}
-                     className="w-full py-2.5 text-xs font-bold text-zinc-400 [data-theme=light]:text-zinc-600 hover:text-white [data-theme=light]:hover:text-zinc-900 transition-colors text-center cursor-pointer"
-                  >
-                     Cancel Operation
-                  </button>
-               </div>
-            </motion.div>
-         </div>
-      </AnimatePresence>
+               <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-2.5 text-xs font-bold text-theme-text-muted hover:text-theme-text-primary transition-colors text-center cursor-pointer"
+               >
+                  Cancel Operation
+               </button>
+            </div>
+      </ModalShell>
    );
 };

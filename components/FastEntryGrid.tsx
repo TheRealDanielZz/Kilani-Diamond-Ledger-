@@ -149,9 +149,9 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
   };
 
   return (
-    <div className="border rounded-[1.5rem] overflow-hidden border-white/5 bg-zinc-900/10 backdrop-blur-md" onPaste={handlePaste}>
+    <div className="border rounded-[1.5rem] overflow-hidden border-theme-border bg-theme-input-bg/30 backdrop-blur-md" onPaste={handlePaste}>
       {/* Desktop Header */}
-      <div className="hidden sm:grid bg-black/30 border-b border-white/5 gap-4 px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-[0.1em]"
+      <div className="hidden sm:grid bg-theme-table-header border-b border-theme-border gap-4 px-6 py-4 text-[10px] font-black text-theme-text-muted uppercase tracking-[0.1em]"
            style={{ gridTemplateColumns: showCost ? 'minmax(0, 1fr) minmax(80px, 100px) minmax(80px, 110px) minmax(80px, 110px) 40px' : 'minmax(0, 1fr) minmax(80px, 100px) minmax(80px, 110px) 40px' }}>
         <div>Diamond Specification</div>
         <div className="text-right">Quantity</div>
@@ -160,16 +160,16 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
         <div></div>
       </div>
       
-      <div className="max-h-[450px] overflow-y-auto no-scrollbar flex flex-col divide-y divide-white/5">
+      <div className="max-h-[450px] overflow-y-auto no-scrollbar flex flex-col divide-y divide-theme-border/50">
         {lines.map((line, idx) => (
           <div key={line.id} className="group p-4 sm:p-0">
             {/* Mobile View: Stacked Card */}
             <div className="flex flex-col sm:hidden gap-3">
                <div>
-                  <label htmlFor={`spec-${line.id}`} className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Specification</label>
+                  <label htmlFor={`spec-${line.id}`} className="block text-[10px] font-black text-theme-text-muted uppercase tracking-widest mb-1 font-mono">Specification</label>
                   <select 
                     id={`spec-${line.id}`}
-                    className="w-full text-sm border border-white/10 rounded-xl py-2 px-3 bg-black/40 focus:ring-1 focus:ring-lux-gold/30 font-bold text-lux-cream [&>option]:bg-zinc-950 cursor-pointer"
+                    className="w-full text-sm border border-theme-border rounded-xl py-2 px-3 bg-theme-input-bg focus:ring-1 focus:ring-lux-gold/30 font-bold text-theme-text-primary [&>option]:bg-theme-modal-bg cursor-pointer"
                     value={line.specId}
                     onChange={e => updateLine(line.id, 'specId', e.target.value)}
                   >
@@ -180,12 +180,12 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                </div>
                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label htmlFor={`pcs-${line.id}`} className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Quantity</label>
+                    <label htmlFor={`pcs-${line.id}`} className="block text-[10px] font-black text-theme-text-muted uppercase tracking-widest mb-1 font-mono">Quantity</label>
                     <input 
                       id={`pcs-${line.id}`}
                       type="number"
                       disabled={mode === 'WEIGHT'}
-                      className={`w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-black/40 text-lux-cream tabular-nums font-mono ${mode === 'WEIGHT' ? 'opacity-30' : 'shadow-inner'}`}
+                      className={`w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-theme-input-bg text-theme-text-primary tabular-nums font-mono ${mode === 'WEIGHT' ? 'opacity-30' : 'shadow-inner'}`}
                       value={line.pcs || ''}
                       onChange={e => updateLine(line.id, 'pcs', parseInt(e.target.value) || 0)}
                       onKeyDown={e => handleKeyDown(e, idx)}
@@ -193,13 +193,13 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                     />
                   </div>
                   <div>
-                    <label htmlFor={`ct-${line.id}`} className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Total Carat</label>
+                    <label htmlFor={`ct-${line.id}`} className="block text-[10px] font-black text-theme-text-muted uppercase tracking-widest mb-1 font-mono">Total Carat</label>
                     <input 
                       id={`ct-${line.id}`}
                       type="number"
                       step="0.001"
                       disabled={mode === 'PCS'}
-                      className={`w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-black/40 text-emerald-400 tabular-nums font-mono ${mode === 'PCS' ? 'opacity-30' : 'shadow-inner'}`}
+                      className={`w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-theme-input-bg text-emerald-400 tabular-nums font-mono ${mode === 'PCS' ? 'opacity-30' : 'shadow-inner'}`}
                       value={line.ct || ''}
                       onChange={e => updateLine(line.id, 'ct', parseFloat(e.target.value) || 0)}
                       placeholder="0.000"
@@ -208,11 +208,11 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                </div>
                {showCost && (
                   <div>
-                    <label htmlFor={`cost-${line.id}`} className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Cost (USD)</label>
+                    <label htmlFor={`cost-${line.id}`} className="block text-[10px] font-black text-theme-text-muted uppercase tracking-widest mb-1 font-mono">Cost (USD)</label>
                     <input 
                       id={`cost-${line.id}`}
                       type="number"
-                      className="w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold bg-black/40 text-zinc-500 tabular-nums font-mono"
+                      className="w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold bg-theme-input-bg text-theme-text-muted tabular-nums font-mono"
                       value={line.cost}
                       onChange={e => updateLine(line.id, 'cost', parseFloat(e.target.value) || 0)}
                     />
@@ -232,11 +232,11 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
             </div>
 
             {/* Desktop View: Grid Row */}
-            <div className="hidden sm:grid gap-4 px-6 py-3 items-center hover:bg-white/[0.02] transition-colors"
+            <div className="hidden sm:grid gap-4 px-6 py-3 items-center hover:bg-theme-row-hover transition-colors"
                  style={{ gridTemplateColumns: showCost ? 'minmax(0, 1fr) minmax(80px, 100px) minmax(80px, 110px) minmax(80px, 110px) 40px' : 'minmax(0, 1fr) minmax(80px, 100px) minmax(80px, 110px) 40px' }}>
               <div className="min-w-0">
                 <select 
-                  className="w-full text-sm border-0 bg-transparent focus:ring-0 font-bold text-lux-cream p-1 [&>option]:bg-zinc-950 cursor-pointer hover:text-lux-gold transition-colors truncate"
+                  className="w-full text-sm border-0 bg-transparent focus:ring-0 font-bold text-theme-text-primary p-1 [&>option]:bg-theme-modal-bg cursor-pointer hover:text-lux-gold transition-colors truncate"
                   value={line.specId}
                   onChange={e => updateLine(line.id, 'specId', e.target.value)}
                   autoFocus={idx === lines.length - 1 && lines.length > 1}
@@ -251,7 +251,7 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                 <input 
                   type="number"
                   disabled={mode === 'WEIGHT'}
-                  className={`w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-black/40 text-lux-cream tabular-nums font-mono ${mode === 'WEIGHT' ? 'opacity-30' : 'group-hover:bg-black/60 shadow-inner'}`}
+                  className={`w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-theme-input-bg text-theme-text-primary tabular-nums font-mono ${mode === 'WEIGHT' ? 'opacity-30' : 'group-hover:bg-theme-input-bg/80 shadow-inner'}`}
                   value={line.pcs || ''}
                   onChange={e => updateLine(line.id, 'pcs', parseInt(e.target.value) || 0)}
                   onKeyDown={e => handleKeyDown(e, idx)}
@@ -264,7 +264,7 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                   type="number"
                   step="0.001"
                   disabled={mode === 'PCS'}
-                  className={`w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-black/40 text-emerald-400 tabular-nums font-mono ${mode === 'PCS' ? 'opacity-30' : 'group-hover:bg-black/60 shadow-inner'}`}
+                  className={`w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-theme-input-bg text-emerald-400 tabular-nums font-mono ${mode === 'PCS' ? 'opacity-30' : 'group-hover:bg-theme-input-bg/80 shadow-inner'}`}
                   value={line.ct || ''}
                   onChange={e => updateLine(line.id, 'ct', parseFloat(e.target.value) || 0)}
                   placeholder="0.000"
@@ -275,7 +275,7 @@ export const FastEntryGrid: React.FC<Props> = ({ specs, initialLines, onLinesCha
                 <div>
                   <input 
                     type="number"
-                    className="w-full text-right text-sm border-white/10 rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-black/40 text-zinc-500 tabular-nums font-mono group-hover:bg-black/60 shadow-inner"
+                    className="w-full text-right text-sm border-theme-border rounded-xl py-2 px-3 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold/30 bg-theme-input-bg text-theme-text-muted tabular-nums font-mono group-hover:bg-theme-input-bg/80 shadow-inner"
                     value={line.cost}
                     onChange={e => updateLine(line.id, 'cost', parseFloat(e.target.value) || 0)}
                     aria-label="Cost per Carat"
