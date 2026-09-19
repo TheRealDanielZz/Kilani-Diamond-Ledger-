@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { store } from '../services/store';
 import { Project, Role, DiamondBag, IssueRequest, DiamondSpec, ProjectCostSummary, ProgressStage, ProjectStatus, BagStatus, InventoryMovementType, ProjectNote, RepairDetailsV2, RepairStatus, EvidenceImage } from '../types';
-import { Card, Button, StatusPill, SetterAvatar, Badge, Input, Spinner, ProgressBar, SegmentedControl } from '../components/UI';
+import { Card, Button, StatusPill, SetterAvatar, Badge, Input, Spinner, ProgressBar, SegmentedControl, FieldLabel, Textarea, Select, SectionTitle } from '../components/UI';
 import { ImageUpload, compressImage } from '../components/ImageUpload';
 import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck, Edit2, Copy } from 'lucide-react';
 import { useToast } from '../App';
@@ -1246,95 +1246,96 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                )}
 
                {repair && (
-                   <div className="mt-3 bg-white/5 border border-white/5 rounded-2xl p-5 text-sm text-zinc-400">
-                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-5 pb-3 border-b border-white/5">
-                           <div>
-                             <span className="font-bold text-lux-gold uppercase text-[10px] tracking-[0.2em] font-mono">Repair Details</span>
-                             <div className="text-white font-bold mt-1">{repair.type}{repair.customName ? ` • ${repair.customName}` : ''}</div>
-                           </div>
-                           <div className="text-right">
-                               <span className="text-[10px] text-zinc-500 block uppercase font-mono tracking-widest">Repair Status</span>
-                               {canModifyProject && project.status === ProjectStatus.ACTIVE ? (
-                                 <select
-                                   value={repair.status}
-                                   onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
-                                   className="bg-black border border-zinc-700 rounded-xl py-2 px-3 text-white text-xs font-bold"
-                                 >
-                                   {Object.values(RepairStatus).filter(status => status !== RepairStatus.COMPLETED).map(status => <option key={status} value={status}>{status}</option>)}
-                                 </select>
-                               ) : (
-                                 <span className="text-white font-bold text-lg">{repair.status}</span>
-                               )}
-                           </div>
-                       </div>
+                    <div className="mt-3 bg-theme-input-bg/40 border border-theme-border rounded-2xl p-5 text-sm text-theme-text-secondary">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-5 pb-3 border-b border-theme-border/40">
+                            <div>
+                              <span className="font-bold text-lux-gold uppercase text-[10px] tracking-[0.2em] font-mono">Repair Details</span>
+                              <div className="text-theme-text-primary font-bold mt-1">{repair.type}{repair.customName ? ` • ${repair.customName}` : ''}</div>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-[10px] text-theme-text-muted block uppercase font-mono tracking-widest mb-1">Repair Status</span>
+                                {canModifyProject && project.status === ProjectStatus.ACTIVE ? (
+                                  <div className="w-48">
+                                    <Select
+                                      value={repair.status}
+                                      onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
+                                    >
+                                      {Object.values(RepairStatus).filter(status => status !== RepairStatus.COMPLETED).map(status => <option key={status} value={status}>{status}</option>)}
+                                    </Select>
+                                  </div>
+                                ) : (
+                                  <span className="text-theme-text-primary font-bold text-lg">{repair.status}</span>
+                                )}
+                            </div>
+                        </div>
 
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mb-4">
-                           <div className="flex justify-between py-1 border-b border-zinc-800/30">
-                               <span className="text-zinc-500">Submitted</span>
-                               <span className="text-white font-medium">{repair.submittedDate}</span>
-                           </div>
-                           {repair.completedDate && (
-                             <div className="flex justify-between py-1 border-b border-zinc-800/30">
-                               <span className="text-zinc-500">Completed</span>
-                               <span className="text-white font-medium">{new Date(repair.completedDate).toLocaleDateString()}</span>
-                             </div>
-                           )}
-                           {repair.sizeFrom && (
-                             <div className="flex justify-between py-1 border-b border-zinc-800/30">
-                               <span className="text-zinc-500">Resize</span>
-                               <span className="text-white font-medium">{repair.sizeFrom} → {repair.sizeTo || '-'}</span>
-                             </div>
-                           )}
-                           {repair.vendorName && (
-                             <div className="flex justify-between py-1 border-b border-zinc-800/30">
-                               <span className="text-zinc-500">Vendor</span>
-                               <span className="text-white font-medium">{repair.vendorName}</span>
-                             </div>
-                           )}
-                           {repair.damageType && (
-                             <div className="flex justify-between py-1 border-b border-zinc-800/30">
-                               <span className="text-zinc-500">Damage</span>
-                               <span className="text-white font-medium">{repair.damageType}</span>
-                             </div>
-                           )}
-                           {repair.diamondItems?.map((item, idx) => (
-                               <div key={idx} className="flex justify-between py-1 border-b border-zinc-800/30">
-                                   <span className="text-zinc-500">Size: {item.stoneSize || '-'}</span>
-                                   <span className="text-white font-bold">{item.quantity || 0} Pcs</span>
-                               </div>
-                           ))}
-                       </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mb-4">
+                            <div className="flex justify-between py-1 border-b border-theme-border/30">
+                                <span className="text-theme-text-muted">Submitted</span>
+                                <span className="text-theme-text-primary font-medium">{repair.submittedDate}</span>
+                            </div>
+                            {repair.completedDate && (
+                              <div className="flex justify-between py-1 border-b border-theme-border/30">
+                                <span className="text-theme-text-muted">Completed</span>
+                                <span className="text-theme-text-primary font-medium">{new Date(repair.completedDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
+                            {repair.sizeFrom && (
+                              <div className="flex justify-between py-1 border-b border-theme-border/30">
+                                <span className="text-theme-text-muted">Resize</span>
+                                <span className="text-theme-text-primary font-medium">{repair.sizeFrom} → {repair.sizeTo || '-'}</span>
+                              </div>
+                            )}
+                            {repair.vendorName && (
+                              <div className="flex justify-between py-1 border-b border-theme-border/30">
+                                <span className="text-theme-text-muted">Vendor</span>
+                                <span className="text-theme-text-primary font-medium">{repair.vendorName}</span>
+                              </div>
+                            )}
+                            {repair.damageType && (
+                              <div className="flex justify-between py-1 border-b border-theme-border/30">
+                                <span className="text-theme-text-muted">Damage</span>
+                                <span className="text-theme-text-primary font-medium">{repair.damageType}</span>
+                              </div>
+                            )}
+                            {repair.diamondItems?.map((item, idx) => (
+                                <div key={idx} className="flex justify-between py-1 border-b border-theme-border/30">
+                                    <span className="text-theme-text-muted">Size: {item.stoneSize || '-'}</span>
+                                    <span className="text-theme-text-primary font-bold">{item.quantity || 0} Pcs</span>
+                                </div>
+                            ))}
+                        </div>
 
-                       {(repair.issueNotes || repair.repairNotes || repair.customerNotes) && (
-                         <div className="mt-2 text-zinc-300 bg-black/20 p-3 rounded-lg">
-                           <span className="text-[10px] text-zinc-500 block mb-1 uppercase font-bold">Notes</span>
-                           {repair.issueNotes || repair.repairNotes || repair.customerNotes}
-                         </div>
-                       )}
+                        {(repair.issueNotes || repair.repairNotes || repair.customerNotes) && (
+                          <div className="mt-2 text-theme-text-primary bg-theme-input-bg/60 border border-theme-border p-3.5 rounded-xl">
+                            <span className="text-[10px] text-theme-text-muted block mb-1 uppercase font-bold tracking-wider">Notes</span>
+                            {repair.issueNotes || repair.repairNotes || repair.customerNotes}
+                          </div>
+                        )}
 
-                       {canEditRepairFinancials && (
-                         <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                           <div className="bg-black/30 rounded-2xl p-3 border border-white/5">
-                             <span className="text-[10px] text-zinc-500 uppercase font-bold">Internal Cost</span>
-                             <div className="text-white font-mono font-bold">${repairCost.totalInternalCostCad.toFixed(2)}</div>
-                           </div>
-                           <div className="bg-black/30 rounded-2xl p-3 border border-white/5">
-                             <span className="text-[10px] text-zinc-500 uppercase font-bold">Client Charge</span>
-                             <div className="text-lux-gold font-mono font-bold">${repairCost.finalClientChargeCad.toFixed(2)}</div>
-                           </div>
-                           <div className="bg-black/30 rounded-2xl p-3 border border-white/5">
-                             <span className="text-[10px] text-zinc-500 uppercase font-bold">Profit / Loss</span>
-                             <div className={`font-mono font-bold ${repairCost.profitLossCad < 0 ? 'text-red-400' : 'text-emerald-400'}`}>${repairCost.profitLossCad.toFixed(2)}</div>
-                           </div>
-                         </div>
-                       )}
+                        {canEditRepairFinancials && (
+                          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="bg-theme-input-bg/50 rounded-2xl p-3 border border-theme-border">
+                              <span className="text-[10px] text-theme-text-muted uppercase font-bold">Internal Cost</span>
+                              <div className="text-theme-text-primary font-mono font-bold text-lg mt-0.5">${repairCost.totalInternalCostCad.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-theme-input-bg/50 rounded-2xl p-3 border border-theme-border">
+                              <span className="text-[10px] text-theme-text-muted uppercase font-bold">Client Charge</span>
+                              <div className="text-lux-gold font-mono font-bold text-lg mt-0.5">${repairCost.finalClientChargeCad.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-theme-input-bg/50 rounded-2xl p-3 border border-theme-border">
+                              <span className="text-[10px] text-theme-text-muted uppercase font-bold">Profit / Loss</span>
+                              <div className={`font-mono font-bold text-lg mt-0.5 ${repairCost.profitLossCad < 0 ? 'text-red-400' : 'text-emerald-400'}`}>${repairCost.profitLossCad.toFixed(2)}</div>
+                            </div>
+                          </div>
+                        )}
 
-                       {(repair.beforeImage || repair.afterImage) && (
-                         <div className="mt-4 grid grid-cols-2 gap-3">
-                           {repair.beforeImage && <img src={repair.beforeImage} alt="Before repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
-                           {repair.afterImage && <img src={repair.afterImage} alt="After repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
-                         </div>
-                       )}
+                        {(repair.beforeImage || repair.afterImage) && (
+                          <div className="mt-4 grid grid-cols-2 gap-3">
+                            {repair.beforeImage && <img src={repair.beforeImage} alt="Before repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-theme-border shadow-sm" />}
+                            {repair.afterImage && <img src={repair.afterImage} alt="After repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-theme-border shadow-sm" />}
+                          </div>
+                        )}
                    </div>
                )}
                
@@ -1675,52 +1676,54 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
       {activeTab === 'repair' && repair && editableRepair && (
         <div className="space-y-6 animate-enter">
-          <Card className="p-5 md:p-6 border-zinc-800">
+          <Card className="p-5 md:p-6 border-theme-border bg-theme-modal-bg/70 backdrop-blur-xl">
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
               <div>
                 <div className="text-[10px] text-lux-gold uppercase tracking-[0.2em] font-bold mb-1 font-mono">Repair Workflow</div>
-                <h3 className="text-2xl font-bold text-white">{repair.type}{repair.customName ? ` • ${repair.customName}` : ''}</h3>
+                <h3 className="text-2xl font-bold text-theme-text-primary">{repair.type}{repair.customName ? ` • ${repair.customName}` : ''}</h3>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 {canModifyProject && project.status === ProjectStatus.ACTIVE && (
                   <Button size="sm" onClick={() => handleRepairStatusChange(RepairStatus.READY_FOR_PICKUP)} icon={<CheckCircle2 size={14} />}>Ready for Pickup</Button>
                 )}
                 {canModifyProject && project.status === ProjectStatus.ACTIVE && (
-                  <select
-                    value={repair.status}
-                    onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
-                    className="bg-black border border-zinc-700 rounded-2xl py-2 px-3 text-white text-xs font-bold h-9"
-                  >
-                    {Object.values(RepairStatus).filter(status => status !== RepairStatus.COMPLETED).map(status => <option key={status} value={status}>{status}</option>)}
-                  </select>
+                  <div className="w-48">
+                    <Select
+                      value={repair.status}
+                      onChange={e => handleRepairStatusChange(e.target.value as RepairStatus)}
+                    >
+                      {Object.values(RepairStatus).filter(status => status !== RepairStatus.COMPLETED).map(status => <option key={status} value={status}>{status}</option>)}
+                    </Select>
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-              <div className="lg:col-span-2 bg-black/20 border border-white/5 rounded-2xl p-4">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em] font-mono block mb-2">Repair Notes</label>
-                <textarea
+              <div className="lg:col-span-2 bg-theme-input-bg/40 border border-theme-border rounded-2xl p-4">
+                <Textarea
+                  label="Repair Notes"
                   value={editableRepair.repairNotes || editableRepair.issueNotes || ''}
                   onChange={e => setEditableRepair({ ...editableRepair, repairNotes: e.target.value })}
                   disabled={!canEditRepairFinancials}
-                  className="w-full bg-transparent text-white placeholder-zinc-600 min-h-[104px] resize-none outline-none text-sm"
                   placeholder="Repair details..."
+                  rows={4}
                 />
               </div>
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Submitted</span>
-                  <span className="text-white font-medium">{editableRepair.submittedDate}</span>
+              <div className="bg-theme-input-bg/40 border border-theme-border rounded-2xl p-4 space-y-3">
+                <SectionTitle title="Timeline & Vendor" />
+                <div className="flex justify-between text-sm py-1 border-b border-theme-border/40">
+                  <span className="text-theme-text-muted">Submitted</span>
+                  <span className="text-theme-text-primary font-medium">{editableRepair.submittedDate}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Status</span>
-                  <span className="text-white font-medium">{repair.status}</span>
+                <div className="flex justify-between text-sm py-1 border-b border-theme-border/40">
+                  <span className="text-theme-text-muted">Status</span>
+                  <span className="text-theme-text-primary font-medium">{repair.status}</span>
                 </div>
                 {editableRepair.vendorName && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-500">Vendor</span>
-                    <span className="text-white font-medium">{editableRepair.vendorName}</span>
+                  <div className="flex justify-between text-sm py-1">
+                    <span className="text-theme-text-muted">Vendor</span>
+                    <span className="text-theme-text-primary font-medium">{editableRepair.vendorName}</span>
                   </div>
                 )}
               </div>
@@ -1729,7 +1732,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             {canEditRepairFinancials && (
               <div className="space-y-4 mb-6">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Costs</h4>
+                  <SectionTitle title="Costs Breakdown" />
                   <Badge color={editableRepair.financials.noCharge ? 'red' : 'gray'}>{editableRepair.financials.noCharge ? 'No Charge' : 'Client Charge'}</Badge>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1744,9 +1747,10 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                   <Input label="Client Charge CAD" type="number" value={moneyInputValue(editableRepair.financials.clientChargeCad)} disabled={!!editableRepair.financials.noCharge} onChange={e => updateRepairFinancial('clientChargeCad', parseMoneyInput(e.target.value))} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_240px] gap-3">
-                  <label className="flex items-center gap-3 bg-[#1A1C23] rounded-2xl px-4 h-14 border border-zinc-800">
+                  <label className="flex items-center gap-3 bg-theme-input-bg border border-theme-border rounded-2xl px-4 h-14 cursor-pointer hover:border-lux-gold/40 transition-colors">
                     <input
                       type="checkbox"
+                      className="w-4 h-4 rounded text-lux-gold focus:ring-lux-gold accent-lux-gold"
                       checked={!!editableRepair.financials.noCharge}
                       onChange={e => setEditableRepair({
                         ...editableRepair,
@@ -1757,16 +1761,15 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                         }
                       })}
                     />
-                    <span className="text-sm font-bold text-white">No charge repair</span>
+                    <span className="text-sm font-bold text-theme-text-primary">No charge repair</span>
                   </label>
-                  <select
+                  <Select
                     value={editableRepair.financials.noChargeReason || ''}
                     onChange={e => updateRepairFinancial('noChargeReason', e.target.value)}
-                    className="w-full bg-[#23262F] text-white rounded-2xl border-transparent p-3.5 text-sm focus:ring-lux-gold transition-all h-14"
                   >
                     <option value="">No charge reason...</option>
                     {['Warranty', 'Goodwill', 'Internal Correction', 'VIP Client', 'Manager Approval', 'Other'].map(reason => <option key={reason} value={reason}>{reason}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 {(() => {
                   const f = editableRepair.financials || {};
@@ -1775,17 +1778,17 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                   const profit = charge - internal;
                   return (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="bg-black/30 rounded-2xl p-4 border border-white/5">
-                        <div className="text-[10px] text-zinc-500 uppercase font-bold">Internal Cost</div>
-                        <div className="text-white text-2xl font-mono font-bold">${internal.toFixed(2)}</div>
+                      <div className="bg-theme-input-bg/50 rounded-2xl p-4 border border-theme-border">
+                        <div className="text-[10px] text-theme-text-muted uppercase font-bold tracking-wider">Internal Cost</div>
+                        <div className="text-theme-text-primary text-2xl font-mono font-bold mt-1">${internal.toFixed(2)}</div>
                       </div>
-                      <div className="bg-black/30 rounded-2xl p-4 border border-white/5">
-                        <div className="text-[10px] text-zinc-500 uppercase font-bold">Client Charge</div>
-                        <div className="text-lux-gold text-2xl font-mono font-bold">${charge.toFixed(2)}</div>
+                      <div className="bg-theme-input-bg/50 rounded-2xl p-4 border border-theme-border">
+                        <div className="text-[10px] text-theme-text-muted uppercase font-bold tracking-wider">Client Charge</div>
+                        <div className="text-lux-gold text-2xl font-mono font-bold mt-1">${charge.toFixed(2)}</div>
                       </div>
-                      <div className="bg-black/30 rounded-2xl p-4 border border-white/5">
-                        <div className="text-[10px] text-zinc-500 uppercase font-bold">Profit / Loss</div>
-                        <div className={`text-2xl font-mono font-bold ${profit < 0 ? 'text-red-400' : 'text-emerald-400'}`}>${profit.toFixed(2)}</div>
+                      <div className="bg-theme-input-bg/50 rounded-2xl p-4 border border-theme-border">
+                        <div className="text-[10px] text-theme-text-muted uppercase font-bold tracking-wider">Profit / Loss</div>
+                        <div className={`text-2xl font-mono font-bold mt-1 ${profit < 0 ? 'text-red-400' : 'text-emerald-400'}`}>${profit.toFixed(2)}</div>
                       </div>
                     </div>
                   );
@@ -1795,7 +1798,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
             {canEditRepairFinancials && (
               <div className="space-y-4 mb-6">
-                <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Images</h4>
+                <SectionTitle title="Images" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <ImageUpload label="Before Image" value={editableRepair.beforeImage} onChange={value => setEditableRepair({ ...editableRepair, beforeImage: value })} />
                   <ImageUpload label="After Image" value={editableRepair.afterImage} onChange={value => setEditableRepair({ ...editableRepair, afterImage: value })} />
@@ -1804,7 +1807,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             )}
 
             {canEditRepairFinancials && (
-              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-white/5">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-theme-border">
                 <Button variant="secondary" onClick={() => setEditableRepair(JSON.parse(JSON.stringify(repair)))} disabled={isSavingRepair}>Reset</Button>
                 <Button onClick={handleSaveRepairDetails} loading={isSavingRepair}>Save Repair Details</Button>
               </div>

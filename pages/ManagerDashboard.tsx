@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
-import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones } from '../components/UI';
+import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle } from '../components/UI';
 import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
@@ -1063,15 +1063,17 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                            Other project workflows will be available in a future update.
                         </div>
                         {selectedServices.includes('REPAIR') && (
-                           <div className="bg-zinc-900/80 p-5 rounded-2xl border border-zinc-800 space-y-6 animate-in fade-in slide-in-from-top-2">
-                              <div className="flex justify-between items-center">
-                                 <h3 className="text-sm font-bold text-lux-cream flex items-center gap-2"><span className="bg-lux-gold text-black px-2.5 py-1 rounded-md text-xs tracking-wide">REPAIR MENU</span></h3>
+                           <div className="bg-theme-input-bg/40 p-5 rounded-2xl border border-theme-border space-y-6 animate-in fade-in slide-in-from-top-2">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                                 <SectionTitle title="Repair Menu" />
                                  <div className="flex items-center gap-4">
                                     <div className="text-right">
-                                       <div className="text-[10px] text-zinc-500 uppercase font-bold">Total Pcs</div>
+                                       <div className="text-[10px] text-theme-text-muted uppercase font-bold">Total Pcs</div>
                                        <div className="text-lg font-bold text-lux-gold">{newProject.repairDetails?.totalQuantity || 0}</div>
                                     </div>
-                                    <Input type="date" value={newProject.repairDetails?.date || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, date: e.target.value } })} className="w-40" />
+                                    <div className="w-44">
+                                      <Input type="date" label="Repair Date" value={newProject.repairDetails?.date || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, date: e.target.value } })} />
+                                    </div>
                                  </div>
                               </div>
                               <div className="space-y-3">
@@ -1103,19 +1105,17 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                  <button onClick={() => {
                                     const newItems = [...newProject.repairDetails!.items, { stoneSize: '', quantity: 0 }];
                                     setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems } });
-                                 }} className="w-full py-3 rounded-xl border border-dashed border-theme-border text-zinc-500 hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-sm font-bold transition-all"><Plus size={16} /> Add Another Stone</button>
+                                 }} className="w-full py-3 rounded-xl border border-dashed border-theme-border text-theme-text-muted hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-sm font-bold transition-all"><Plus size={16} /> Add Another Stone</button>
                               </div>
                               <div>
-                                 <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase">Report</label>
-                                 <textarea className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border-transparent p-4 text-sm focus:ring-lux-gold h-24 transition-all resize-none" placeholder="Repair report details..." value={newProject.repairDetails?.report || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, report: e.target.value } })} />
+                                 <Textarea label="Report" placeholder="Repair report details..." value={newProject.repairDetails?.report || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, report: e.target.value } })} />
                               </div>
                            </div>
                         )}
                      </section>
                      {!selectedServices.includes('REPAIR') && (
                         <section className="space-y-4">
-                           <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Work Details / Instructions</h3>
-                           <textarea className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border border-theme-border p-4 text-sm focus:ring-lux-gold focus:border-lux-gold h-28 transition-all resize-none" placeholder="Describe the work required..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} />
+                           <Textarea label="Work Details / Instructions" placeholder="Describe the work required..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} rows={4} />
                         </section>
                      )}
                      <section className="space-y-4">
