@@ -25,6 +25,7 @@ import {
   getAllProjectsLastOpened,
   formatLastOpenedRelative
 } from '../utils/projectOpenedTracker';
+import { transitionNavigate } from '../utils/transitionNavigate';
 
 export type SetterSortField = 'LAST_OPENED' | 'DUE_DATE' | 'PRIORITY' | 'CODE' | 'NAME' | 'PROGRESS';
 export type SortOrder = 'asc' | 'desc';
@@ -284,7 +285,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
     recordProjectOpened(projectId, currentUser?.id);
     // Optimistically update opened map in local state
     setOpenedMap(prev => ({ ...prev, [projectId]: new Date().toISOString() }));
-    navigate(`/project/${projectId}`);
+    transitionNavigate(navigate, `/project/${projectId}`);
   }, [currentUser?.id, navigate]);
 
   const activeSortConfig = SORT_OPTIONS.find(o => o.value === sortBy) || SORT_OPTIONS[0];
@@ -312,7 +313,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             variant="primary"
             icon={<Wrench size={18} />}
             onClick={() => setIsQuickRepairOpen(true)}
-            className="w-full sm:w-auto shadow-glow font-bold text-xs"
+            className="w-full sm:w-auto shadow-glow font-bold text-xs min-h-[44px]"
           >
             New Repair Project
           </Button>
@@ -325,7 +326,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           <button
             type="button"
             onClick={() => setActiveTab('ACTIVE')}
-            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'ACTIVE'
                 ? 'bg-lux-gold text-black shadow-glow font-bold'
                 : 'text-zinc-400 hover:text-white'
@@ -345,7 +346,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           <button
             type="button"
             onClick={() => setActiveTab('COMPLETED')}
-            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'COMPLETED'
                 ? 'bg-lux-gold text-black shadow-glow font-bold'
                 : 'text-zinc-400 hover:text-white'
@@ -370,7 +371,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             onClick={() => handleToggleViewMode('GRID')}
             aria-label="Grid view"
             aria-pressed={viewMode === 'GRID'}
-            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-all duration-200 ${
+            className={`min-h-[38px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-all duration-200 cursor-pointer ${
               viewMode === 'GRID'
                 ? 'bg-lux-gold text-black shadow-glow font-bold'
                 : 'text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-row-hover'
@@ -384,7 +385,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             onClick={() => handleToggleViewMode('LIST')}
             aria-label="List view"
             aria-pressed={viewMode === 'LIST'}
-            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-all duration-200 ${
+            className={`min-h-[38px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-all duration-200 cursor-pointer ${
               viewMode === 'LIST'
                 ? 'bg-lux-gold text-black shadow-glow font-bold'
                 : 'text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-row-hover'
@@ -406,15 +407,15 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={`Search ${activeTab === 'ACTIVE' ? 'active' : 'completed'} projects (code, piece, client)...`}
-            className="w-full bg-[#16171D] text-white rounded-xl border border-zinc-800 pl-10 pr-9 py-2 text-xs sm:text-sm placeholder:text-zinc-600 focus:outline-none focus:border-lux-gold/60 focus:ring-1 focus:ring-lux-gold/50 transition-all font-sans"
+            className="w-full bg-[#16171D] text-white rounded-xl border border-zinc-800 pl-10 pr-10 py-2.5 min-h-[44px] text-xs sm:text-sm placeholder:text-zinc-600 focus:outline-none focus:border-lux-gold/60 focus:ring-1 focus:ring-lux-gold/50 transition-all font-sans"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 rounded-md"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg cursor-pointer"
               title="Clear search"
             >
-              <X size={14} />
+              <X size={15} />
             </button>
           )}
         </div>
@@ -422,7 +423,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
         {/* Sort Controls Group */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Sort By Dropdown */}
-          <div className="flex items-center gap-1.5 bg-[#16171D] border border-zinc-800 rounded-xl px-3 py-1.5 flex-1 sm:flex-initial">
+          <div className="flex items-center gap-1.5 bg-[#16171D] border border-zinc-800 rounded-xl px-3 py-2 min-h-[44px] flex-1 sm:flex-initial">
             <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
               <ArrowUpDown size={12} className="text-lux-gold" />
               Sort:
@@ -430,7 +431,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <select
               value={sortBy}
               onChange={e => handleSortByChange(e.target.value as SetterSortField)}
-              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-1"
+              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-1 py-1"
             >
               {SORT_OPTIONS.map(opt => (
                 <option key={opt.value} value={opt.value} className="bg-[#1F2128] text-white">
@@ -445,7 +446,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             type="button"
             onClick={handleToggleSortOrder}
             title={`Direction: ${sortOrder === 'asc' ? activeSortConfig.ascLabel : activeSortConfig.descLabel}`}
-            className="flex items-center gap-1.5 bg-[#16171D] hover:bg-[#23262F] border border-zinc-800 hover:border-lux-gold/40 text-white rounded-xl px-3 py-2 text-xs font-semibold transition-all shadow-sm shrink-0"
+            className="flex items-center gap-1.5 bg-[#16171D] hover:bg-[#23262F] border border-zinc-800 hover:border-lux-gold/40 text-white rounded-xl px-3 py-2 min-h-[44px] text-xs font-semibold transition-all shadow-sm shrink-0 cursor-pointer"
           >
             {sortOrder === 'asc' ? (
               <>
@@ -464,22 +465,22 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
           </button>
 
           {/* Mobile View Toggle */}
-          <div className="flex sm:hidden items-center rounded-xl border border-zinc-800 bg-[#16171D] p-1">
+          <div className="flex sm:hidden items-center rounded-xl border border-zinc-800 bg-[#16171D] p-0.5">
             <button
               type="button"
               onClick={() => handleToggleViewMode('GRID')}
               aria-label="Grid view"
-              className={`p-1.5 rounded-lg ${viewMode === 'GRID' ? 'bg-lux-gold text-black' : 'text-zinc-400'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all ${viewMode === 'GRID' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-zinc-400'}`}
             >
-              <LayoutGrid size={14} />
+              <LayoutGrid size={16} />
             </button>
             <button
               type="button"
               onClick={() => handleToggleViewMode('LIST')}
               aria-label="List view"
-              className={`p-1.5 rounded-lg ${viewMode === 'LIST' ? 'bg-lux-gold text-black' : 'text-zinc-400'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all ${viewMode === 'LIST' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-zinc-400'}`}
             >
-              <ListIcon size={14} />
+              <ListIcon size={16} />
             </button>
           </div>
         </div>
@@ -669,7 +670,7 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
         isOpen={isQuickRepairOpen}
         onClose={() => setIsQuickRepairOpen(false)}
         currentUser={currentUser}
-        onProjectCreated={(created) => navigate(`/project/${created.id}`)}
+        onProjectCreated={(created) => transitionNavigate(navigate, `/project/${created.id}`)}
       />
     </div>
   );
