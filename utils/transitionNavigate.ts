@@ -1,14 +1,8 @@
 /**
- * Modern Web Guidance: View Transitions API Helper
- * Smoothly morphs view state between pages if supported by browser,
- * falling back gracefully to instant route change.
+ * Instant Route Navigation Helper
+ * Navigates immediately between routes without full-page fade/flash.
  */
 export function transitionNavigate(navigate: (to: string) => void, to: string) {
-  if (typeof document !== 'undefined' && 'startViewTransition' in document) {
-    (document as any).startViewTransition(() => {
-      navigate(to);
-    });
-  } else {
-    navigate(to);
-  }
+  navigate(to);
 }
+

@@ -144,23 +144,24 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                         return (
                            <div
                               key={i}
-                              className={`bg-[#131317] [data-theme=light]:bg-[#f4f4f9] border rounded-2xl p-4 transition-all space-y-3 relative shadow-md ${
+                              className={`bg-theme-input-bg/70 border rounded-2xl p-4 transition-all space-y-3 relative shadow-md ${
                                  explanationRequired 
                                     ? 'border-red-500/50 ring-1 ring-red-500/25' 
-                                    : 'border-white/10 [data-theme=light]:border-black/10 hover:border-lux-gold/30 [data-theme=light]:hover:border-lux-gold/50'
+                                    : 'border-theme-border hover:border-lux-gold/40'
                               }`}
                            >
                               {/* Remove Item Button */}
                               <button
                                  onClick={() => setEditedLines(prev => prev.map((item, idx) => idx === i ? { ...item, issuedPcs: 0 } : item))}
-                                 className="absolute top-3 right-3 text-zinc-500 [data-theme=light]:text-zinc-400 hover:text-red-400 [data-theme=light]:hover:text-red-600 p-1 rounded-lg hover:bg-white/5 [data-theme=light]:hover:bg-black/5 transition-colors"
+                                 className="absolute top-3 right-3 text-theme-text-muted hover:text-red-400 p-1.5 rounded-lg hover:bg-theme-row-hover transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"
                                  title="Clear issued quantity"
+                                 aria-label="Clear issued quantity"
                               >
                                  <X size={16} />
                               </button>
 
                               {/* Item Header with Stone Avatar Thumbnail */}
-                              <div className="flex items-start gap-3 pr-6">
+                              <div className="flex items-start gap-3 pr-8">
                                  <div className="w-10 h-10 rounded-xl bg-lux-gold/10 border border-lux-gold/25 flex items-center justify-center text-lux-gold shrink-0">
                                     <Gem size={18} />
                                  </div>
@@ -171,7 +172,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                           ITEM #{i + 1}
                                        </span>
                                        {isChanged && (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 [data-theme=light]:text-amber-800 border border-amber-500/30 flex items-center gap-1">
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1 font-mono">
                                              <AlertTriangle size={10} /> Spec Modified
                                           </span>
                                        )}
@@ -180,7 +181,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                     {/* Custom Dropdown for Spec Selector */}
                                     <div className="relative">
                                        <select
-                                          className="w-full bg-[#0a0a0c] [data-theme=light]:bg-white border border-white/15 [data-theme=light]:border-black/15 rounded-xl py-2 pl-3 pr-8 text-sm font-semibold text-white [data-theme=light]:text-zinc-900 focus:border-lux-gold focus:ring-1 focus:ring-lux-gold transition-all appearance-none cursor-pointer shadow-sm"
+                                          className="w-full bg-theme-modal-bg border border-theme-border rounded-xl py-2.5 pl-3 pr-8 text-sm font-semibold text-theme-text-primary focus:border-lux-gold focus:ring-1 focus:ring-lux-gold transition-all appearance-none cursor-pointer shadow-sm"
                                           value={l.specId}
                                           onChange={e => {
                                              const newSpecId = e.target.value;
@@ -194,7 +195,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                           }}
                                        >
                                           {fulfillmentSpecs.map(s => (
-                                             <option key={s.id} value={s.id} className="bg-white text-black">
+                                             <option key={s.id} value={s.id} className="bg-theme-modal-bg text-theme-text-primary">
                                                 {s.label} ({s.availablePcs} pcs)
                                              </option>
                                           ))}
@@ -205,23 +206,23 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                               </div>
 
                               {/* Visual Stock Availability Meter */}
-                              <div className="bg-[#0a0a0c] [data-theme=light]:bg-white p-3 rounded-xl border border-white/5 [data-theme=light]:border-black/10 space-y-1.5 shadow-sm">
+                              <div className="bg-theme-modal-bg p-3 rounded-xl border border-theme-border space-y-1.5 shadow-sm">
                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="text-zinc-400 [data-theme=light]:text-zinc-600 text-[11px]">Stock Status:</span>
+                                    <span className="text-theme-text-secondary text-[11px]">Stock Status:</span>
                                     <div className="flex items-center gap-2">
-                                       <span className="font-mono text-white [data-theme=light]:text-zinc-900 font-bold">{available} pcs available</span>
+                                       <span className="font-mono tabular-nums text-theme-text-primary font-bold">{available} pcs available</span>
                                        {isOutOfStock ? (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-500/20 text-red-400 [data-theme=light]:text-red-700 border border-red-500/30">OUT</span>
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-red-500/20 text-red-500 border border-red-500/30">OUT</span>
                                        ) : isLowStock ? (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-400 [data-theme=light]:text-amber-800 border border-amber-500/30">LOW</span>
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-500 border border-amber-500/30">LOW</span>
                                        ) : (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 [data-theme=light]:text-emerald-800 border border-emerald-500/30">IN STOCK</span>
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-500 border border-emerald-500/30">IN STOCK</span>
                                        )}
                                     </div>
                                  </div>
 
                                  {/* Progress Bar */}
-                                 <div className="w-full bg-zinc-800 [data-theme=light]:bg-zinc-200 h-1.5 rounded-full overflow-hidden">
+                                 <div className="w-full bg-theme-input-bg h-1.5 rounded-full overflow-hidden border border-theme-border/50">
                                     <div
                                        className={`h-full transition-all duration-500 ${
                                           isOutOfStock 
@@ -236,31 +237,32 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                               </div>
 
                               {/* Quantity Stepper & Quick-Fill Row */}
-                              <div className="bg-[#0a0a0c] [data-theme=light]:bg-white p-3 rounded-xl border border-white/10 [data-theme=light]:border-black/10 flex items-center justify-between gap-3 shadow-sm">
+                              <div className="bg-theme-modal-bg p-3 rounded-xl border border-theme-border flex items-center justify-between gap-3 shadow-sm flex-wrap sm:flex-nowrap">
                                  {/* Auto-fill Chip */}
                                  <button
                                     type="button"
                                     onClick={() => handleAutoFillRecommended(i, recommended)}
-                                    className={`text-xs px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation ${
+                                    className={`text-xs px-3.5 py-2 min-h-[44px] rounded-xl border transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer ${
                                        isRecommendedActive
-                                          ? 'bg-lux-gold/20 border-lux-gold text-lux-gold [data-theme=light]:text-amber-800 font-bold shadow-sm'
-                                          : 'bg-white/5 [data-theme=light]:bg-black/5 border-white/10 [data-theme=light]:border-black/10 text-zinc-300 [data-theme=light]:text-zinc-700 hover:border-lux-gold/50 hover:text-lux-gold'
+                                          ? 'bg-lux-gold/20 border-lux-gold text-lux-gold font-bold shadow-sm'
+                                          : 'bg-theme-input-bg border-theme-border text-theme-text-secondary hover:border-lux-gold/50 hover:text-lux-gold'
                                     }`}
                                  >
-                                    <Sparkles size={13} className="text-lux-gold" />
-                                    <span>Rec: <strong>{recommended} pcs</strong></span>
-                                    {isRecommendedActive && <CheckCircle2 size={12} className="text-lux-gold ml-0.5" />}
+                                    <Sparkles size={14} className="text-lux-gold shrink-0" />
+                                    <span>Rec: <strong className="font-mono tabular-nums">{recommended} pcs</strong></span>
+                                    {isRecommendedActive && <CheckCircle2 size={13} className="text-lux-gold ml-0.5 shrink-0" />}
                                  </button>
 
-                                 {/* Counter Stepper */}
-                                 <div className="flex items-center gap-1.5 bg-zinc-900 [data-theme=light]:bg-zinc-100 p-1 rounded-xl border border-white/15 [data-theme=light]:border-black/10">
+                                 {/* Counter Stepper with 44px Touch Targets */}
+                                 <div className="flex items-center gap-2 bg-theme-input-bg p-1.5 rounded-xl border border-theme-border">
                                     <button
                                        type="button"
                                        onClick={() => handleStepQty(i, -1, available)}
                                        disabled={l.issuedPcs <= 0}
-                                       className="w-8 h-8 rounded-lg bg-lux-gold text-black font-black flex items-center justify-center hover:bg-lux-gold/90 active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all touch-manipulation shadow-sm"
+                                       aria-label="Decrease quantity"
+                                       className="min-w-[44px] min-h-[44px] rounded-xl bg-lux-gold text-black font-black flex items-center justify-center hover:bg-lux-gold/90 active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all touch-manipulation shadow-sm cursor-pointer"
                                     >
-                                       <Minus size={14} />
+                                       <Minus size={16} />
                                     </button>
 
                                     <input
@@ -275,16 +277,17 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                              issuedPcs: Math.max(0, Math.min(val, available))
                                           } : item));
                                        }}
-                                       className="w-12 text-center bg-transparent font-mono text-base font-black text-lux-gold [data-theme=light]:text-amber-800 focus:outline-none"
+                                       className="w-14 text-center bg-transparent font-mono tabular-nums text-lg font-black text-lux-gold focus:outline-none"
                                     />
 
                                     <button
                                        type="button"
                                        onClick={() => handleStepQty(i, 1, available)}
                                        disabled={l.issuedPcs >= available}
-                                       className="w-8 h-8 rounded-lg bg-lux-gold text-black font-black flex items-center justify-center hover:bg-lux-gold/90 active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all touch-manipulation shadow-sm"
+                                       aria-label="Increase quantity"
+                                       className="min-w-[44px] min-h-[44px] rounded-xl bg-lux-gold text-black font-black flex items-center justify-center hover:bg-lux-gold/90 active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all touch-manipulation shadow-sm cursor-pointer"
                                     >
-                                       <Plus size={14} />
+                                       <Plus size={16} />
                                     </button>
                                  </div>
                               </div>
@@ -292,7 +295,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                               {/* Presets & Explanation Field */}
                               {isChanged && (
                                  <div className="space-y-1.5 pt-1">
-                                    <label className="text-[11px] font-bold text-amber-400 [data-theme=light]:text-amber-700 flex items-center gap-1 uppercase tracking-wider">
+                                    <label className="text-[11px] font-bold text-amber-500 flex items-center gap-1 uppercase tracking-wider font-mono">
                                        <Info size={12} /> Reason for Spec / Qty Deviation *
                                     </label>
 
@@ -303,7 +306,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                              key={preset}
                                              type="button"
                                              onClick={() => handleApplyPresetExplanation(i, preset)}
-                                             className="text-[10px] px-2.5 py-1 rounded-full bg-lux-gold/10 [data-theme=light]:bg-amber-500/10 border border-lux-gold/30 [data-theme=light]:border-amber-600/30 text-lux-gold [data-theme=light]:text-amber-800 hover:bg-lux-gold/20 [data-theme=light]:hover:bg-amber-500/20 transition-all font-semibold"
+                                             className="text-[10px] px-3 py-1.5 rounded-full bg-lux-gold/10 border border-lux-gold/30 text-lux-gold hover:bg-lux-gold/20 transition-all font-semibold font-mono cursor-pointer"
                                           >
                                              + {preset}
                                           </button>
@@ -318,10 +321,10 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                                           ...item,
                                           explanation: e.target.value
                                        } : item))}
-                                       className={`w-full bg-[#0a0a0c] [data-theme=light]:bg-white border rounded-xl p-2.5 text-xs text-white [data-theme=light]:text-zinc-900 placeholder-zinc-500 [data-theme=light]:placeholder-zinc-400 focus:ring-1 transition-all shadow-sm ${
+                                       className={`w-full bg-theme-modal-bg border rounded-xl p-3 text-xs text-theme-text-primary placeholder-theme-text-muted focus:ring-1 transition-all shadow-sm ${
                                           explanationRequired
                                              ? 'border-red-500/60 focus:border-red-500 focus:ring-red-500/30'
-                                             : 'border-white/15 [data-theme=light]:border-black/15 focus:border-lux-gold focus:ring-lux-gold'
+                                             : 'border-theme-border focus:border-lux-gold focus:ring-lux-gold'
                                        }`}
                                     />
                                  </div>
@@ -338,7 +341,7 @@ export const IssueDiamondsModal: React.FC<IssueDiamondsModalProps> = ({
                         value={bagNum}
                         onChange={e => setBagNum(e.target.value)}
                         placeholder="e.g. 1304"
-                        className="font-mono text-lg text-center tracking-wider text-lux-gold [data-theme=light]:text-amber-800 font-black"
+                        className="font-mono tabular-nums text-lg text-center tracking-wider text-lux-gold font-black"
                      />
 
                      <div>

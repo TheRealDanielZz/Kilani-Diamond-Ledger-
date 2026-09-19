@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { Project, ProjectStatus, Priority, Role } from '../types';
@@ -95,8 +95,9 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
   // Tab State: Active Projects (default) vs Completed
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'COMPLETED'>('ACTIVE');
 
-  // Search Filter
+  // Search Filter with deferred value for 60fps responsiveness
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // Opened Map for fast lookup and reactivity
   const [openedMap, setOpenedMap] = useState<Record<string, string>>(() =>
@@ -219,7 +220,7 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
 
   // Search filter
   const searchFilteredProjects = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     if (!q) return tabProjects;
     return tabProjects.filter(p =>
       (p.code && p.code.toLowerCase().includes(q)) ||
@@ -227,7 +228,7 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
       (p.clientName && p.clientName.toLowerCase().includes(q)) ||
       (p.clientPhone && p.clientPhone.toLowerCase().includes(q))
     );
-  }, [tabProjects, searchQuery]);
+  }, [tabProjects, deferredSearchQuery]);
 
   // Sorted list based on chosen field and direction
   const sortedProjects = useMemo(() => {
@@ -495,24 +496,25 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
       </div>
 
       {/* Controls Bar: Search & Sorting */}
-      <div className="bg-[#1F2128]/80 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-3 sm:p-4 mb-6 shadow-subtle flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="bg-theme-modal-bg/85 backdrop-blur-md border border-theme-border rounded-2xl p-3 sm:p-4 mb-6 shadow-subtle flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Search Field */}
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-4 h-4 text-theme-text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={`Search ${activeTab === 'ACTIVE' ? 'active' : 'completed'} projects (code, piece, client)...`}
-            className="w-full bg-[#16171D] text-white rounded-xl border border-zinc-800 pl-10 pr-10 py-2.5 min-h-[44px] text-xs sm:text-sm placeholder:text-zinc-600 focus:outline-none focus:border-lux-gold/60 focus:ring-1 focus:ring-lux-gold/50 transition-all font-sans"
+            className="w-full bg-theme-input-bg text-theme-text-primary rounded-xl border border-theme-border pl-10 pr-10 py-2.5 min-h-[44px] text-xs sm:text-sm placeholder:text-theme-text-muted focus:outline-none focus:border-lux-gold focus:ring-1 focus:ring-lux-gold transition-all font-sans"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg cursor-pointer"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-theme-text-muted hover:text-theme-text-primary p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg cursor-pointer transition-colors"
               title="Clear search"
+              aria-label="Clear search"
             >
-              <X size={15} />
+              <X size={16} />
             </button>
           )}
         </div>
@@ -520,18 +522,18 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
         {/* Sort Controls Group */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Sort By Dropdown */}
-          <div className="flex items-center gap-1.5 bg-[#16171D] border border-zinc-800 rounded-xl px-3 py-2 min-h-[44px] flex-1 sm:flex-initial">
-            <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+          <div className="flex items-center gap-1.5 bg-theme-input-bg border border-theme-border rounded-xl px-3 py-2 min-h-[44px] flex-1 sm:flex-initial shadow-sm">
+            <span className="text-[11px] font-bold text-theme-text-muted uppercase tracking-wider shrink-0 flex items-center gap-1 font-mono">
               <ArrowUpDown size={12} className="text-lux-gold" />
               Sort:
             </span>
             <select
               value={sortBy}
               onChange={e => handleSortByChange(e.target.value as SetterSortField)}
-              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-1 py-1"
+              className="bg-transparent text-xs font-semibold text-theme-text-primary focus:outline-none cursor-pointer pr-1 py-1"
             >
               {SORT_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value} className="bg-[#1F2128] text-white">
+                <option key={opt.value} value={opt.value} className="bg-theme-modal-bg text-theme-text-primary">
                   {opt.label}
                 </option>
               ))}
@@ -543,31 +545,31 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
             type="button"
             onClick={handleToggleSortOrder}
             title={`Direction: ${sortOrder === 'asc' ? activeSortConfig.ascLabel : activeSortConfig.descLabel}`}
-            className="flex items-center gap-1.5 bg-[#16171D] hover:bg-[#23262F] border border-zinc-800 hover:border-lux-gold/40 text-white rounded-xl px-3 py-2 min-h-[44px] text-xs font-semibold transition-all shadow-sm shrink-0 cursor-pointer"
+            className="flex items-center gap-1.5 bg-theme-input-bg hover:bg-theme-row-hover border border-theme-border hover:border-lux-gold/40 text-theme-text-primary rounded-xl px-3 py-2 min-h-[44px] text-xs font-semibold transition-all shadow-sm shrink-0 cursor-pointer active:scale-[0.98]"
           >
             {sortOrder === 'asc' ? (
               <>
                 <ArrowUp size={13} className="text-lux-gold" />
-                <span className="hidden sm:inline font-mono text-[11px] text-zinc-300">Asc</span>
+                <span className="hidden sm:inline font-mono text-[11px] text-theme-text-secondary">Asc</span>
               </>
             ) : (
               <>
                 <ArrowDown size={13} className="text-lux-gold" />
-                <span className="hidden sm:inline font-mono text-[11px] text-zinc-300">Desc</span>
+                <span className="hidden sm:inline font-mono text-[11px] text-theme-text-secondary">Desc</span>
               </>
             )}
-            <span className="text-[10px] text-zinc-400 font-normal">
+            <span className="text-[10px] text-theme-text-muted font-normal font-mono">
               ({sortOrder === 'asc' ? activeSortConfig.ascLabel : activeSortConfig.descLabel})
             </span>
           </button>
 
           {/* Mobile View Toggle */}
-          <div className="flex sm:hidden items-center rounded-xl border border-zinc-800 bg-[#16171D] p-0.5">
+          <div className="flex sm:hidden items-center rounded-xl border border-theme-border bg-theme-input-bg p-0.5">
             <button
               type="button"
               onClick={() => handleToggleViewMode('GRID')}
               aria-label="Grid view"
-              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all ${viewMode === 'GRID' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-zinc-400'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all cursor-pointer ${viewMode === 'GRID' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-theme-text-muted hover:text-theme-text-primary'}`}
             >
               <LayoutGrid size={16} />
             </button>
@@ -575,7 +577,7 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
               type="button"
               onClick={() => handleToggleViewMode('LIST')}
               aria-label="List view"
-              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all ${viewMode === 'LIST' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-zinc-400'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-all cursor-pointer ${viewMode === 'LIST' ? 'bg-lux-gold text-black shadow-glow font-bold' : 'text-theme-text-muted hover:text-theme-text-primary'}`}
             >
               <ListIcon size={16} />
             </button>
@@ -631,13 +633,13 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                 {/* Header Row: Code, Rush & Status */}
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-lg text-lux-cream group-hover:text-lux-gold transition-colors tracking-tight truncate font-serif">
+                    <h3 className="font-bold text-lg text-theme-text-primary group-hover:text-lux-gold transition-colors tracking-tight truncate font-serif">
                       {p.code}
                     </h3>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     {p.priority === Priority.RUSH && (
-                      <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/30 px-2 py-0.5 rounded-full font-bold tracking-wide">
+                      <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/30 px-2 py-0.5 rounded-full font-bold tracking-wide font-mono">
                         RUSH
                       </span>
                     )}
@@ -646,7 +648,7 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                 </div>
 
                 {/* Piece & Client Name */}
-                <p className="text-zinc-400 mb-4 text-xs sm:text-sm font-medium line-clamp-2 min-h-[2.5rem]">
+                <p className="text-theme-text-secondary mb-4 text-xs sm:text-sm font-medium line-clamp-2 min-h-[2.5rem]">
                   {p.clientName ? `${p.clientName} ` : ''}
                   {p.clientPhone ? `(${p.clientPhone}) — ` : (p.clientName ? '— ' : '')}
                   {p.pieceName}
@@ -655,53 +657,53 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                 {/* Last Opened Indicator Badge */}
                 <div className="mb-4">
                   <span
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono ${
                       isUnopened
-                        ? 'bg-zinc-800/60 text-zinc-500 border border-zinc-700/40'
+                        ? 'bg-theme-input-bg text-theme-text-muted border border-theme-border'
                         : 'bg-lux-gold/10 text-lux-gold border border-lux-gold/25'
                     }`}
                   >
-                    <Clock size={11} className={isUnopened ? 'text-zinc-500' : 'text-lux-gold'} />
+                    <Clock size={11} className={isUnopened ? 'text-theme-text-muted' : 'text-lux-gold'} />
                     <span>{lastOpenedLabel}</span>
                   </span>
                 </div>
 
                 {/* Progress Bar & Stage */}
-                <div className="mt-auto pt-3 border-t border-white/5 space-y-2">
+                <div className="mt-auto pt-3 border-t border-theme-border/60 space-y-2">
                   <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-zinc-400 font-medium">{p.currentStageName || 'Intake'}</span>
-                    <span className="font-mono font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
+                    <span className="text-theme-text-secondary font-medium">{p.currentStageName || 'Intake'}</span>
+                    <span className="font-mono tabular-nums font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
                   </div>
                   <ProgressBar progress={p.currentPercentComplete || 0} />
                 </div>
 
-                {/* 1-Tap Bench Stage Advancement (Active Only) */}
+                {/* 1-Tap Bench Stage Advancement (Active Only) - 44px Target */}
                 {activeTab === 'ACTIVE' && nextStage && (
                   <div className="pt-2">
                     <button
                       type="button"
                       disabled={isAdvancing || (!isManager && nextStage.name === 'Complete')}
                       onClick={(e) => handleQuickAdvanceStage(e, p, nextStage)}
-                      className={`w-full min-h-[38px] py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98] ${
+                      className={`w-full min-h-[44px] py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98] ${
                         nextStage.name === 'Complete' && !isManager
-                          ? 'bg-zinc-800/40 text-zinc-500 border border-zinc-700/40 cursor-not-allowed text-[11px]'
+                          ? 'bg-theme-input-bg text-theme-text-muted border border-theme-border cursor-not-allowed text-[11px]'
                           : 'bg-lux-gold/15 hover:bg-lux-gold text-lux-gold hover:text-black border border-lux-gold/30 hover:border-lux-gold shadow-lux-gold/5'
                       }`}
                       title={nextStage.name === 'Complete' && !isManager ? 'QC Complete — Awaiting manager sign-off' : `Advance stage to ${nextStage.name} (${nextStage.percentValue}%)`}
                     >
                       {isAdvancing ? (
                         <>
-                          <RefreshCw size={13} className="animate-spin" />
+                          <RefreshCw size={14} className="animate-spin" />
                           <span>Advancing...</span>
                         </>
                       ) : nextStage.name === 'Complete' && !isManager ? (
                         <>
-                          <CheckCircle2 size={13} />
+                          <CheckCircle2 size={14} />
                           <span>QC Polish Done (Awaiting Review)</span>
                         </>
                       ) : (
                         <>
-                          <FastForward size={13} className="shrink-0" />
+                          <FastForward size={14} className="shrink-0" />
                           <span>Advance: {nextStage.name} ({nextStage.percentValue}%)</span>
                         </>
                       )}
@@ -744,17 +746,17 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                 {/* Left: Code, Priority, Description */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-1">
-                    <h3 className="font-bold text-lg text-lux-cream group-hover:text-lux-gold transition-colors tracking-tight truncate font-serif">
+                    <h3 className="font-bold text-lg text-theme-text-primary group-hover:text-lux-gold transition-colors tracking-tight truncate font-serif">
                       {p.code}
                     </h3>
                     {p.priority === Priority.RUSH && (
-                      <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/30 px-2 py-0.5 rounded-full font-bold tracking-wide">
+                      <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/30 px-2 py-0.5 rounded-full font-bold tracking-wide font-mono">
                         RUSH
                       </span>
                     )}
                     <StatusPill status={p.status} />
                   </div>
-                  <p className="text-zinc-400 text-xs sm:text-sm font-medium truncate">
+                  <p className="text-theme-text-secondary text-xs sm:text-sm font-medium truncate">
                     {p.clientName ? `${p.clientName} ` : ''}
                     {p.clientPhone ? `(${p.clientPhone}) — ` : (p.clientName ? '— ' : '')}
                     {p.pieceName}
@@ -766,16 +768,16 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono ${
                       isUnopened
-                        ? 'bg-zinc-800/60 text-zinc-500 border border-zinc-700/40'
+                        ? 'bg-theme-input-bg text-theme-text-muted border border-theme-border'
                         : 'bg-lux-gold/10 text-lux-gold border border-lux-gold/25'
                     }`}
                   >
-                    <Clock size={11} className={isUnopened ? 'text-zinc-500' : 'text-lux-gold'} />
+                    <Clock size={11} className={isUnopened ? 'text-theme-text-muted' : 'text-lux-gold'} />
                     <span>{lastOpenedLabel}</span>
                   </span>
 
-                  <div className="flex items-center gap-1.5 text-zinc-400 font-mono">
-                    <Calendar size={13} className="text-zinc-500" />
+                  <div className="flex items-center gap-1.5 text-theme-text-secondary font-mono">
+                    <Calendar size={13} className="text-theme-text-muted" />
                     <span>Due {new Date(p.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                   </div>
                 </div>
@@ -783,9 +785,9 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                 {/* Right: Stage, Progress & 1-Tap Advance */}
                 <div className="flex items-center gap-3 sm:gap-4 shrink-0">
                   <div className="w-24 sm:w-32">
-                    <div className="flex justify-between items-center text-[10px] text-zinc-400 mb-1">
+                    <div className="flex justify-between items-center text-[10px] text-theme-text-secondary mb-1">
                       <span className="truncate">{p.currentStageName || 'Intake'}</span>
-                      <span className="font-mono font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
+                      <span className="font-mono tabular-nums font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
                     </div>
                     <ProgressBar progress={p.currentPercentComplete || 0} />
                   </div>
@@ -795,22 +797,29 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
                       type="button"
                       disabled={isAdvancing || (!isManager && nextStage.name === 'Complete')}
                       onClick={(e) => handleQuickAdvanceStage(e, p, nextStage)}
-                      className={`min-h-[38px] px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 shrink-0 ${
+                      className={`min-h-[44px] px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 shrink-0 ${
                         nextStage.name === 'Complete' && !isManager
-                          ? 'bg-zinc-800/40 text-zinc-500 border border-zinc-700/40 cursor-not-allowed text-[11px]'
-                          : 'bg-lux-gold/15 hover:bg-lux-gold text-lux-gold hover:text-black border border-lux-gold/30 hover:border-lux-gold shadow-sm'
+                          ? 'bg-theme-input-bg text-theme-text-muted border border-theme-border cursor-not-allowed text-[11px]'
+                          : 'bg-lux-gold/15 hover:bg-lux-gold text-lux-gold hover:text-black border border-lux-gold/30 hover:border-lux-gold shadow-lux-gold/5'
                       }`}
                       title={nextStage.name === 'Complete' && !isManager ? 'QC Complete — Awaiting manager sign-off' : `Advance stage to ${nextStage.name} (${nextStage.percentValue}%)`}
                     >
                       {isAdvancing ? (
-                        <RefreshCw size={12} className="animate-spin" />
+                        <>
+                          <RefreshCw size={14} className="animate-spin" />
+                          <span>Advancing...</span>
+                        </>
+                      ) : nextStage.name === 'Complete' && !isManager ? (
+                        <>
+                          <CheckCircle2 size={14} />
+                          <span>QC Polish Done</span>
+                        </>
                       ) : (
-                        <FastForward size={12} />
+                        <>
+                          <FastForward size={14} className="shrink-0" />
+                          <span>Advance: {nextStage.name}</span>
+                        </>
                       )}
-                      <span className="hidden sm:inline">
-                        {nextStage.name === 'Complete' && !isManager ? 'QC Done' : nextStage.name}
-                      </span>
-                      <span>{nextStage.percentValue}%</span>
                     </button>
                   )}
 

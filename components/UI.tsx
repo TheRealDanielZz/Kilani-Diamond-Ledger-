@@ -54,8 +54,11 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; onC
   </div>
 );
 
-// Sparkline Component (Ultra-lightweight dynamic SVG)
+// Sparkline Component (Ultra-lightweight dynamic SVG with unique filterId)
 export const Sparkline: React.FC<{ data: number[]; width?: number; height?: number; color?: string }> = ({ data, width = 120, height = 36, color = '#F5C249' }) => {
+  const rawId = useId();
+  const filterId = `glow-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
   if (!data || data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -68,10 +71,10 @@ export const Sparkline: React.FC<{ data: number[]; width?: number; height?: numb
   }).join(' ');
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="opacity-80 overflow-visible">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="opacity-85 overflow-visible">
       <defs>
-        <filter id="glow-spark" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor={color} floodOpacity="0.4" />
+        <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor={color} floodOpacity="0.35" />
         </filter>
       </defs>
       <polyline
@@ -81,62 +84,80 @@ export const Sparkline: React.FC<{ data: number[]; width?: number; height?: numb
         strokeLinecap="round"
         strokeLinejoin="round"
         points={points}
-        filter="url(#glow-spark)"
+        filter={`url(#${filterId})`}
       />
     </svg>
   );
 };
 
-// Control Tile (iOS 26 Modular Grid)
+// Control Tile (iOS 26 Modular Grid / Executive KPI)
 export const ControlTile: React.FC<{
   title: string;
   value: string | React.ReactNode;
   subtitle?: string;
+  badge?: React.ReactNode;
+  trend?: { value: string; positive?: boolean };
   icon?: React.ReactNode;
   vibrant?: boolean;
   sparklineData?: number[];
   onClick?: () => void;
   className?: string;
-}> = ({ title, value, subtitle, icon, vibrant = false, sparklineData, onClick, className = '' }) => {
+}> = ({ title, value, subtitle, badge, trend, icon, vibrant = false, sparklineData, onClick, className = '' }) => {
   return (
     <div 
       onClick={onClick}
       className={`
-        relative p-5 flex flex-col justify-between transition-all duration-500 group
-        ${vibrant ? 'liquid-glass-glow text-lux-gold border-lux-gold/30' : 'liquid-glass text-theme-text-primary hover:border-lux-gold/20'}
-        hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(0,0,0,0.5)]
+        relative p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 group
+        ${vibrant ? 'liquid-glass-glow text-lux-gold border-lux-gold/30' : 'liquid-glass text-theme-text-primary hover:border-lux-gold/30'}
+        hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)]
         ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}
         ${className}
       `}
     >
       {/* Texture Overlay */}
       <div 
-        className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay"
+        className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay rounded-2xl"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
           backgroundSize: '150px 150px'
         }}
       ></div>
 
-      <div className="flex justify-between items-start mb-4 relative z-10">
-        {icon && (
-          <div className={`
-            p-2.5 rounded-2xl backdrop-blur-md shadow-inner transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3
-            ${vibrant ? 'bg-lux-gold/20 text-lux-gold' : 'bg-theme-input-bg border border-theme-border text-theme-text-primary'}
-          `}>
-            {icon}
-          </div>
-        )}
-        <span className="text-[10px] uppercase tracking-widest font-bold text-theme-text-secondary mt-1">{title}</span>
+      <div className="flex justify-between items-start mb-3 relative z-10">
+        <div className="flex items-center gap-2.5">
+          {icon && (
+            <div className={`
+              p-2.5 rounded-2xl backdrop-blur-md shadow-inner transition-transform duration-300 group-hover:scale-105
+              ${vibrant ? 'bg-lux-gold/20 text-lux-gold' : 'bg-theme-input-bg border border-theme-border text-theme-text-primary'}
+            `}>
+              {icon}
+            </div>
+          )}
+          <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-theme-text-secondary font-mono">{title}</span>
+        </div>
+        {badge && <div className="shrink-0">{badge}</div>}
       </div>
 
-      <div className="flex items-end justify-between gap-4 mt-2 relative z-10">
-        <div>
-          <div className="text-3xl font-serif font-bold tracking-tight mb-1 drop-shadow-sm group-hover:text-lux-gold transition-colors duration-300">{value}</div>
-          {subtitle && <div className="text-xs text-theme-text-secondary font-medium transition-opacity group-hover:opacity-80">{subtitle}</div>}
+      <div className="flex items-end justify-between gap-4 mt-1 relative z-10">
+        <div className="min-w-0">
+          <div className="text-2xl sm:text-3xl font-mono tabular-nums font-black tracking-tight mb-1 drop-shadow-sm group-hover:text-lux-gold transition-colors duration-300 truncate">
+            {value}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {trend && (
+              <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-full border ${
+                trend.positive !== false
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+              }`}>
+                {trend.value}
+              </span>
+            )}
+            {subtitle && <span className="text-xs text-theme-text-secondary font-medium truncate">{subtitle}</span>}
+          </div>
         </div>
         {sparklineData && sparklineData.length > 0 && (
-          <div className="pb-1 select-none pointer-events-none group-hover:scale-105 transition-transform duration-500">
+          <div className="pb-1 select-none pointer-events-none group-hover:scale-105 transition-transform duration-300 shrink-0">
             <Sparkline data={sparklineData} color={vibrant ? '#F5C249' : '#60A5FA'} />
           </div>
         )}

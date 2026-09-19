@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
-import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle } from '../components/UI';
-import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart } from 'lucide-react';
+import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle, ControlTile } from '../components/UI';
+import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart, Gem } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
@@ -248,13 +248,33 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       page: 1,
       pageSize: 7,
    });
-   const overviewProjects = overviewProjectReport.rows.slice(0, 6).map(normalizeProjectSummary);
-   const visibleRequests = requestReport.rows
-      .map(row => requests.find(request => request.id === row.id))
-      .filter((request): request is IssueRequest => Boolean(request));
-   const visibleReturns = returnReport.rows
-      .map(row => returnBags.find(info => (info.tx?.id || `legacy-${info.bag.id}`) === row.id))
-      .filter((info): info is { bag: DiamondBag; tx?: BagReturnTransaction } => Boolean(info));
+   const overviewProjects = React.useMemo(() => {
+      return overviewProjectReport.rows.slice(0, 6).map(normalizeProjectSummary);
+   }, [overviewProjectReport.rows]);
+
+   const visibleRequests = React.useMemo(() => {
+      return requestReport.rows
+         .map(row => requests.find(request => request.id === row.id))
+         .filter((request): request is IssueRequest => Boolean(request));
+   }, [requestReport.rows, requests]);
+
+   const visibleReturns = React.useMemo(() => {
+      return returnReport.rows
+         .map(row => returnBags.find(info => (info.tx?.id || `legacy-${info.bag.id}`) === row.id))
+         .filter((info): info is { bag: DiamondBag; tx?: BagReturnTransaction } => Boolean(info));
+   }, [returnReport.rows, returnBags]);
+
+   const rushProjectsCount = React.useMemo(() => {
+      return store.getProjects().filter(p => p.status === ProjectStatus.ACTIVE && p.priority === Priority.RUSH).length;
+   }, [overviewProjectReport.total]);
+
+   const totalPendingRequestsStones = React.useMemo(() => {
+      return requests.reduce((sum, r) => sum + r.lines.reduce((s, l) => s + (l.requestedPcs || 0), 0), 0);
+   }, [requests]);
+
+   const totalDiamondBagsIssuedCount = React.useMemo(() => {
+      return store.getBags().filter(b => b.status === BagStatus.ISSUED).length;
+   }, [returnBags]);
 
    const exportManagerReport = async (
       section: 'REQUESTS' | 'RETURNS',
@@ -585,7 +605,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          <div data-tour="manager-header" className="flex flex-col md:flex-row justify-between items-end gap-4 mb-8">
             <div>
                <h1 className="text-4xl font-bold text-theme-text-primary tracking-tight">Overview</h1>
-               <p className="text-xs text-zinc-500 font-medium uppercase tracking-[0.2em] mt-2">Welcome, {currentUser.name}</p>
+               <p className="text-xs text-theme-text-secondary font-medium uppercase tracking-[0.2em] mt-2 font-mono">Welcome, {currentUser.name}</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-8 md:gap-10">
@@ -593,6 +613,43 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={20} />}>New Project</Button>
                </div>
             </div>
+         </div>
+
+         {/* ─── EXECUTIVE SITUATIONAL AWARENESS STRIP (UI/UX Pro Max) ─── */}
+         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <ControlTile
+               title="Active Queue"
+               value={overviewProjectReport.total}
+               subtitle={rushProjectsCount > 0 ? `${rushProjectsCount} rush priority` : 'Normal priority flow'}
+               badge={rushProjectsCount > 0 ? <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">RUSH: {rushProjectsCount}</span> : <Badge color="green">Steady</Badge>}
+               icon={<Layers size={18} className="text-lux-gold" />}
+               onClick={() => navigate('/projects')}
+               vibrant={rushProjectsCount > 0}
+            />
+            <ControlTile
+               title="Live Requests"
+               value={requests.length}
+               subtitle={`${totalPendingRequestsStones} stones pending`}
+               badge={<Badge color={requests.length > 0 ? 'blue' : 'gray'}>{requests.length} Open</Badge>}
+               icon={<Inbox size={18} className="text-blue-400" />}
+               onClick={requests.length > 0 ? () => setShowAllRequests(true) : undefined}
+            />
+            <ControlTile
+               title="Returns Queue"
+               value={returnBags.length}
+               subtitle={`${totalDiamondBagsIssuedCount} bags with setters`}
+               badge={<Badge color={returnBags.length > 0 ? 'amber' : 'gray'}>{returnBags.length} Pending</Badge>}
+               icon={<PackageCheck size={18} className="text-amber-400" />}
+               onClick={returnBags.length > 0 ? () => setShowAllReturns(true) : undefined}
+            />
+            <ControlTile
+               title="Inventory Parcels"
+               value={inventorySummary.filter(s => (s.pcs || 0) > 0).length}
+               subtitle="In-stock diamond specs"
+               badge={<Badge color="green">Stocked</Badge>}
+               icon={<Gem size={18} className="text-emerald-400" />}
+               onClick={() => navigate('/inventory')}
+            />
          </div>
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 items-start">

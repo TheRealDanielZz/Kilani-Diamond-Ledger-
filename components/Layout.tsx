@@ -189,7 +189,16 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
                  </div>
               </div>
 
-              <Outlet context={{ onLogout, user }} />
+               <React.Suspense fallback={
+                 <div className="flex-1 flex items-center justify-center min-h-[300px] animate-pulse">
+                   <div className="flex flex-col items-center gap-3">
+                     <div className="w-8 h-8 rounded-full border-2 border-lux-gold/30 border-t-lux-gold animate-spin" />
+                     <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-500">Loading...</span>
+                   </div>
+                 </div>
+               }>
+                 <Outlet context={{ onLogout, user }} />
+               </React.Suspense>
            </div>
          </main>
       </div>

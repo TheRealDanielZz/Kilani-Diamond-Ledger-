@@ -7,7 +7,6 @@ import { ExecutiveInsightsModule } from '../components/ExecutiveInsightsModule';
 import { FileBarChart, Download, X, Calendar, Search, Activity, Gem, Users, Clock, AlertOctagon, Filter, Image as ImageIcon, Box, Scale, ArrowRight, Coins, Save, Edit2, Ban, CheckCircle2, TrendingUp, Lock, FileDown, Wrench, AlertTriangle, Play, RefreshCw, Trash2, ArrowUpRight, ArrowDownLeft, ChevronDown, ChevronUp, ZoomIn, Archive } from 'lucide-react';
 import { Project, ProjectCostSummary, InventoryMovement, InventoryMovementType, Role, CastingEvent, User, ProjectStatus, RepairStatus, RepairType, DiamondSpec, DiamondLedgerTransaction, EvidenceImage } from '../types';
 import { useToast } from '../App';
-import { runDiamondSituationalTests, TestScenarioResult } from '../services/testHarness';
 import { generateProjectPDF, generateEvidenceAppendixPDF } from '../utils/pdfGenerator';
 import { getCanonicalServiceCode, getProjectServiceLabel, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/reports/ReportFilterBar';
@@ -77,11 +76,6 @@ const ReportsPage: React.FC = () => {
   const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false);
   const [savedSnapshots, setSavedSnapshots] = useState(() => store.getWeeklyReports());
 
-  // Test Harness state
-  const [showTestHarness, setShowTestHarness] = useState(false);
-  const [testResults, setTestResults] = useState<TestScenarioResult[]>([]);
-  const [isRunningTests, setIsRunningTests] = useState(false);
-  
   // Inventory Report State
   const [movements, setMovements] = useState(store.getInventoryMovements());
   const [expandedMovements, setExpandedMovements] = useState<Record<string, boolean>>({});
@@ -126,8 +120,18 @@ const ReportsPage: React.FC = () => {
 
     if (nextTab === 'staff') {
       navigate('/reports/team');
+    } else if (location.pathname.startsWith('/reports/team')) {
+      navigate('/reports');
     }
   };
+
+  type ReportDomain = 'diamonds' | 'projects' | 'operations';
+
+  const currentDomain: ReportDomain = React.useMemo(() => {
+    if (['weekly', 'inventory', 'broken'].includes(activeTab)) return 'diamonds';
+    if (activeTab === 'projects') return 'projects';
+    return 'operations';
+  }, [activeTab]);
 
   const executiveNegativeBalances = React.useMemo(() => {
     return store.getSpecs()
@@ -616,11 +620,27 @@ const ReportsPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 pb-24">
-      <h1 data-tour="reports-header" className="text-2xl font-bold text-white mb-6">Reports Hub</h1>
+      {/* Luxury Hub Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-lux-gold/20 to-lux-gold/5 text-lux-gold border border-lux-gold/30 shadow-lg shadow-lux-gold/5">
+            <FileBarChart size={24} />
+          </div>
+          <div>
+            <h1 data-tour="reports-header" className="text-2xl sm:text-3xl font-serif font-bold text-white tracking-tight">
+              Reports & Intelligence Hub
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+              Audited diamond inventory, project production costs, and operational analytics
+            </p>
+          </div>
+        </div>
+      </div>
 
       {isManager && (
         <div className="mb-6">
           <ExecutiveInsightsModule
+            variant="compact"
             negativeBalances={executiveNegativeBalances}
             missingCosts={executiveMissingCosts}
             otherWarnings={executiveOtherWarnings}
@@ -628,63 +648,199 @@ const ReportsPage: React.FC = () => {
           />
         </div>
       )}
-      
-      <div className="flex flex-wrap gap-1 border-b border-zinc-800 mb-8" role="tablist" aria-label="Reporting sections">
-         <button
-           role="tab"
-           aria-selected={activeTab === 'weekly'}
-           onClick={() => handleTabSwitch('weekly')}
-           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'weekly' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-         >
-           <Activity size={15}/>Daily Diamond Statement
-         </button>
-         <button
-           role="tab"
-           aria-selected={activeTab === 'inventory'}
-           onClick={() => handleTabSwitch('inventory')}
-           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'inventory' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-         >
-           <Box size={15}/>Inventory Ledger
-         </button>
-         <button
-           role="tab"
-           aria-selected={activeTab === 'broken'}
-           onClick={() => handleTabSwitch('broken')}
-           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broken' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-         >
-           <AlertOctagon size={15}/>Broken Stones
-         </button>
-         <button
-           role="tab"
-           aria-selected={activeTab === 'projects'}
-           onClick={() => handleTabSwitch('projects')}
-           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'projects' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-         >
-           <FileBarChart size={15}/>Project History
-         </button>
-         <button
-           role="tab"
-           aria-selected={activeTab === 'system'}
-           onClick={() => handleTabSwitch('system')}
-           className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'system' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-         >
-           <Clock size={15}/>System Logs
-         </button>
-         {isManager && (
-           <button
-             role="tab"
-             aria-selected={activeTab === 'staff'}
-             onClick={() => handleTabSwitch('staff')}
-             className={`min-h-[48px] px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'staff' ? 'border-lux-gold text-lux-gold' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
-           >
-             <Users size={15} />
-             Team
-             <span className="text-[10px] font-bold text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
-               Updated
-             </span>
-           </button>
-         )}
+
+      {/* 3-Domain Switcher Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-1.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl mb-6 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => {
+            if (currentDomain !== 'diamonds') {
+              handleTabSwitch('weekly');
+            }
+          }}
+          className={`p-3.5 rounded-xl text-left transition-all relative flex items-center gap-3.5 ${
+            currentDomain === 'diamonds'
+              ? 'bg-zinc-800/95 text-white shadow-lg border border-lux-gold/30 ring-1 ring-lux-gold/20'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+          }`}
+        >
+          <div className={`p-2.5 rounded-xl shrink-0 transition-colors ${
+            currentDomain === 'diamonds'
+              ? 'bg-lux-gold/20 text-lux-gold border border-lux-gold/30'
+              : 'bg-zinc-800/80 text-zinc-400'
+          }`}>
+            <Gem size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate flex items-center gap-1.5">
+              Diamonds & Stock
+            </div>
+            <div className="text-[11px] text-zinc-400 truncate">
+              Daily Statement, Ledger & Breakage
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (currentDomain !== 'projects') {
+              handleTabSwitch('projects');
+            }
+          }}
+          className={`p-3.5 rounded-xl text-left transition-all relative flex items-center gap-3.5 ${
+            currentDomain === 'projects'
+              ? 'bg-zinc-800/95 text-white shadow-lg border border-lux-gold/30 ring-1 ring-lux-gold/20'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+          }`}
+        >
+          <div className={`p-2.5 rounded-xl shrink-0 transition-colors ${
+            currentDomain === 'projects'
+              ? 'bg-lux-gold/20 text-lux-gold border border-lux-gold/30'
+              : 'bg-zinc-800/80 text-zinc-400'
+          }`}>
+            <FileBarChart size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate flex items-center gap-1.5">
+              Projects & Production
+            </div>
+            <div className="text-[11px] text-zinc-400 truncate">
+              Job Costing, Labour & Batch Exports
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (currentDomain !== 'operations') {
+              handleTabSwitch(isManager ? 'staff' : 'system');
+            }
+          }}
+          className={`p-3.5 rounded-xl text-left transition-all relative flex items-center gap-3.5 ${
+            currentDomain === 'operations'
+              ? 'bg-zinc-800/95 text-white shadow-lg border border-lux-gold/30 ring-1 ring-lux-gold/20'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+          }`}
+        >
+          <div className={`p-2.5 rounded-xl shrink-0 transition-colors ${
+            currentDomain === 'operations'
+              ? 'bg-lux-gold/20 text-lux-gold border border-lux-gold/30'
+              : 'bg-zinc-800/80 text-zinc-400'
+          }`}>
+            <Users size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate flex items-center gap-1.5">
+              Operations & Audit
+            </div>
+            <div className="text-[11px] text-zinc-400 truncate">
+              {isManager ? 'Team Performance & System Logs' : 'System Audit Trail'}
+            </div>
+          </div>
+        </button>
       </div>
+
+      {/* Sub-view Segmented Switcher */}
+      {currentDomain === 'diamonds' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-2 border-b border-zinc-800/60">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-black/40 border border-zinc-800/80 rounded-2xl backdrop-blur-md">
+            <button
+              onClick={() => handleTabSwitch('weekly')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'weekly'
+                  ? 'bg-lux-gold text-black shadow-md font-black'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+              }`}
+            >
+              <Activity size={14} />
+              Daily Diamond Statement
+            </button>
+            <button
+              onClick={() => handleTabSwitch('inventory')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'inventory'
+                  ? 'bg-lux-gold text-black shadow-md font-black'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+              }`}
+            >
+              <Box size={14} />
+              Movement Ledger
+            </button>
+            <button
+              onClick={() => handleTabSwitch('broken')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'broken'
+                  ? 'bg-lux-gold text-black shadow-md font-black'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+              }`}
+            >
+              <AlertOctagon size={14} />
+              Breakage & Loss Log
+            </button>
+          </div>
+          <span className="text-xs text-zinc-500 font-medium hidden sm:inline">
+            {activeTab === 'weekly' && 'End-of-day reconciliation & valuation'}
+            {activeTab === 'inventory' && 'Chronological bag & transfer events'}
+            {activeTab === 'broken' && 'Damaged stone waste tracking'}
+          </span>
+        </div>
+      )}
+
+      {currentDomain === 'operations' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-2 border-b border-zinc-800/60">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-black/40 border border-zinc-800/80 rounded-2xl backdrop-blur-md">
+            {isManager && (
+              <button
+                onClick={() => handleTabSwitch('staff')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'staff'
+                    ? 'bg-lux-gold text-black shadow-md font-black'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                }`}
+              >
+                <Users size={14} />
+                Team Performance
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'staff' ? 'bg-black/20 text-black' : 'bg-amber-400/20 text-amber-300'
+                }`}>
+                  Updated
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => handleTabSwitch('system')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'system'
+                  ? 'bg-lux-gold text-black shadow-md font-black'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+              }`}
+            >
+              <Clock size={14} />
+              System Activity Logs
+            </button>
+          </div>
+          <span className="text-xs text-zinc-500 font-medium hidden sm:inline">
+            {activeTab === 'staff' && 'Productivity, speed & setter quality'}
+            {activeTab === 'system' && 'Security & database audit trail'}
+          </span>
+        </div>
+      )}
+
+      {currentDomain === 'projects' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-2 border-b border-zinc-800/60">
+          <div className="flex items-center gap-2 text-xs font-bold text-zinc-300">
+            <span className="p-1.5 rounded-lg bg-lux-gold/10 text-lux-gold border border-lux-gold/20">
+              <FileBarChart size={14} />
+            </span>
+            <span>Project History & Costing Ledger</span>
+          </div>
+          <span className="text-xs text-zinc-500 font-medium hidden sm:inline">
+            Track custom piece costs, labour margins, and batch exports
+          </span>
+        </div>
+      )}
 
       {activeTab === 'staff' && isManager && (
         <StaffPerformanceDashboard currentUser={currentUser} memberId={params.memberId} />
@@ -695,7 +851,29 @@ const ReportsPage: React.FC = () => {
       )}
 
       {activeTab === 'inventory' && (
-        <Card className="overflow-hidden">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-zinc-900/40 border border-zinc-800 p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-zinc-400 text-xs font-bold uppercase mb-1">Total Movement Records</div>
+                <div className="text-2xl font-bold text-white font-mono">{inventoryReport.total}</div>
+              </div>
+              <div className="p-3 bg-lux-gold/10 border border-lux-gold/20 rounded-xl text-lux-gold">
+                <Box size={20} />
+              </div>
+            </div>
+            <div className="bg-zinc-900/40 border border-zinc-800 p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-zinc-400 text-xs font-bold uppercase mb-1">Events Visible On Page</div>
+                <div className="text-2xl font-bold text-white font-mono">{inventoryReport.rows.length}</div>
+              </div>
+              <div className="p-3 bg-zinc-800/60 border border-zinc-700/40 rounded-xl text-zinc-300">
+                <Activity size={20} />
+              </div>
+            </div>
+          </div>
+
+          <Card className="overflow-hidden">
            <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 space-y-4">
               <div className="flex justify-between items-center gap-3">
                 <h3 className="font-bold text-white">Inventory Ledger</h3>
@@ -719,7 +897,7 @@ const ReportsPage: React.FC = () => {
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
-               <thead className="bg-zinc-900 text-zinc-500 font-bold uppercase text-[11px]">
+               <thead className="bg-theme-table-header text-theme-text-secondary font-mono font-bold uppercase text-[10px] tracking-wider border-b border-theme-border">
                  <tr>
                    <th className="p-4">Date</th>
                    <th className="p-4">Type</th>
@@ -728,7 +906,7 @@ const ReportsPage: React.FC = () => {
                    <th className="p-4 text-right">Items</th>
                  </tr>
                </thead>
-               <tbody className="divide-y divide-zinc-800/50">
+               <tbody className="divide-y divide-theme-border">
                   {inventoryReport.rows.map(m => {
                     const isExpanded = !!expandedMovements[m.id as string];
                     const safeLines = Array.isArray(m.lines) ? m.lines : [];
@@ -736,17 +914,17 @@ const ReportsPage: React.FC = () => {
                       <React.Fragment key={m.id}>
                         <tr 
                           onClick={() => toggleMovement(m.id as string)}
-                          className="hover:bg-zinc-900/30 cursor-pointer transition-colors"
+                          className="hover:bg-theme-row-hover cursor-pointer transition-colors"
                         >
-                          <td className="p-4 text-zinc-400 font-mono">{new Date(m.createdAt).toLocaleDateString()}</td>
-                          <td className="p-4 text-white font-bold">{m.type}</td>
-                          <td className="p-4 text-zinc-500">{m.referenceBagNumber ? `Bag #${m.referenceBagNumber}` : '-'}</td>
-                          <td className="p-4 text-zinc-400 truncate max-w-xs">{m.notes}</td>
+                          <td className="p-4 text-theme-text-secondary font-mono tabular-nums">{new Date(m.createdAt).toLocaleDateString()}</td>
+                          <td className="p-4 text-theme-text-primary font-bold">{m.type}</td>
+                          <td className="p-4 text-theme-text-muted font-mono">{m.referenceBagNumber ? `Bag #${m.referenceBagNumber}` : '-'}</td>
+                          <td className="p-4 text-theme-text-secondary truncate max-w-xs">{m.notes}</td>
                           <td className="p-4 text-right align-top">
                              <div className="flex flex-col items-end gap-1">
-                                <div className="font-mono text-lux-gold font-bold text-xs flex items-center gap-1 justify-end hover:text-white transition-colors">
+                                <div className="font-mono tabular-nums text-lux-gold font-bold text-xs flex items-center gap-1 justify-end hover:text-white transition-colors">
                                    {safeLines[0]?.specId === 'MIXED-UNSORTED' ? `${safeLines[0].ct || 0} ct` : `${safeLines.reduce((a,b)=>a+(b.pcs||0),0)} pcs`}
-                                   {isExpanded ? <ChevronUp size={12} className="text-lux-gold shrink-0" /> : <ChevronDown size={12} className="text-zinc-500 shrink-0" />}
+                                   {isExpanded ? <ChevronUp size={12} className="text-lux-gold shrink-0" /> : <ChevronDown size={12} className="text-theme-text-muted shrink-0" />}
                                 </div>
                                 {isExpanded && safeLines.length > 0 && (
                                    <div className="flex flex-col items-end gap-0.5 mt-1.5 border-t border-zinc-800/50 pt-1.5 w-full animate-in fade-in duration-200">
@@ -775,21 +953,45 @@ const ReportsPage: React.FC = () => {
            <ReportMessage loading={inventoryReport.loading} error={inventoryReport.error} empty={!inventoryReport.loading && !inventoryReport.rows.length} />
            <ReportPagination page={inventoryPage} pageSize={25} total={inventoryReport.total} onPageChange={setInventoryPage} />
         </Card>
+        </div>
       )}
 
       {activeTab === 'broken' && (
-         <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-               <div className="bg-red-950/20 border border-red-900/30 p-5 rounded-2xl">
-                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Visible Page Carats</div>
-                  <div className="text-2xl font-bold text-white font-mono">
-                     {brokenReport.rows.reduce((total, row) => total + Number(row.carats || 0), 0).toFixed(3)} ct
+         <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               <div className="bg-red-950/20 border border-red-900/30 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="text-red-400 text-xs font-bold uppercase mb-1">Visible Page Carats</div>
+                    <div className="text-2xl font-bold text-white font-mono">
+                       {brokenReport.rows.reduce((total, row) => total + Number(row.carats || 0), 0).toFixed(3)} ct
+                    </div>
+                  </div>
+                  <div className="p-3 bg-red-950/40 border border-red-800/40 rounded-xl text-red-400">
+                    <Scale size={20} />
                   </div>
                </div>
-               <div className="bg-red-950/20 border border-red-900/30 p-5 rounded-2xl">
-                  <div className="text-red-400 text-xs font-bold uppercase mb-1">Filtered Incidents</div>
-                  <div className="text-2xl font-bold text-white font-mono">
-                     {brokenReport.total}
+
+               <div className="bg-red-950/20 border border-red-900/30 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="text-red-400 text-xs font-bold uppercase mb-1">Total Broken Stones</div>
+                    <div className="text-2xl font-bold text-white font-mono">
+                       {brokenReport.rows.reduce((total, row) => total + Number(row.pieces || 0), 0)} pcs
+                    </div>
+                  </div>
+                  <div className="p-3 bg-red-950/40 border border-red-800/40 rounded-xl text-red-400">
+                    <Gem size={20} />
+                  </div>
+               </div>
+
+               <div className="bg-red-950/20 border border-red-900/30 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="text-red-400 text-xs font-bold uppercase mb-1">Filtered Incidents</div>
+                    <div className="text-2xl font-bold text-white font-mono">
+                       {brokenReport.total}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-red-950/40 border border-red-800/40 rounded-xl text-red-400">
+                    <AlertOctagon size={20} />
                   </div>
                </div>
             </div>
@@ -821,7 +1023,7 @@ const ReportsPage: React.FC = () => {
                </div>
                <div className="overflow-x-auto">
                  <table className="w-full text-sm text-left">
-                   <thead className="bg-zinc-900 text-zinc-500 font-bold uppercase text-[11px]">
+                   <thead className="bg-theme-table-header text-theme-text-secondary font-mono font-bold uppercase text-[10px] tracking-wider border-b border-theme-border">
                      <tr>
                        <th className="p-4">Date</th>
                        <th className="p-4">Project / Note</th>
@@ -830,17 +1032,17 @@ const ReportsPage: React.FC = () => {
                        <th className="p-4 text-right">Weight</th>
                      </tr>
                    </thead>
-                   <tbody className="divide-y divide-zinc-800/50">
+                   <tbody className="divide-y divide-theme-border">
                      {brokenReport.rows.map(row => (
-                       <tr key={row.id} className="hover:bg-zinc-900/30">
-                         <td className="p-4 text-zinc-400 font-mono">{new Date(row.createdAt).toLocaleDateString()}</td>
+                       <tr key={row.id} className="hover:bg-theme-row-hover transition-colors">
+                         <td className="p-4 text-theme-text-secondary font-mono text-xs tabular-nums">{new Date(row.createdAt).toLocaleDateString()}</td>
                          <td className="p-4">
-                           {row.projectCode && <div className="text-white font-bold text-xs mb-0.5">{row.projectCode}</div>}
-                           <div className="text-zinc-500 text-xs">{row.notes}</div>
+                           {row.projectCode && <div className="text-theme-text-primary font-bold text-xs mb-0.5">{row.projectCode}</div>}
+                           <div className="text-theme-text-muted text-xs">{row.notes}</div>
                          </td>
-                         <td className="p-4 text-zinc-300">{row.specLabel || <span className="text-zinc-500 italic">Mixed/Unknown</span>}</td>
-                         <td className="p-4 text-right font-mono text-red-400">{row.pieces || '-'}</td>
-                         <td className="p-4 text-right font-mono text-zinc-500">{Number(row.carats || 0).toFixed(3)}</td>
+                         <td className="p-4 text-theme-text-primary">{row.specLabel || <span className="text-theme-text-muted italic">Mixed/Unknown</span>}</td>
+                         <td className="p-4 text-right font-mono tabular-nums text-red-400">{row.pieces || '-'}</td>
+                         <td className="p-4 text-right font-mono tabular-nums text-theme-text-secondary">{Number(row.carats || 0).toFixed(3)}</td>
                        </tr>
                      ))}
                    </tbody>
@@ -853,10 +1055,45 @@ const ReportsPage: React.FC = () => {
       )}
 
       {activeTab === 'projects' && (
-        <Card className="overflow-hidden">
-           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex flex-col gap-4">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-theme-input-bg border border-theme-border p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-theme-text-secondary text-xs font-bold uppercase mb-1 font-mono">Total Projects in Ledger</div>
+                <div className="text-2xl font-bold text-theme-text-primary font-mono tabular-nums">{projectReport.total}</div>
+              </div>
+              <div className="p-3 bg-lux-gold/10 border border-lux-gold/20 rounded-xl text-lux-gold">
+                <FileBarChart size={20} />
+              </div>
+            </div>
+            <div className="bg-theme-input-bg border border-theme-border p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-theme-text-secondary text-xs font-bold uppercase mb-1 font-mono">In Production / Active</div>
+                <div className="text-2xl font-bold text-theme-text-primary font-mono tabular-nums">
+                  {projectReport.rows.filter(r => r.status !== 'COMPLETED' && r.status !== 'DELIVERED').length}
+                </div>
+              </div>
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+                <TrendingUp size={20} />
+              </div>
+            </div>
+            <div className="bg-theme-input-bg border border-theme-border p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-theme-text-secondary text-xs font-bold uppercase mb-1 font-mono">Completed on Page</div>
+                <div className="text-2xl font-bold text-theme-text-primary font-mono tabular-nums">
+                  {projectReport.rows.filter(r => r.status === 'COMPLETED' || r.status === 'DELIVERED').length}
+                </div>
+              </div>
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                <CheckCircle2 size={20} />
+              </div>
+            </div>
+          </div>
+
+          <Card className="overflow-hidden">
+           <div className="p-4 bg-theme-input-bg border-b border-theme-border flex flex-col gap-4">
               <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-                <h3 className="font-bold text-white">Project History</h3>
+                <h3 className="font-bold text-theme-text-primary">Project History</h3>
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
@@ -892,7 +1129,7 @@ const ReportsPage: React.FC = () => {
                     }}>
                       <FileDown size={14} /> Export Selected PDF
                     </Button>
-                    <button onClick={() => setSelectedProjectIds(new Set())} className="text-xs text-zinc-400 hover:text-white px-2 py-1 font-bold">
+                    <button onClick={() => setSelectedProjectIds(new Set())} className="text-xs text-theme-text-secondary hover:text-theme-text-primary px-2 py-1 font-bold">
                       Clear Selection
                     </button>
                   </div>
@@ -910,12 +1147,12 @@ const ReportsPage: React.FC = () => {
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
-               <thead className="bg-zinc-900 text-zinc-500 font-bold uppercase text-[11px]">
+               <thead className="bg-theme-table-header text-theme-text-secondary font-mono font-bold uppercase text-[10px] tracking-wider border-b border-theme-border">
                  <tr>
                    <th className="p-4 w-10">
                      <input
                        type="checkbox"
-                       className="rounded border-zinc-700 bg-zinc-900 text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
+                       className="rounded border-theme-border bg-theme-input-bg text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
                        checked={projectReport.rows.length > 0 && projectReport.rows.every(r => selectedProjectIds.has(r.id))}
                        onChange={() => {
                          const currentIds = projectReport.rows.map(r => r.id);
@@ -939,18 +1176,18 @@ const ReportsPage: React.FC = () => {
                    <th className="p-4 w-16"></th>
                  </tr>
                </thead>
-               <tbody className="divide-y divide-zinc-800/50">
+               <tbody className="divide-y divide-theme-border">
                  {projectReport.rows.map(row => {
                    const p = store.getProject(row.id);
                    const repair = p ? store.getRepairDetails(p) : null;
                    const previewImage = row.previewImage;
                    const isSelected = selectedProjectIds.has(row.id);
                    return (
-                   <tr key={row.id} onClick={() => p && handleSelectProject(p)} className={`hover:bg-zinc-900/50 cursor-pointer transition-colors group ${isSelected ? 'bg-lux-gold/5' : ''}`}>
+                   <tr key={row.id} onClick={() => p && handleSelectProject(p)} className={`hover:bg-theme-row-hover cursor-pointer transition-colors group ${isSelected ? 'bg-lux-gold/5' : ''}`}>
                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
                        <input
                          type="checkbox"
-                         className="rounded border-zinc-700 bg-zinc-900 text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
+                         className="rounded border-theme-border bg-theme-input-bg text-lux-gold focus:ring-lux-gold cursor-pointer w-4 h-4"
                          checked={isSelected}
                          onChange={() => {
                            setSelectedProjectIds(prev => {
@@ -963,33 +1200,33 @@ const ReportsPage: React.FC = () => {
                        />
                      </td>
                      <td className="p-4">
-                        <div className="w-10 h-10 bg-black rounded-xl border border-zinc-800 overflow-hidden flex items-center justify-center">
+                        <div className="w-10 h-10 bg-black rounded-xl border border-theme-border overflow-hidden flex items-center justify-center">
                            {previewImage ? (
                               <img src={previewImage} className="w-full h-full object-cover" />
                            ) : (
-                              <ImageIcon size={16} className="text-zinc-700" />
+                              <ImageIcon size={16} className="text-zinc-600" />
                            )}
                         </div>
                      </td>
-                     <td className="p-4 text-white font-bold group-hover:text-lux-gold transition-colors flex items-center gap-2">
+                     <td className="p-4 text-theme-text-primary font-bold group-hover:text-lux-gold transition-colors flex items-center gap-2">
                         {row.code}
                         {p?.isQuickRepair && <Badge color="blue">Quick Repair</Badge>}
                         {row.service && <Badge color={row.serviceCode === 'REPAIR' ? 'amber' : 'blue'}>{row.service}</Badge>}
                         {repair?.outsourced && <Badge color="blue">Outsourced</Badge>}
                      </td>
-                     <td className="p-4 text-zinc-300">
+                     <td className="p-4 text-theme-text-primary">
                         <div>{row.clientName || '-'}</div>
-                        {row.clientPhone && <div className="text-xs text-zinc-500 mt-0.5">{row.clientPhone}</div>}
+                        {row.clientPhone && <div className="text-xs text-theme-text-secondary mt-0.5 font-mono">{row.clientPhone}</div>}
                      </td>
-                     <td className="p-4 text-zinc-400">{row.pieceName}</td>
-                     <td className="p-4 text-zinc-400">{row.salesRepName || '-'}</td>
+                     <td className="p-4 text-theme-text-secondary">{row.pieceName}</td>
+                     <td className="p-4 text-theme-text-secondary">{row.salesRepName || '-'}</td>
                      <td className="p-4"><StatusPill status={row.status} /></td>
-                     <td className="p-4 text-right font-mono">{row.progress || 0}%</td>
+                     <td className="p-4 text-right font-mono tabular-nums text-theme-text-primary">{row.progress || 0}%</td>
                      <td className="p-4">
                         <button
                            disabled={!p}
                            onClick={(e) => p && handleExportPDF(e, p)}
-                           className={`p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-lux-gold transition-colors ${generatingPdfId === row.id ? 'animate-pulse text-lux-gold' : ''}`}
+                           className={`p-2 rounded-full hover:bg-white/10 text-theme-text-secondary hover:text-lux-gold transition-colors ${generatingPdfId === row.id ? 'animate-pulse text-lux-gold' : ''}`}
                            title="Export PDF"
                         >
                            <FileDown size={18} />
@@ -1003,14 +1240,37 @@ const ReportsPage: React.FC = () => {
            </div>
            <ReportMessage loading={projectReport.loading} error={projectReport.error} empty={!projectReport.loading && !projectReport.rows.length} />
            <ReportPagination page={projectPage} pageSize={25} total={projectReport.total} onPageChange={setProjectPage} />
-         </Card>
+          </Card>
+        </div>
       )}
 
       {activeTab === 'system' && (
-        <Card className="overflow-hidden">
-           <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 space-y-4">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-theme-input-bg border border-theme-border p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-theme-text-secondary text-xs font-bold uppercase mb-1 font-mono">Total Audit Logs</div>
+                <div className="text-2xl font-bold text-theme-text-primary font-mono tabular-nums">{systemReport.total}</div>
+              </div>
+              <div className="p-3 bg-lux-gold/10 border border-lux-gold/20 rounded-xl text-lux-gold">
+                <Clock size={20} />
+              </div>
+            </div>
+            <div className="bg-theme-input-bg border border-theme-border p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <div className="text-theme-text-secondary text-xs font-bold uppercase mb-1 font-mono">Visible On Page</div>
+                <div className="text-2xl font-bold text-theme-text-primary font-mono tabular-nums">{systemReport.rows.length}</div>
+              </div>
+              <div className="p-3 bg-zinc-800/60 border border-theme-border rounded-xl text-theme-text-secondary">
+                <Activity size={20} />
+              </div>
+            </div>
+          </div>
+
+          <Card className="overflow-hidden">
+           <div className="p-4 bg-theme-input-bg border-b border-theme-border space-y-4">
               <div className="flex justify-between items-center gap-3">
-                <h3 className="font-bold text-white">System Logs</h3>
+                <h3 className="font-bold text-theme-text-primary">System Logs</h3>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -1031,7 +1291,7 @@ const ReportsPage: React.FC = () => {
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
-               <thead className="bg-zinc-900 text-zinc-500 font-bold uppercase text-[11px]">
+               <thead className="bg-theme-table-header text-theme-text-secondary font-mono font-bold uppercase text-[10px] tracking-wider border-b border-theme-border">
                  <tr>
                    <th className="p-4">Date</th>
                    <th className="p-4">User</th>
@@ -1039,15 +1299,15 @@ const ReportsPage: React.FC = () => {
                    <th className="p-4">Details</th>
                  </tr>
                </thead>
-               <tbody className="divide-y divide-zinc-800/50">
+               <tbody className="divide-y divide-theme-border">
                  {systemReport.rows.map(log => (
-                   <tr key={log.id} className="hover:bg-zinc-900/30 transition-colors">
-                     <td className="p-4 text-zinc-400 font-mono text-xs whitespace-nowrap">{formatDateTime(log.createdAt)}</td>
+                   <tr key={log.id} className="hover:bg-theme-row-hover transition-colors">
+                     <td className="p-4 text-theme-text-secondary font-mono text-xs tabular-nums whitespace-nowrap">{formatDateTime(log.createdAt)}</td>
                      <td className="p-4 text-lux-cream font-medium">{log.actorName || 'System'}</td>
                      <td className="p-4">
                        <Badge color="blue">{log.action}</Badge>
                      </td>
-                     <td className="p-4 text-zinc-400">{log.details}</td>
+                     <td className="p-4 text-theme-text-secondary">{log.details}</td>
                    </tr>
                  ))}
                </tbody>
@@ -1056,6 +1316,7 @@ const ReportsPage: React.FC = () => {
             <ReportMessage loading={systemReport.loading} error={systemReport.error} empty={!systemReport.loading && !systemReport.rows.length} />
             <ReportPagination page={systemPage} pageSize={25} total={systemReport.total} onPageChange={setSystemPage} />
          </Card>
+        </div>
        )}
 
       {/* Project Detail Modal - Redesigned with Tabs */}
@@ -1970,127 +2231,6 @@ const ReportsPage: React.FC = () => {
             </Card>
          </div>
        )}
-      {/* ── Situational Test Harness Modal Overlay ─────────────────── */}
-      {showTestHarness && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in transition-all">
-          <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col border-purple-500/20 overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.15)] bg-zinc-950">
-            <div className="p-5 bg-zinc-900 border-b border-zinc-800 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-white flex items-center gap-2 text-lg">
-                  <Play size={18} className="text-purple-400 animate-pulse" />
-                  Diamond Ledger Situational Tests (ST-01 to ST-12)
-                </h3>
-                <p className="text-xs text-zinc-500 mt-0.5">Validating multi-location double-entry formulas and integrity controls.</p>
-              </div>
-              <button 
-                onClick={() => setShowTestHarness(false)}
-                className="text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-zinc-800/50 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {isRunningTests ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <RefreshCw className="text-purple-400 animate-spin" size={40} />
-                  <p className="text-sm text-zinc-400 font-bold animate-pulse">Running mathematical inventory validation assertions...</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-zinc-900/40 border border-zinc-800 p-4 rounded-2xl">
-                    <span className="text-xs text-zinc-400">
-                      Asserted: <strong className="text-purple-400">{testResults.length}</strong> test cases executed
-                    </span>
-                    <span className="text-xs text-zinc-400">
-                      Passed: <strong className="text-emerald-400">{testResults.filter(r => r.status === 'PASS').length}</strong> / {testResults.length}
-                    </span>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {testResults.map((res) => {
-                      const isPass = res.status === 'PASS';
-                      return (
-                        <div 
-                          key={res.id} 
-                          className={`border rounded-2xl p-4 transition-all duration-200 ${
-                            isPass 
-                              ? 'bg-emerald-950/10 border-emerald-900/30 hover:border-emerald-800/50' 
-                              : 'bg-red-950/10 border-red-900/30 hover:border-red-800/50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded font-mono ${
-                                  isPass ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/30' : 'bg-red-950 text-red-400 border border-red-800/30'
-                                }`}>
-                                  {res.id}
-                                </span>
-                                <h4 className="font-bold text-white text-sm">{res.name}</h4>
-                              </div>
-                              <p className="text-xs text-zinc-500 mt-1">{res.description}</p>
-                            </div>
-                            <div className="text-right">
-                              <span className={`text-xs font-black uppercase px-3 py-1 rounded-xl ${
-                                isPass ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                              }`}>
-                                {res.status}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 pt-3 border-t border-white/[0.04] space-y-2">
-                            <div className="grid grid-cols-2 gap-4 text-[11px] font-mono">
-                              <div>
-                                <span className="text-zinc-500 block text-[9px] uppercase tracking-wider font-bold">Expected Output</span>
-                                <span className="text-zinc-300 font-bold">{res.expected}</span>
-                              </div>
-                              <div>
-                                <span className="text-zinc-500 block text-[9px] uppercase tracking-wider font-bold">Actual Output</span>
-                                <span className={isPass ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{res.actual}</span>
-                              </div>
-                            </div>
-
-                            <div className="mt-2 bg-black/40 rounded-xl p-3 border border-white/[0.03]">
-                              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-black block mb-1">Execution Detail & Assertions</span>
-                              <ul className="list-disc pl-4 space-y-1">
-                                {res.details.map((d, idx) => (
-                                  <li key={idx} className="text-zinc-400 text-[10px] font-mono leading-relaxed text-left">{d}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 bg-zinc-900 border-t border-zinc-800 flex justify-end gap-2">
-              <Button onClick={() => setShowTestHarness(false)} variant="secondary">Close Portal</Button>
-              <Button 
-                onClick={async () => {
-                  setIsRunningTests(true);
-                  try {
-                    const res = await runDiamondSituationalTests();
-                    setTestResults(res);
-                  } catch (err: any) {
-                    showToast('Test Suite failed: ' + err.message);
-                  } finally {
-                    setIsRunningTests(false);
-                  }
-                }}
-                disabled={isRunningTests}
-              >
-                Re-Run Validation Suite
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
     </div>
   );
 };
