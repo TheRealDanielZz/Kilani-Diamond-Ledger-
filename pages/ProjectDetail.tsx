@@ -6,7 +6,7 @@ import { store } from '../services/store';
 import { Project, Role, DiamondBag, IssueRequest, DiamondSpec, ProjectCostSummary, ProgressStage, ProjectStatus, BagStatus, InventoryMovementType, ProjectNote, RepairDetailsV2, RepairStatus, EvidenceImage } from '../types';
 import { Card, Button, StatusPill, SetterAvatar, Badge, Input, Spinner, ProgressBar, SegmentedControl } from '../components/UI';
 import { ImageUpload, compressImage } from '../components/ImageUpload';
-import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck, Edit2 } from 'lucide-react';
+import { ArrowLeft, PackagePlus, RotateCcw, Calculator, Clock, Package, CheckCircle2, ChevronDown, UserPlus, ArrowRightLeft, GripHorizontal, AlertOctagon, AlertCircle, StickyNote, Camera, FileText, Send, Paperclip, Check, LayoutTemplate, PenTool, X, Trash2, ZoomIn, Layers, Loader2, AlertTriangle, Scale, RefreshCw, Box, ChevronRight, Image as ImageIcon, Coins, Truck, Calendar, UserCheck, Edit2, Copy, Share2 } from 'lucide-react';
 import { useToast } from '../App';
 import { FastEntryGrid } from '../components/FastEntryGrid';
 import { isMeleeLocation } from '../services/inventoryMath';
@@ -58,6 +58,65 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
   // Photo Delete Modal State
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<number | null>(null);
+
+  // Quick Copy & Web Share States
+  const [hasCopiedCode, setHasCopiedCode] = useState(false);
+
+  const handleCopyCode = async () => {
+    if (!project?.code) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(project.code);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = project.code;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setHasCopiedCode(true);
+      showToast(`Copied ${project.code} to clipboard`);
+      setTimeout(() => setHasCopiedCode(false), 2000);
+    } catch (err) {
+      console.warn('Failed to copy project code:', err);
+      showToast('Unable to copy code to clipboard');
+    }
+  };
+
+  const handleShareProject = async () => {
+    if (!project) return;
+    const shareTitle = `${project.code} — ${project.pieceName}`;
+    const shareText = `Kilani Diamond Ledger: ${project.code} (${project.pieceName})\nStatus: ${project.status}${project.clientName ? `\nClient: ${project.clientName}` : ''}${project.currentPercentComplete ? `\nProgress: ${project.currentPercentComplete}%` : ''}`;
+    const shareUrl = window.location.href;
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.info('Native share aborted/failed, falling back to clipboard copy', err);
+      }
+    }
+
+    // Fallback: Copy full summary + link to clipboard
+    try {
+      const copyPayload = `${shareText}\n${shareUrl}`;
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyPayload);
+      }
+      showToast('Project details & link copied to clipboard');
+    } catch {
+      showToast('Unable to share project');
+    }
+  };
 
   // Modals
   const [isRequesting, setIsRequesting] = useState(false);
@@ -1172,6 +1231,35 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
             <div className="min-w-0 flex-1">
                <div className="flex flex-wrap items-center gap-3 mb-2">
                   <h1 className="text-3xl md:text-4xl font-serif font-bold text-white tracking-tight break-words line-clamp-2 max-w-full leading-tight">{project.code}</h1>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-lux-gold/15 border border-white/10 hover:border-lux-gold/40 text-xs font-mono font-medium text-zinc-300 hover:text-lux-gold transition-all cursor-pointer shadow-sm active:scale-95"
+                    title="Copy Project Code"
+                    aria-label="Copy Project Code"
+                  >
+                    {hasCopiedCode ? (
+                      <>
+                        <Check size={13} className="text-emerald-400" />
+                        <span className="text-emerald-400 text-[11px] font-semibold">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} className="text-zinc-400 group-hover:text-lux-gold" />
+                        <span className="text-[11px]">Copy</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShareProject}
+                    className="md:hidden inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-lux-gold/15 border border-white/10 hover:border-lux-gold/40 text-xs font-mono font-medium text-zinc-300 hover:text-lux-gold transition-all cursor-pointer shadow-sm active:scale-95"
+                    title="Share project"
+                    aria-label="Share project"
+                  >
+                    <Share2 size={13} className="text-lux-gold" />
+                    <span className="text-[11px]">Share</span>
+                  </button>
                   <StatusPill status={project.status} />
                   {primaryMetal && (
                       <button type="button" onClick={canEditProjectDetails ? openMetalRevision : undefined} className={canEditProjectDetails ? 'inline-flex items-center gap-1 cursor-pointer' : 'cursor-default'} title={canEditProjectDetails ? 'Edit metal and purity' : isPickedUp ? 'Picked Up projects are read-only' : undefined}>
@@ -1316,6 +1404,16 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
             {/* Desktop Actions - Elevated Z-Index */}
             <div data-tour="project-actions" className="hidden md:flex flex-wrap gap-2 md:gap-3 relative z-30">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleShareProject}
+                icon={<Share2 size={15} className="text-lux-gold" />}
+                className="font-medium"
+                title="Share project specs or link"
+              >
+                Share
+              </Button>
               {!isManager && !isDesigner && canModifyProject && project.status === ProjectStatus.ACTIVE && (
                  <>
                    <Button size="sm" variant="secondary" onClick={() => setIsRequesting(true)} icon={<PackagePlus size={16} className="text-blue-400"/>}>Request</Button>
@@ -1380,7 +1478,13 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
       {/* MOBILE ACTION BAR - High Z-Index */}
       {project.status === ProjectStatus.ACTIVE && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 pb-[max(12px,env(safe-area-inset-bottom))] bg-[#16171D]/90 backdrop-blur-xl border-t border-white/10 z-[200] flex gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.4)] animate-in slide-in-from-bottom-2">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 p-3 pb-[max(12px,env(safe-area-inset-bottom))] bg-[#16171D]/90 backdrop-blur-xl border-t border-white/10 z-[200] flex gap-2.5 shadow-[0_-4px_20px_rgba(0,0,0,0.4)] animate-in slide-in-from-bottom-2">
+            <Button
+              className="px-3 shadow-none bg-[#23262F] hover:bg-[#2D313A] border border-white/5 shrink-0"
+              onClick={handleShareProject}
+              icon={<Share2 className="text-lux-gold" size={17} />}
+              title="Share project"
+            />
             {(!isManager && !isDesigner && canModifyProject) && (
                 <>
                 <Button className="flex-1 shadow-none bg-[#23262F] hover:bg-[#2D313A] border border-white/5" onClick={() => setIsRequesting(true)} icon={<PackagePlus className="text-blue-400"/>}>Request</Button>
