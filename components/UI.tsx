@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useId } from 'react';
 import { ProjectStatus, BagStatus } from '../types';
 import { Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { triggerHaptic } from '../utils/haptics';
 
 // Toast Component (Floating Glass with Physics)
 export const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
@@ -169,7 +170,10 @@ export const SegmentedControl: React.FC<{
             <button
               key={opt.value}
               type="button"
-              onClick={() => onChange(opt.value)}
+              onClick={() => {
+                if (!isActive) triggerHaptic('selection');
+                onChange(opt.value);
+              }}
               className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center transition-colors duration-200 cursor-pointer min-h-[36px] ${isActive ? 'text-black' : 'text-theme-text-secondary hover:text-theme-text-primary'}`}
             >
               {opt.label}
@@ -202,6 +206,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       if (!disabled && !loading) {
+          triggerHaptic(variant === 'danger' ? 'warning' : variant === 'primary' ? 'medium' : 'light');
           if (onClick) onClick(e);
       }
   };

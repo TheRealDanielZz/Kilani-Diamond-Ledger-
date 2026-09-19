@@ -29,6 +29,7 @@ import {
   formatLastOpenedRelative
 } from '../utils/projectOpenedTracker';
 import { transitionNavigate } from '../utils/transitionNavigate';
+import { triggerHaptic } from '../utils/haptics';
 
 export type SetterSortField = 'LAST_OPENED' | 'DUE_DATE' | 'PRIORITY' | 'CODE' | 'NAME' | 'PROGRESS';
 export type SortOrder = 'asc' | 'desc';
@@ -330,10 +331,12 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
     const isCompleting = nextStage.name === 'Complete';
 
     if (isCompleting && !isManager) {
+      triggerHaptic('warning');
       showToast("Only Managers can mark a project as fully complete.");
       return;
     }
 
+    triggerHaptic(isCompleting ? 'success' : 'medium');
     setAdvancingProjectId(project.id);
 
     // Optimistic UI update

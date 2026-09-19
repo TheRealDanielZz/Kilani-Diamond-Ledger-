@@ -4,6 +4,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { store } from './services/store';
 import { User, Role } from './types';
 import { requestPushPermission, onForegroundPush } from './services/push';
+import { triggerHaptic } from './utils/haptics';
 
 // Lazy loaded pages for performance
 const Login = lazy(() => import('./pages/Login'));
@@ -145,7 +146,10 @@ const App = () => {
   }
 
   return (
-    <ToastContext.Provider value={(msg) => setToastMsg(msg)}>
+    <ToastContext.Provider value={(msg) => {
+      triggerHaptic('light');
+      setToastMsg(msg);
+    }}>
       <ThemeProvider>
         <HashRouter>
           <TourProvider>
