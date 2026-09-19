@@ -10,23 +10,23 @@
 
 :root {
   /* ── Unified Semantic Surfaces ── */
-  --color-surface-base:    #121318;  /* Page background */
-  --color-surface-raised:  #1F2128;  /* Cards, modals */
+  --color-surface-base:    #0A0B0F;  /* Deep velvet bench canvas */
+  --color-surface-raised:  #13141C;  /* Frosted atelier cards, modals */
   --color-surface-input:   rgba(255, 255, 255, 0.03); /* Form inputs */
-  --color-surface-overlay: #1F2128;  /* Table headers, tab bars */
-  --color-sidebar:         rgba(0, 0, 0, 0.4);
+  --color-surface-overlay: #181924;  /* Table headers, tab bars */
+  --color-sidebar:         rgba(10, 11, 15, 0.6);
 
   /* ── Unified Semantic Text ── */
-  --color-on-surface:           #FFFFFF;
-  --color-on-surface-secondary: #A1A1AA;
-  --color-on-surface-muted:     #71717A;
+  --color-on-surface:           #F4F4F8;
+  --color-on-surface-secondary: #9496A1;
+  --color-on-surface-muted:     #686975;
 
   /* ── Unified Semantic Border ── */
   --color-border: rgba(255, 255, 255, 0.08);
 
-  /* ── Unified Semantic Accent ── */
-  --color-accent:     #F5C249;
-  --color-accent-dim: rgba(245, 194, 73, 0.2);
+  /* ── Unified Semantic Accent (Brushed 18k Champagne Gold) ── */
+  --color-accent:     #C5A059;
+  --color-accent-dim: rgba(197, 160, 89, 0.18);
 
   /* ── Legacy aliases → unified tokens (backward compatible) ── */
   --background-base:   var(--color-surface-base);
@@ -51,9 +51,9 @@
   --lux-input:    var(--color-surface-input);
 
   /* ── Tailwind color remapping (bg-zinc-900 etc. follow theme) ── */
-  --zinc-800: #2D313A;
-  --zinc-900: #1F2128;
-  --zinc-950: #16171D;
+  --zinc-800: #1E202B;
+  --zinc-900: #13141C;
+  --zinc-950: #0A0B0F;
 
   /* ── Status colors ── */
   --success: #10B981;
@@ -88,9 +88,9 @@
   /* ── Border ── */
   --color-border: rgba(0, 0, 0, 0.10);
 
-  /* ── Accent (deeper, richer warm gold) ── */
-  --color-accent:     #B8922A;
-  --color-accent-dim: rgba(184, 146, 42, 0.15);
+  /* ── Accent (deeper, richer warm atelier gold) ── */
+  --color-accent:     #A67D28;
+  --color-accent-dim: rgba(166, 125, 40, 0.15);
 
   /* ── Status (darker for light background contrast) ── */
   --success: #059669;

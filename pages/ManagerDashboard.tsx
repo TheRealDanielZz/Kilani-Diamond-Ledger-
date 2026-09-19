@@ -512,6 +512,16 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       ? store.getEvidenceImages().find(item => item.transactionId === countTx.id && item.transactionType === 'RETURN')
       : undefined;
 
+   const circulatingCarats = React.useMemo(() => {
+      const bags = store.getBags().filter(b => b.status === BagStatus.ISSUED);
+      const totalPcs = bags.reduce((sum, b) => sum + b.items.reduce((s2, i) => s2 + i.issuedPcs, 0), 0);
+      const totalCt = bags.reduce((sum, b) => sum + b.items.reduce((s2, i) => {
+         const spec = store.getSpecs().find(s => s.id === i.specId);
+         return s2 + (i.issuedPcs * (spec?.ctPerStone || 0));
+      }, 0), 0);
+      return { totalPcs, totalCt, bagCount: bags.length };
+   }, [returnBags, requests]);
+
    return (
       <div className="max-w-7xl mx-auto px-4 py-8 pb-32">
          <QuickRepairModal isOpen={isQuickRepairing} onClose={() => setIsQuickRepairing(false)} currentUser={currentUser} />
@@ -591,30 +601,75 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             </div>
          )}
 
-         <div data-tour="manager-header" className="flex flex-col md:flex-row justify-between items-end gap-4 mb-8">
+         <div data-tour="manager-header" className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-8">
             <div>
-               <h1 className="text-4xl font-bold text-theme-text-primary tracking-tight">Overview</h1>
-               <p className="text-xs text-theme-text-secondary font-medium uppercase tracking-[0.2em] mt-2 font-mono">Welcome, {currentUser.name}</p>
+               <h1 className="text-3xl sm:text-4xl font-bold text-theme-text-primary tracking-tight">Atelier Overview</h1>
+               <p className="text-xs text-theme-text-secondary font-medium mt-1">Welcome back, {currentUser.name}</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-8 md:gap-10">
+            <div className="flex flex-wrap items-center gap-4">
                <div data-tour="manager-new-project">
-                  <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={20} />}>New Project</Button>
+                  <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={18} />}>New Project</Button>
                </div>
             </div>
          </div>
 
+         {/* ─── PRIMARY ASSET OVERVIEW BAR (Variant E) ─── */}
+         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-8">
+            <div className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 hover:border-lux-gold/30 transition-colors">
+               <span className="text-xs text-theme-text-secondary font-medium block">Circulating Diamonds</span>
+               <div className="text-2xl font-bold text-theme-text-primary tracking-tight tabular-nums mt-1">
+                  {circulatingCarats.totalCt > 0 ? `${circulatingCarats.totalCt.toFixed(3)} ct` : `${circulatingCarats.totalPcs} pcs`}
+               </div>
+               <span className="text-[11px] text-theme-text-muted mt-1 block">
+                  {circulatingCarats.bagCount} active bags on benches
+               </span>
+            </div>
+
+            <div className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 hover:border-lux-gold/30 transition-colors">
+               <span className="text-xs text-theme-text-secondary font-medium block">Active Projects</span>
+               <div className="text-2xl font-bold text-theme-text-primary tracking-tight tabular-nums mt-1">
+                  {overviewProjectReport.total}
+               </div>
+               <span className="text-[11px] text-emerald-400 font-medium mt-1 block">
+                  Vault jobs in production
+               </span>
+            </div>
+
+            <div 
+               onClick={requests.length > 0 ? () => setShowAllRequests(true) : undefined}
+               className={`bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 hover:border-blue-500/30 transition-colors ${requests.length > 0 ? 'cursor-pointer' : ''}`}
+            >
+               <span className="text-xs text-theme-text-secondary font-medium block">Diamond Requests</span>
+               <div className="text-2xl font-bold text-blue-400 tracking-tight tabular-nums mt-1">
+                  {requests.length} Pending
+               </div>
+               <span className="text-[11px] text-theme-text-muted mt-1 block">
+                  Requires manager issue & seal
+               </span>
+            </div>
+
+            <div 
+               onClick={returnBags.length > 0 ? () => setShowAllReturns(true) : undefined}
+               className={`bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 hover:border-amber-500/30 transition-colors ${returnBags.length > 0 ? 'cursor-pointer' : ''}`}
+            >
+               <span className="text-xs text-theme-text-secondary font-medium block">Physical Bag Returns</span>
+               <div className="text-2xl font-bold text-amber-400 tracking-tight tabular-nums mt-1">
+                  {returnBags.length} To Reconcile
+               </div>
+               <span className="text-[11px] text-theme-text-muted mt-1 block">
+                  Awaiting scale weigh-in
+               </span>
+            </div>
+         </div>
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 items-start">
             {/* ─── REQUESTS CARD ─── */}
             <div data-tour="manager-requests">
                <Card
                   onClick={requests.length > 0 ? () => setShowAllRequests(true) : undefined}
-                  className={`p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${requests.length > 0 ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(59,130,246,0.12)] hover:border-blue-500/30' : ''}`}
+                  className={`p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${requests.length > 0 ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(59,130,246,0.1)] hover:border-blue-500/30' : ''}`}
                >
-                  {/* Glowing top line */}
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/80 via-indigo-500 to-cyan-400"></div>
-
                   <div className="flex justify-between items-start mb-5 relative z-10">
                      <div className="flex items-center gap-3">
                         <div className="bg-blue-500/10 text-blue-400 p-2.5 rounded-2xl border border-blue-500/20 shadow-sm"><Inbox size={20} /></div>
@@ -641,20 +696,32 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                               const totalStones = r.lines.reduce((sum, line) => sum + line.requestedPcs, 0);
 
                               return (
-                                 <div key={r.id} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center gap-3 group/item">
-                                    <div className="relative flex-shrink-0">
-                                       <SetterAvatar name={requester?.name || 'User'} color={requester?.setterColor} image={requester?.profilePhoto} size="md" />
-                                       <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-[#1c1e24]"></div>
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                       <div className="flex items-center gap-2">
-                                          <span className="font-bold text-theme-text-primary text-[13px] leading-tight">{project?.code || 'PROJECT'}</span>
-                                          <span className="text-[10px] text-zinc-500 font-semibold">{formatRelativeTime(r.requestedAt)}</span>
+                                 <div key={r.id} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-3 group/item hover:border-blue-500/20 transition-colors">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                       <div className="relative flex-shrink-0">
+                                          <SetterAvatar name={requester?.name || 'User'} color={requester?.setterColor} image={requester?.profilePhoto} size="md" />
+                                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-[#1c1e24]"></div>
                                        </div>
-                                       <div className="text-[10px] text-theme-text-secondary mt-0.5 font-medium truncate">
-                                          {requester?.name || 'Unknown'} · <span className="text-blue-400">{totalStones} stones</span>
+                                       <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                             <span className="font-bold text-theme-text-primary text-[13px] leading-tight">{project?.code || 'PROJECT'}</span>
+                                             <span className="text-[10px] text-zinc-500 font-semibold">{formatRelativeTime(r.requestedAt)}</span>
+                                          </div>
+                                          <div className="text-[11px] text-theme-text-secondary mt-0.5 font-medium truncate">
+                                             {requester?.name || 'Unknown'} · <span className="text-blue-400 font-semibold">{totalStones} stones</span>
+                                          </div>
                                        </div>
                                     </div>
+                                    <button
+                                       type="button"
+                                       onClick={(e) => {
+                                          e.stopPropagation();
+                                          setFulfillReq(r);
+                                       }}
+                                       className="px-3 py-1 bg-lux-gold hover:bg-[#d6b26d] text-black font-bold text-[11px] rounded-xl shadow-sm active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+                                    >
+                                       Issue
+                                    </button>
                                  </div>
                               );
                            })}
@@ -675,11 +742,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             <div data-tour="manager-returns">
                <Card
                   onClick={returnBags.length > 0 ? () => setShowAllReturns(true) : undefined}
-                  className={`p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${returnBags.length > 0 ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(245,158,11,0.12)] hover:border-amber-500/30' : ''}`}
+                  className={`p-6 flex flex-col relative overflow-hidden transition-all duration-300 ${returnBags.length > 0 ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(245,158,11,0.1)] hover:border-amber-500/30' : ''}`}
                >
-                  {/* Glowing top line */}
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500/80 via-orange-500 to-yellow-400"></div>
-
                   <div className="flex justify-between items-start mb-5 relative z-10">
                      <div className="flex items-center gap-3">
                         <div className="bg-amber-500/10 text-amber-500 p-2.5 rounded-2xl border border-amber-500/20 shadow-sm"><PackageCheck size={20} /></div>
@@ -708,20 +772,43 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                               const isPartial = !!tx;
 
                               return (
-                                 <div key={tx?.id || b.id || idx} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center gap-3 group/item">
-                                    <div className="relative flex-shrink-0">
-                                       <SetterAvatar name={returner?.name || 'User'} color={returner?.setterColor} image={returner?.profilePhoto} size="md" />
-                                       <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-[#1c1e24]"></div>
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                       <div className="flex items-center gap-2">
-                                          <span className="font-bold text-theme-text-primary text-[13px] leading-tight">Bag #{b.bagNumber}</span>
-                                          <span className="text-[10px] text-zinc-500 font-semibold">{date ? formatRelativeTime(date) : ''}</span>
+                                 <div key={tx?.id || b.id || idx} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-3 group/item hover:border-amber-500/20 transition-colors">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                       <div className="relative flex-shrink-0">
+                                          <SetterAvatar name={returner?.name || 'User'} color={returner?.setterColor} image={returner?.profilePhoto} size="md" />
+                                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-[#1c1e24]"></div>
                                        </div>
-                                       <div className="text-[10px] text-theme-text-secondary mt-0.5 font-medium truncate">
-                                          {returner?.name || 'Unknown'} · {project?.code || 'Proj'} · <span className={isPartial ? 'text-amber-500' : 'text-emerald-400'}>{isPartial ? 'Partial' : 'Full'}</span>
+                                       <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2">
+                                             <span className="font-bold text-theme-text-primary text-[13px] leading-tight">Bag #{b.bagNumber}</span>
+                                             <span className="text-[10px] text-zinc-500 font-semibold">{date ? formatRelativeTime(date) : ''}</span>
+                                          </div>
+                                          <div className="text-[11px] text-theme-text-secondary mt-0.5 font-medium truncate">
+                                             {returner?.name || 'Unknown'} · {project?.code || 'Proj'} · <span className={isPartial ? 'text-amber-500 font-semibold' : 'text-emerald-400 font-semibold'}>{isPartial ? 'Partial' : 'Full'}</span>
+                                          </div>
                                        </div>
                                     </div>
+                                    <button
+                                       type="button"
+                                       onClick={(e) => {
+                                          e.stopPropagation();
+                                          setCountBag(b);
+                                          setCountTx(tx || null);
+                                          if (tx) {
+                                             setCounts(tx.lines.reduce((a, l, i) => ({ ...a, [i]: l.returnedPcs }), {}));
+                                          } else {
+                                             setCounts(b.items.reduce((a, i, i2) => ({ ...a, [i2]: i.issuedPcs }), {}));
+                                          }
+                                          setBrokenCounts({});
+                                          setBrokenReason('');
+                                          setMixedMode(false);
+                                          setIsManagerEdit(false);
+                                          setEditableItems([...b.items]);
+                                       }}
+                                       className="px-3 py-1 bg-white/10 hover:bg-white/15 text-white font-bold text-[11px] rounded-xl border border-white/10 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+                                    >
+                                       Weigh In
+                                    </button>
                                  </div>
                               );
                            })}
@@ -752,7 +839,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass rounded-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500/80 via-indigo-500 to-cyan-400 z-10 rounded-t-2xl"></div>
                   <div className="px-5 py-4 flex justify-between items-center border-b border-white/5">
                      <div className="flex items-center gap-2.5">
                         <div className="bg-blue-500/10 text-blue-400 p-2 rounded-xl border border-blue-500/20"><Inbox size={18} /></div>
@@ -824,7 +910,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   className="relative w-full max-w-4xl max-h-[85vh] flex flex-col liquid-glass rounded-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                   onClick={e => e.stopPropagation()}
                >
-                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-amber-500/80 via-orange-500 to-yellow-400 z-10 rounded-t-2xl"></div>
                   <div className="px-5 py-4 flex justify-between items-center border-b border-white/5">
                      <div className="flex items-center gap-2.5">
                         <div className="bg-amber-500/10 text-amber-500 p-2 rounded-xl border border-amber-500/20"><PackageCheck size={18} /></div>

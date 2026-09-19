@@ -30,26 +30,17 @@ export const Spinner: React.FC<{ size?: 'sm' | 'md' }> = ({ size = 'md' }) => (
   <Loader2 className={`animate-spin ${size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'} text-current`} />
 );
 
-// Vitreous Card (Apple Style)
+// Vitreous Card (Apple Style & Atelier Glass)
 export const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: () => void; style?: React.CSSProperties }> = ({ children, className = '', onClick, style }) => (
   <div 
     onClick={onClick} 
     className={`
       liquid-glass relative transition-all duration-300 group
-      ${onClick ? 'cursor-pointer hover:bg-white/10 hover:-translate-y-[4px] active:scale-[0.98] active:translate-y-0' : ''} 
+      ${onClick ? 'cursor-pointer hover:bg-white/[0.06] hover:border-lux-gold/30 active:scale-[0.99]' : ''} 
       ${className}
     `}
     style={style}
   >
-    {/* Retained liquid glass styling without excessive interactive glow noise */}
-    {/* Texture Overlay */}
-    <div 
-      className="absolute inset-0 pointer-events-none opacity-[0.04] mix-blend-overlay"
-      style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-        backgroundSize: '150px 150px'
-      }}
-    ></div>
     {children}
   </div>
 );
@@ -109,38 +100,29 @@ export const ControlTile: React.FC<{
       className={`
         relative p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 group
         ${vibrant ? 'liquid-glass-glow text-lux-gold border-lux-gold/30' : 'liquid-glass text-theme-text-primary hover:border-lux-gold/30'}
-        hover:-translate-y-1 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)]
+        hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)]
         ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}
         ${className}
       `}
     >
-      {/* Texture Overlay */}
-      <div 
-        className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay rounded-2xl"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-          backgroundSize: '150px 150px'
-        }}
-      ></div>
-
       <div className="flex justify-between items-start mb-3 relative z-10">
         <div className="flex items-center gap-2.5">
           {icon && (
             <div className={`
-              p-2.5 rounded-2xl backdrop-blur-md shadow-inner transition-transform duration-300 group-hover:scale-105
+              p-2.5 rounded-xl backdrop-blur-md shadow-inner transition-transform duration-300 group-hover:scale-105
               ${vibrant ? 'bg-lux-gold/20 text-lux-gold' : 'bg-theme-input-bg border border-theme-border text-theme-text-primary'}
             `}>
               {icon}
             </div>
           )}
-          <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-theme-text-secondary font-mono">{title}</span>
+          <span className="text-xs font-semibold text-theme-text-secondary tracking-normal">{title}</span>
         </div>
         {badge && <div className="shrink-0">{badge}</div>}
       </div>
 
       <div className="flex items-end justify-between gap-4 mt-1 relative z-10">
         <div className="min-w-0">
-          <div className="text-2xl sm:text-3xl font-mono tabular-nums font-black tracking-tight mb-1 drop-shadow-sm group-hover:text-lux-gold transition-colors duration-300 truncate">
+          <div className="text-2xl sm:text-3xl tabular-nums font-bold tracking-tight mb-1 text-theme-text-primary drop-shadow-sm group-hover:text-lux-gold transition-colors duration-300 truncate">
             {value}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -158,7 +140,7 @@ export const ControlTile: React.FC<{
         </div>
         {sparklineData && sparklineData.length > 0 && (
           <div className="pb-1 select-none pointer-events-none group-hover:scale-105 transition-transform duration-300 shrink-0">
-            <Sparkline data={sparklineData} color={vibrant ? '#F5C249' : '#60A5FA'} />
+            <Sparkline data={sparklineData} color={vibrant ? '#C5A059' : '#60A5FA'} />
           </div>
         )}
       </div>
@@ -218,8 +200,8 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   const sizes = { sm: "px-5 py-2 text-[12px] h-10", md: "px-7 py-3 text-[14px] h-12", lg: "px-10 py-5 text-base h-14" };
   
   const variants = {
-    primary: "bg-lux-gold text-black shadow-glow hover:shadow-glow-hover hover:bg-[#ffcf5c]",
-    secondary: "bg-white/5 backdrop-blur-md text-theme-text-primary border border-theme-border hover:bg-white/10",
+    primary: "bg-lux-gold text-black shadow-glow hover:shadow-glow-hover hover:brightness-105 active:scale-[0.97]",
+    secondary: "bg-white/[0.04] backdrop-blur-xl text-theme-text-primary border border-theme-border hover:bg-white/[0.08] active:scale-[0.97]",
     danger: "bg-red-500/10 backdrop-blur-md text-red-400 border border-red-500/20 hover:bg-red-500/20",
     ghost: "bg-transparent text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5",
     outline: "bg-transparent text-theme-text-primary border border-theme-border hover:bg-white/5",
@@ -249,7 +231,7 @@ export const Badge: React.FC<{ children: React.ReactNode; color?: 'green' | 'blu
     gray: 'bg-theme-input-bg text-theme-text-secondary border-theme-border',
   };
   return (
-    <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${colors[color]} uppercase tracking-wider font-mono backdrop-blur-md`}>
+    <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${colors[color]} tracking-normal backdrop-blur-md`}>
       {children}
     </span>
   );
@@ -295,7 +277,7 @@ export const FieldLabel: React.FC<{
 }> = ({ htmlFor, children, required, className = '' }) => (
   <label
     htmlFor={htmlFor}
-    className={`field-label block text-[10px] font-bold text-theme-text-secondary mb-2 uppercase tracking-[0.2em] ml-1 transition-colors group-focus-within:text-lux-gold font-mono ${className}`}
+    className={`field-label block text-xs font-semibold text-theme-text-secondary mb-1.5 ml-0.5 transition-colors group-focus-within:text-lux-gold ${className}`}
   >
     {children}
     {required && <span className="text-lux-gold ml-1" title="Required">*</span>}
