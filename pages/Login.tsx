@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Card } from '../components/UI';
-import { Gem, ArrowLeft, Mail } from 'lucide-react';
+import { Gem, ArrowLeft, Mail, Fingerprint } from 'lucide-react';
 import { store } from '../services/store';
 
 const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boolean> }> = ({ onLogin }) => {
@@ -12,8 +12,24 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
   
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check saved email from previous session
+    const saved = localStorage.getItem('kilani_last_user_email');
+    if (saved && !email) setEmail(saved);
+
+    // Modern Web Guidance: Detect platform biometric authenticators (Touch ID, Face ID, Windows Hello)
+    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
+      if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+          .then(avail => setBiometricsAvailable(avail))
+          .catch(() => setBiometricsAvailable(false));
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,8 +37,10 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
     setError('');
     
     try {
-        const success = await onLogin(email.trim(), password);
+        const cleanEmail = email.trim();
+        const success = await onLogin(cleanEmail, password);
         if (success) {
+           localStorage.setItem('kilani_last_user_email', cleanEmail);
            navigate('/');
         } else {
            setError('Account exists but has no access to this app. Contact Manager.');
@@ -62,6 +80,30 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
       if (e.code === 'auth/user-not-found') msg = "No account found with this email.";
       if (e.code === 'auth/invalid-email') msg = "Invalid email format.";
       setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    setError('');
+    const cleanEmail = email.trim() || localStorage.getItem('kilani_last_user_email') || '';
+    if (!cleanEmail) {
+      setError('Enter your email once to enable biometric workbench sign-in.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const success = await onLogin(cleanEmail);
+      if (success) {
+        localStorage.setItem('kilani_last_user_email', cleanEmail);
+        navigate('/');
+      } else {
+        setError('Biometric sign-in could not verify account.');
+      }
+    } catch (err: any) {
+      console.error('Biometric login error:', err);
+      setError('Biometric verification cancelled or unavailable.');
     } finally {
       setLoading(false);
     }
@@ -116,6 +158,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
                 id="reset-email"
                 label="Email Address" 
                 type="email" 
+                required
                 placeholder="name@company.com" 
                 value={email} 
                 onChange={(e) => setEmail(e.target.value)} 
@@ -141,9 +184,29 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
           </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in">
-              <Input id="login-email" label="Email" type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
+              <Input 
+                id="login-email" 
+                label="Email" 
+                type="email" 
+                required 
+                placeholder="name@company.com" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                autoComplete="username webauthn" 
+                autoFocus 
+              />
               <div>
-                <Input id="login-password" label="Password" type="password" placeholder="••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+                <Input 
+                  id="login-password" 
+                  label="Password" 
+                  type="password" 
+                  required 
+                  minLength={6}
+                  placeholder="••••••" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  autoComplete="current-password" 
+                />
                 <div className="text-right mt-1">
                    <button 
                       type="button" 
@@ -158,6 +221,18 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
               {error && <p className="text-sm text-red-400 bg-red-950/20 p-3 rounded-xl text-center border border-red-900/30 backdrop-blur-sm animate-in slide-in-from-top-2">{error}</p>}
               
               <Button type="submit" className="w-full h-14 text-base shadow-glow" size="lg" loading={loading}>Sign In</Button>
+              
+              {biometricsAvailable && (
+                <button
+                  type="button"
+                  onClick={handleBiometricLogin}
+                  disabled={loading}
+                  className="w-full h-12 rounded-2xl border border-lux-gold/20 bg-lux-gold/5 text-lux-gold hover:bg-lux-gold/15 hover:border-lux-gold/40 flex items-center justify-center gap-2 text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer active:scale-[0.98]"
+                >
+                  <Fingerprint size={18} className="text-lux-gold" />
+                  Workbench Touch ID / Face ID
+                </button>
+              )}
           </form>
         )}
       </Card>

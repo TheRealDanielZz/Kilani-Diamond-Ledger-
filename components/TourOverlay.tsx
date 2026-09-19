@@ -24,22 +24,28 @@ export const TourOverlay: React.FC = () => {
   }, [currentStep]);
 
   useEffect(() => {
-    const handleResize = () => {
-        setWindowSize({ w: window.innerWidth, h: window.innerHeight });
-        updateRect();
-    };
-    
-    // Track scrolling to keep spotlight pinned to element
-    const handleScroll = () => {
-        updateRect();
+    let ticking = false;
+    const throttledUpdate = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          updateRect();
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleScroll, true); // Capture phase for nested scrolls
+    const handleResize = () => {
+      setWindowSize({ w: window.innerWidth, h: window.innerHeight });
+      throttledUpdate();
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    window.addEventListener('scroll', throttledUpdate, { capture: true, passive: true });
     
     return () => {
-        window.removeEventListener('resize', handleResize);
-        window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', throttledUpdate, true);
     };
   }, [updateRect]);
 

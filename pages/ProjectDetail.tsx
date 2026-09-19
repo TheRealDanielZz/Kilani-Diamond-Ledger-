@@ -2009,7 +2009,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                 <div className="flex flex-col gap-3">
                  {bags.length === 0 ? <p className="text-zinc-500 italic p-4 text-center border border-dashed border-zinc-800 bg-transparent rounded-3xl">No bags issued.</p> : 
                     bags.map(b => (
-                       <div key={b.id} className="bg-[#1C1E24]/60 backdrop-blur-3xl rounded-2xl border border-white/[0.05] p-6 relative overflow-hidden transition-all hover:bg-[#252830]/80">
+                       <div key={b.id} className="deferred-card bg-[#1C1E24]/60 backdrop-blur-3xl rounded-2xl border border-white/[0.05] p-6 relative overflow-hidden transition-all hover:bg-[#252830]/80">
                           <div className="flex justify-between items-start mb-6">
                              <div className="flex items-center gap-4">
                                  <div className="w-12 h-12 rounded-2xl bg-black/40 border border-zinc-800 flex items-center justify-center shrink-0 shadow-inner">
@@ -2174,7 +2174,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                 <div className="flex flex-col gap-3">
                  {completedRequests.length === 0 ? <p className="text-zinc-500 italic p-4 text-center border border-dashed border-zinc-800 bg-transparent rounded-3xl">No completed requests.</p> : 
                     completedRequests.map(r => (
-                       <div key={r.id} className="bg-[#1C1E24]/30 backdrop-blur-3xl rounded-2xl border border-white/[0.03] p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all">
+                       <div key={r.id} className="deferred-card bg-[#1C1E24]/30 backdrop-blur-3xl rounded-2xl border border-white/[0.03] p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all">
                           <div className="flex items-center gap-4">
                              <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
                                 r.status === 'CANCELLED'

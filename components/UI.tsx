@@ -144,47 +144,33 @@ export const ControlTile: React.FC<{
   );
 };
 
-// iOS-Style Segmented Control
+// iOS-Style Segmented Control (GPU-accelerated transform)
 export const SegmentedControl: React.FC<{
   options: { label: string; value: string }[];
   value: string;
   onChange: (val: any) => void;
 }> = ({ options, value, onChange }) => {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-
-  useEffect(() => {
-    const index = options.findIndex(o => o.value === value);
-    setActiveIndex(index !== -1 ? index : 0);
-  }, [value, options]);
-
-  useEffect(() => {
-    if (containerRef.current) {
-      const activeEl = containerRef.current.children[activeIndex] as HTMLElement;
-      if (activeEl) {
-        setIndicatorStyle({
-          left: activeEl.offsetLeft,
-          width: activeEl.offsetWidth
-        });
-      }
-    }
-  }, [activeIndex, options]);
+  const activeIndex = Math.max(0, options.findIndex(o => o.value === value));
+  const optionWidthPercent = options.length > 0 ? 100 / options.length : 100;
 
   return (
-    <div className="relative bg-theme-input-bg p-1 rounded-full flex border border-theme-border backdrop-blur-md">
+    <div className="relative bg-theme-input-bg p-1 rounded-full flex border border-theme-border backdrop-blur-md overflow-hidden">
       <div 
-        className="absolute top-1 bottom-1 bg-lux-gold rounded-full shadow-[0_2px_8px_rgba(245,194,73,0.3)] transition-all duration-300 ease-out z-0"
-        style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
+        className="absolute top-1 bottom-1 bg-lux-gold rounded-full shadow-[0_2px_8px_rgba(245,194,73,0.3)] transition-transform duration-300 ease-out z-0 pointer-events-none"
+        style={{ 
+          width: `calc(${optionWidthPercent}% - 4px)`, 
+          transform: `translateX(calc(${activeIndex * 100}% + 2px))` 
+        }}
       />
-      <div className="flex w-full relative z-10" ref={containerRef}>
+      <div className="flex w-full relative z-10">
         {options.map((opt) => {
           const isActive = opt.value === value;
           return (
             <button
               key={opt.value}
+              type="button"
               onClick={() => onChange(opt.value)}
-              className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center transition-colors duration-200 ${isActive ? 'text-black' : 'text-theme-text-secondary hover:text-theme-text-primary'}`}
+              className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider text-center transition-colors duration-200 cursor-pointer min-h-[36px] ${isActive ? 'text-black' : 'text-theme-text-secondary hover:text-theme-text-primary'}`}
             >
               {opt.label}
             </button>
@@ -274,18 +260,33 @@ export const SetterAvatar: React.FC<{ name: string; color?: string; size?: 'sm' 
   );
 };
 
-export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { label?: string, icon?: React.ReactNode }>(
-  ({ label, icon, className = '', id, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { 
+  label?: string; 
+  icon?: React.ReactNode; 
+  error?: string; 
+  hint?: string;
+}>(
+  ({ label, icon, className = '', id, error, hint, required, ...props }, ref) => {
     const defaultId = useId();
     const inputId = id || defaultId;
+    const hintId = `${inputId}-hint`;
+    const errorId = `${inputId}-error`;
+
+    const describedBy = [
+      hint ? hintId : null,
+      error ? errorId : null,
+      props['aria-describedby'] || null
+    ].filter(Boolean).join(' ') || undefined;
+
     return (
-      <div className="w-full group">
+      <div className="w-full group field-container">
         {label && (
           <label 
             htmlFor={inputId} 
-            className="block text-[10px] font-bold text-theme-text-secondary mb-2 uppercase tracking-[0.2em] ml-1 transition-colors group-focus-within:text-lux-gold font-mono"
+            className="field-label block text-[10px] font-bold text-theme-text-secondary mb-2 uppercase tracking-[0.2em] ml-1 transition-colors group-focus-within:text-lux-gold font-mono"
           >
             {label}
+            {required && <span className="text-lux-gold ml-1" title="Required">*</span>}
           </label>
         )}
         <div className="relative">
@@ -293,6 +294,9 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
             <input 
               ref={ref}
               id={inputId}
+              required={required}
+              aria-describedby={describedBy}
+              aria-invalid={error ? 'true' : undefined}
               className={`
                   block w-full rounded-2xl glass-input
                   text-theme-text-primary placeholder-zinc-600 
@@ -304,6 +308,16 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
               {...props} 
             />
         </div>
+        {hint && !error && (
+          <p id={hintId} className="text-[11px] text-theme-text-muted mt-1.5 ml-1">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={errorId} className="text-[11px] text-red-400 mt-1.5 ml-1 flex items-center gap-1 font-medium animate-in fade-in">
+            {error}
+          </p>
+        )}
       </div>
     );
   }
@@ -411,28 +425,49 @@ export const Modal: React.FC<{
   footer?: React.ReactNode;
 }> = ({ isOpen, onClose, title, children, footer }) => {
   const titleId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isOpen) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else {
+      if (dialog.open) {
+        dialog.close();
+      }
+    }
+  }, [isOpen]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+    if (e.target === dialogRef.current) {
+      onClose();
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div 
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-          role="dialog"
+        <dialog 
+          ref={dialogRef}
+          className="native-modal"
           aria-modal="true"
           aria-labelledby={titleId}
+          onCancel={(e) => {
+            e.preventDefault();
+            onClose();
+          }}
+          onClick={handleBackdropClick}
         >
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm" 
-            onClick={onClose}
-          />
           <motion.div 
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="w-full max-w-md relative z-10"
+            className="w-full max-w-md relative mx-auto my-auto"
+            onClick={(e) => e.stopPropagation()}
           >
             <Card className="w-full shadow-2xl border-theme-border">
               <div className="p-6 border-b border-theme-border">
@@ -448,7 +483,7 @@ export const Modal: React.FC<{
               )}
             </Card>
           </motion.div>
-        </div>
+        </dialog>
       )}
     </AnimatePresence>
   );

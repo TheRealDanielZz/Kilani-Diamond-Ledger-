@@ -1644,7 +1644,7 @@ const InventoryPage: React.FC = () => {
                             <tr 
                               id={`row-${item.spec.id}`}
                               onClick={() => setExpandedMeleeSpecId(expandedMeleeSpecId === item.spec.id ? null : item.spec.id)}
-                              className={`hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/[0.02]' : ''}`}
+                              className={`deferred-row hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedMeleeSpecId === item.spec.id ? 'bg-lux-gold/[0.02]' : ''}`}
                             >
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
@@ -1890,7 +1890,7 @@ const InventoryPage: React.FC = () => {
                             <tr 
                               id={`row-${d.id}`}
                               onClick={() => handleToggleExpand(d.id, d.place, d.code, d.notes)}
-                              className={`hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedDiamondId === d.id ? 'bg-lux-gold/[0.02]' : ''}`}
+                              className={`deferred-row hover:bg-lux-gold/[0.03] active:bg-lux-gold/[0.05] cursor-pointer group transition-all duration-200 ${expandedDiamondId === d.id ? 'bg-lux-gold/[0.02]' : ''}`}
                             >
                               <td className={`px-3 py-3 font-bold text-xs transition-colors duration-200 ${expandedDiamondId === d.id ? 'text-lux-gold' : 'text-lux-cream'}`}>
                                 <div className="flex items-center gap-1.5">

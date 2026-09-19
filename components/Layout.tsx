@@ -7,6 +7,7 @@ import { SetterAvatar } from './UI';
 import { NotificationCenter } from './NotificationCenter';
 import { ThemeToggle } from './ThemeToggle';
 import { store } from '../services/store';
+import { transitionNavigate } from '../utils/transitionNavigate';
 
 export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ user, onLogout }) => {
   const location = useLocation();
@@ -21,23 +22,32 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
   
   const NavItem = ({ to, icon: Icon, label }: any) => {
     const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+    const handleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setMobileMenuOpen(false);
+      transitionNavigate(navigate, to);
+    };
     return (
-      <Link to={to} onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-4 px-5 py-3.5 rounded-[1.25rem] text-[14px] font-medium transition-all mb-1 ${isActive ? 'bg-lux-gold/15 text-lux-gold font-bold shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]' : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-row-hover'}`}>
+      <a href={`#${to}`} onClick={handleClick} className={`flex items-center gap-4 px-5 py-3.5 rounded-[1.25rem] text-[14px] font-medium transition-all mb-1 cursor-pointer ${isActive ? 'bg-lux-gold/15 text-lux-gold font-bold shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]' : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-row-hover'}`}>
         <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
         <span>{label}</span>
-      </Link>
+      </a>
     );
   };
 
   const BottomNavItem = ({ to, icon: Icon, label, dataTour }: any) => {
     const isActive = location.pathname === to;
+    const handleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      transitionNavigate(navigate, to);
+    };
     return (
-      <Link to={to} data-tour={dataTour} className={`flex flex-col items-center justify-center w-full py-1 relative z-10 group ${isActive ? 'text-white' : 'text-zinc-500'}`}>
+      <a href={`#${to}`} onClick={handleClick} data-tour={dataTour} className={`flex flex-col items-center justify-center w-full py-1 relative z-10 group cursor-pointer ${isActive ? 'text-white' : 'text-zinc-500'}`}>
         <div className={`p-2.5 rounded-2xl transition-colors duration-500 ${isActive ? 'bg-white/10' : ''}`}>
            <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
         </div>
         <span className={`text-[10px] mt-1 font-semibold tracking-wide transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-70'}`}>{label}</span>
-      </Link>
+      </a>
     );
   };
 
