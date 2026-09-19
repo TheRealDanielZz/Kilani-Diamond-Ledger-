@@ -32,14 +32,39 @@ function saveStoredQueue(queue: PendingMutation[]): void {
   }
 }
 
+export type QueueChangeListener = (pendingCount: number) => void;
+
 export class OfflineMutationQueue {
   private handlers = new Map<string, (payload: any) => Promise<unknown>>();
+  private listeners = new Set<QueueChangeListener>();
   private isFlushing = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => void this.flush());
     }
+  }
+
+  /**
+   * Subscribe to queue size updates for reactive UI banners
+   */
+  subscribe(listener: QueueChangeListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getPendingCount());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyListeners(): void {
+    const count = this.getPendingCount();
+    this.listeners.forEach(fn => {
+      try {
+        fn(count);
+      } catch (err) {
+        console.error('[offlineQueue] Listener error:', err);
+      }
+    });
   }
 
   /**
@@ -82,6 +107,7 @@ export class OfflineMutationQueue {
     queue.push(mutation);
     saveStoredQueue(queue);
     console.log(`[offlineQueue] Queued offline mutation [${type}]:`, mutation.id);
+    this.notifyListeners();
   }
 
   /**
@@ -131,6 +157,7 @@ export class OfflineMutationQueue {
 
     saveStoredQueue(remainingQueue);
     this.isFlushing = false;
+    this.notifyListeners();
     return { processed, failed };
   }
 }

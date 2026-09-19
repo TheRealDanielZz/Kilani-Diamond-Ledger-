@@ -28,6 +28,7 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { TourProvider } from './components/TourContext';
 import { TourOverlay } from './components/TourOverlay';
 import { ThemeProvider } from './components/ThemeContext';
+import { NetworkStatusIndicator } from './components/NetworkStatusIndicator';
 
 const ToastContext = createContext<(msg: string) => void>(() => {});
 export const useToast = () => useContext(ToastContext);
@@ -149,6 +150,7 @@ const App = () => {
         <HashRouter>
           <TourProvider>
               {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg(null)} />}
+              <NetworkStatusIndicator />
               <InstallPrompt />
               <TourOverlay />
 
