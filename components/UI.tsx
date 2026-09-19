@@ -30,13 +30,13 @@ export const Spinner: React.FC<{ size?: 'sm' | 'md' }> = ({ size = 'md' }) => (
   <Loader2 className={`animate-spin ${size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'} text-current`} />
 );
 
-// Vitreous Card (Apple Style & Atelier Glass)
+// Atelier Content Card (Apple HIG Layer Discipline: standard surface material, not floating glass)
 export const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: () => void; style?: React.CSSProperties }> = ({ children, className = '', onClick, style }) => (
   <div 
     onClick={onClick} 
     className={`
-      liquid-glass relative transition-all duration-300 group
-      ${onClick ? 'cursor-pointer hover:bg-white/[0.06] hover:border-lux-gold/30 active:scale-[0.99]' : ''} 
+      bg-theme-card-bg border border-theme-border rounded-2xl relative transition-all duration-300 group shadow-sm
+      ${onClick ? 'cursor-pointer hover:border-lux-gold/35 hover:shadow-[0_8px_24px_rgba(0,0,0,0.25)] active:scale-[0.99]' : ''} 
       ${className}
     `}
     style={style}
@@ -99,8 +99,8 @@ export const ControlTile: React.FC<{
       onClick={onClick}
       className={`
         relative p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 group
-        ${vibrant ? 'liquid-glass-glow text-lux-gold border-lux-gold/30' : 'liquid-glass text-theme-text-primary hover:border-lux-gold/30'}
-        hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)]
+        ${vibrant ? 'bg-lux-gold/10 border-lux-gold/30 text-lux-gold shadow-sm' : 'bg-theme-card-bg border border-theme-border text-theme-text-primary hover:border-lux-gold/30'}
+        hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.3)]
         ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}
         ${className}
       `}
@@ -197,7 +197,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
 }> = ({ children, variant = 'primary', size = 'md', className = '', icon, loading, disabled, onClick, type = 'button', ...props }) => {
   
   const base = "inline-flex items-center justify-center rounded-2xl font-bold transition-all duration-300 focus:outline-none tracking-wide active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed select-none relative overflow-hidden touch-manipulation cursor-pointer min-h-[44px] z-10";
-  const sizes = { sm: "px-5 py-2 text-[12px] h-10", md: "px-7 py-3 text-[14px] h-12", lg: "px-10 py-5 text-base h-14" };
+  const sizes = { sm: "px-5 py-2 text-[12px] min-h-[44px]", md: "px-7 py-3 text-[14px] min-h-[48px]", lg: "px-10 py-4 text-base min-h-[52px]" };
   
   const variants = {
     primary: "bg-lux-gold text-black shadow-glow hover:shadow-glow-hover hover:brightness-105 active:scale-[0.97]",
@@ -728,7 +728,7 @@ export const ModalHeader: React.FC<{
     <button
       type="button"
       onClick={onClose}
-      className="w-9 h-9 rounded-xl bg-theme-input-bg border border-theme-border flex items-center justify-center text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-row-hover transition-all active:scale-95 shrink-0"
+      className="w-11 h-11 rounded-2xl bg-theme-input-bg border border-theme-border flex items-center justify-center text-theme-text-muted hover:text-theme-text-primary hover:bg-theme-row-hover transition-all active:scale-95 shrink-0 cursor-pointer"
       aria-label="Close modal"
     >
       <X size={18} />

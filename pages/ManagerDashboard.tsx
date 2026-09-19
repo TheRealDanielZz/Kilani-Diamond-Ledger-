@@ -705,10 +705,10 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                        <div className="min-w-0 flex-1">
                                           <div className="flex items-center gap-2">
                                              <span className="font-bold text-theme-text-primary text-[13px] leading-tight">{project?.code || 'PROJECT'}</span>
-                                             <span className="text-[10px] text-zinc-500 font-semibold">{formatRelativeTime(r.requestedAt)}</span>
+                                             <span className="text-[10px] text-theme-text-muted font-mono">{formatRelativeTime(r.requestedAt)}</span>
                                           </div>
                                           <div className="text-[11px] text-theme-text-secondary mt-0.5 font-medium truncate">
-                                             {requester?.name || 'Unknown'} · <span className="text-blue-400 font-semibold">{totalStones} stones</span>
+                                             {requester?.name || 'User'} · <span className="text-blue-400 font-semibold">{totalStones} stones</span>
                                           </div>
                                        </div>
                                     </div>
@@ -718,9 +718,9 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                           e.stopPropagation();
                                           setFulfillReq(r);
                                        }}
-                                       className="px-3 py-1 bg-lux-gold hover:bg-[#d6b26d] text-black font-bold text-[11px] rounded-xl shadow-sm active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+                                       className="min-h-[38px] px-3.5 py-2 bg-lux-gold hover:bg-[#d6b26d] text-black font-bold text-xs rounded-xl shadow-sm active:scale-95 transition-all flex-shrink-0 cursor-pointer"
                                     >
-                                       Issue
+                                       Issue Bag
                                     </button>
                                  </div>
                               );
@@ -781,10 +781,10 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                        <div className="min-w-0 flex-1">
                                           <div className="flex items-center gap-2">
                                              <span className="font-bold text-theme-text-primary text-[13px] leading-tight">Bag #{b.bagNumber}</span>
-                                             <span className="text-[10px] text-zinc-500 font-semibold">{date ? formatRelativeTime(date) : ''}</span>
+                                             <span className="text-[10px] text-theme-text-muted font-mono">{date ? formatRelativeTime(date) : ''}</span>
                                           </div>
                                           <div className="text-[11px] text-theme-text-secondary mt-0.5 font-medium truncate">
-                                             {returner?.name || 'Unknown'} · {project?.code || 'Proj'} · <span className={isPartial ? 'text-amber-500 font-semibold' : 'text-emerald-400 font-semibold'}>{isPartial ? 'Partial' : 'Full'}</span>
+                                             {returner?.name || 'User'} · {project?.code || 'Proj'} · <span className={isPartial ? 'text-amber-500 font-semibold' : 'text-emerald-400 font-semibold'}>{isPartial ? 'Partial' : 'Full'}</span>
                                           </div>
                                        </div>
                                     </div>
@@ -805,7 +805,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                                           setIsManagerEdit(false);
                                           setEditableItems([...b.items]);
                                        }}
-                                       className="px-3 py-1 bg-white/10 hover:bg-white/15 text-white font-bold text-[11px] rounded-xl border border-white/10 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+                                       className="min-h-[38px] px-3.5 py-2 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl border border-white/10 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
                                     >
                                        Weigh In
                                     </button>

@@ -418,23 +418,26 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
         </div>
       </div>
 
-      {/* Segmented Tab Bar (Dark Luxury Foxcrypto Style) */}
+      {/* Segmented Tab Bar (Apple HIG Glass / Semantic) */}
       <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        <div className="relative bg-[#1F2128] p-1 rounded-2xl flex border border-white/10 shadow-inner max-w-md w-full sm:w-auto">
+        <div className="relative bg-theme-input-bg p-1 rounded-2xl flex border border-theme-border shadow-inner max-w-md w-full sm:w-auto">
           <button
             type="button"
-            onClick={() => setActiveTab('ACTIVE')}
-            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+            onClick={() => {
+              triggerHaptic('selection');
+              setActiveTab('ACTIVE');
+            }}
+            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${
               activeTab === 'ACTIVE'
-                ? 'bg-lux-gold text-black shadow-glow font-bold'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-lux-gold text-black shadow-sm font-bold'
+                : 'text-theme-text-secondary hover:text-theme-text-primary'
             }`}
           >
             <Layers size={14} />
             <span>Active Projects</span>
             <span
               className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-                activeTab === 'ACTIVE' ? 'bg-black/20 text-black' : 'bg-white/10 text-zinc-300'
+                activeTab === 'ACTIVE' ? 'bg-black/20 text-black' : 'bg-white/10 text-theme-text-primary'
               }`}
             >
               {activeProjects.length}
@@ -443,18 +446,21 @@ const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
 
           <button
             type="button"
-            onClick={() => setActiveTab('COMPLETED')}
-            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+            onClick={() => {
+              triggerHaptic('selection');
+              setActiveTab('COMPLETED');
+            }}
+            className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${
               activeTab === 'COMPLETED'
-                ? 'bg-lux-gold text-black shadow-glow font-bold'
-                : 'text-zinc-400 hover:text-white'
+                ? 'bg-lux-gold text-black shadow-sm font-bold'
+                : 'text-theme-text-secondary hover:text-theme-text-primary'
             }`}
           >
             <CheckCircle2 size={14} />
             <span>Completed</span>
             <span
               className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-                activeTab === 'COMPLETED' ? 'bg-black/20 text-black' : 'bg-white/10 text-zinc-300'
+                activeTab === 'COMPLETED' ? 'bg-black/20 text-black' : 'bg-white/10 text-theme-text-primary'
               }`}
             >
               {completedProjects.length}

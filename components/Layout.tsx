@@ -42,11 +42,17 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
       transitionNavigate(navigate, to);
     };
     return (
-      <a href={`#${to}`} onClick={handleClick} data-tour={dataTour} className={`flex flex-col items-center justify-center w-full py-1 relative z-10 group cursor-pointer ${isActive ? 'text-white' : 'text-zinc-500'}`}>
-        <div className={`p-2.5 rounded-2xl transition-colors duration-500 ${isActive ? 'bg-white/10' : ''}`}>
-           <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+      <a 
+        href={`#${to}`} 
+        onClick={handleClick} 
+        data-tour={dataTour} 
+        className={`flex flex-col items-center justify-center w-full min-h-[44px] min-w-[44px] py-1.5 px-2 relative z-10 group cursor-pointer active:scale-95 transition-all ${isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+        aria-label={label}
+      >
+        <div className={`p-2 rounded-2xl transition-colors duration-300 ${isActive ? 'bg-white/10 text-lux-gold' : ''}`}>
+           <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
         </div>
-        <span className={`text-[10px] mt-1 font-semibold tracking-wide transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-70'}`}>{label}</span>
+        <span className={`text-[11px] mt-0.5 font-semibold tracking-wide transition-opacity duration-300 ${isActive ? 'opacity-100 text-white font-bold' : 'opacity-75'}`}>{label}</span>
       </a>
     );
   };
@@ -62,8 +68,6 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
           ${(!isManager && !isDesigner) ? 'hidden md:flex flex-col' : 'flex flex-col'}
           safe-pt safe-pb
       `}>
-        {/* Texture Overlay */}
-        <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
          <div className="p-8 mb-2 h-[120px] flex items-center justify-between relative z-10">
            <Link to="/" className="flex items-center gap-4 group">
              {store.isDemoMode ? (
@@ -203,11 +207,9 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
          </main>
       </div>
 
-      {/* Staff Bottom Nav (Glass) - Floating (Hidden on Project Detail & Desktop) */}
+      {/* Staff Bottom Nav (Liquid Glass) - Floating (Hidden on Project Detail & Desktop) */}
       {(!isManager && !isDesigner) && !isProjectDetail && (
-        <div className="md:hidden fixed bottom-6 left-6 right-6 h-16 liquid-glass z-50 flex justify-around items-center safe-pb animate-in slide-in-from-bottom-2">
-           {/* Texture Overlay */}
-           <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
+        <div className="md:hidden fixed bottom-6 left-6 right-6 h-16 liquid-glass z-50 flex justify-around items-center safe-pb animate-in slide-in-from-bottom-2 shadow-2xl">
            <BottomNavItem to="/" icon={LayoutDashboard} label="Work" />
            <BottomNavItem to="/requests" icon={Clock} label="Requests" />
            <BottomNavItem to="/profile" icon={UserIcon} label="Profile" dataTour="nav-profile" />
