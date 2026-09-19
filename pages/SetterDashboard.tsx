@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
-import { Project, ProjectStatus, Priority } from '../types';
+import { Project, ProjectStatus, Priority, Role } from '../types';
 import { Card, StatusPill, Button, Badge, ProgressBar } from '../components/UI';
 import {
   Calendar,
@@ -17,8 +17,11 @@ import {
   CheckCircle2,
   Sparkles,
   Layers,
-  X
+  X,
+  FastForward,
+  RefreshCw
 } from 'lucide-react';
+import { useToast } from '../App';
 import { QuickRepairModal } from '../components/QuickRepairModal';
 import {
   recordProjectOpened,
@@ -76,10 +79,17 @@ const SORT_OPTIONS: SortOptionConfig[] = [
   }
 ];
 
-const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
+interface Props {
+  currentUser: any;
+}
+
+const SetterDashboard: React.FC<Props> = ({ currentUser }) => {
   const navigate = useNavigate();
+  const showToast = useToast();
+  const isManager = currentUser?.role === Role.MANAGER;
   const [allAssignedProjects, setAllAssignedProjects] = useState<Project[]>([]);
   const [isQuickRepairOpen, setIsQuickRepairOpen] = useState(false);
+  const [advancingProjectId, setAdvancingProjectId] = useState<string | null>(null);
 
   // Tab State: Active Projects (default) vs Completed
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'COMPLETED'>('ACTIVE');
@@ -287,6 +297,90 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
     setOpenedMap(prev => ({ ...prev, [projectId]: new Date().toISOString() }));
     transitionNavigate(navigate, `/project/${projectId}`);
   }, [currentUser?.id, navigate]);
+
+  // Production Stages & 1-Tap Bench Advancement
+  const stages = useMemo(() => store.getStages(), []);
+
+  const getNextStage = useCallback((currentStageName?: string, currentPercent?: number) => {
+    if (!stages || stages.length === 0) return null;
+
+    let currentIndex = stages.findIndex(
+      s => s.name.toLowerCase() === (currentStageName || '').toLowerCase()
+    );
+
+    if (currentIndex === -1 && currentPercent !== undefined) {
+      currentIndex = stages.findIndex(s => s.percentValue >= currentPercent);
+    }
+
+    if (currentIndex === -1) {
+      return stages[1] || null;
+    }
+
+    if (currentIndex < stages.length - 1) {
+      return stages[currentIndex + 1];
+    }
+
+    return null;
+  }, [stages]);
+
+  const handleQuickAdvanceStage = async (e: React.MouseEvent, project: Project, nextStage: any) => {
+    e.stopPropagation();
+    if (advancingProjectId === project.id) return;
+
+    const isCompleting = nextStage.name === 'Complete';
+
+    if (isCompleting && !isManager) {
+      showToast("Only Managers can mark a project as fully complete.");
+      return;
+    }
+
+    setAdvancingProjectId(project.id);
+
+    // Optimistic UI update
+    setAllAssignedProjects(prev =>
+      prev.map(p =>
+        p.id === project.id
+          ? {
+              ...p,
+              currentStageName: nextStage.name,
+              currentPercentComplete: nextStage.percentValue,
+            }
+          : p
+      )
+    );
+
+    try {
+      if (isCompleting && isManager) {
+        await store.addProgress({
+          id: Math.random().toString(),
+          projectId: project.id,
+          createdById: currentUser.id,
+          createdAt: new Date().toISOString(),
+          stageName: nextStage.name,
+          percentComplete: nextStage.percentValue,
+          weightG: 0,
+        });
+        await store.completeProject(project.id, 0, currentUser.id);
+        showToast(`Project ${project.code} completed and moved to Review`);
+      } else {
+        await store.addProgress({
+          id: Math.random().toString(),
+          projectId: project.id,
+          createdById: currentUser.id,
+          createdAt: new Date().toISOString(),
+          stageName: nextStage.name,
+          percentComplete: nextStage.percentValue,
+          weightG: 0,
+        });
+        showToast(`Advanced ${project.code} to ${nextStage.name} (${nextStage.percentValue}%)`);
+      }
+    } catch (err: any) {
+      console.error('Failed to advance stage:', err);
+      showToast(`Error updating stage: ${err?.message || 'Network error'}`);
+    } finally {
+      setAdvancingProjectId(null);
+    }
+  };
 
   const activeSortConfig = SORT_OPTIONS.find(o => o.value === sortBy) || SORT_OPTIONS[0];
 
@@ -521,6 +615,8 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             const lastOpenedIso = openedMap[p.id] || null;
             const lastOpenedLabel = formatLastOpenedRelative(lastOpenedIso);
             const isUnopened = !lastOpenedIso;
+            const nextStage = getNextStage(p.currentStageName, p.currentPercentComplete);
+            const isAdvancing = advancingProjectId === p.id;
 
             return (
               <Card
@@ -570,11 +666,45 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                 {/* Progress Bar & Stage */}
                 <div className="mt-auto pt-3 border-t border-white/5 space-y-2">
                   <div className="flex justify-between items-center text-[11px]">
-                    <span className="text-zinc-500">{p.currentStageName || 'Intake'}</span>
+                    <span className="text-zinc-400 font-medium">{p.currentStageName || 'Intake'}</span>
                     <span className="font-mono font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
                   </div>
                   <ProgressBar progress={p.currentPercentComplete || 0} />
                 </div>
+
+                {/* 1-Tap Bench Stage Advancement (Active Only) */}
+                {activeTab === 'ACTIVE' && nextStage && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={isAdvancing || (!isManager && nextStage.name === 'Complete')}
+                      onClick={(e) => handleQuickAdvanceStage(e, p, nextStage)}
+                      className={`w-full min-h-[38px] py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98] ${
+                        nextStage.name === 'Complete' && !isManager
+                          ? 'bg-zinc-800/40 text-zinc-500 border border-zinc-700/40 cursor-not-allowed text-[11px]'
+                          : 'bg-lux-gold/15 hover:bg-lux-gold text-lux-gold hover:text-black border border-lux-gold/30 hover:border-lux-gold shadow-lux-gold/5'
+                      }`}
+                      title={nextStage.name === 'Complete' && !isManager ? 'QC Complete — Awaiting manager sign-off' : `Advance stage to ${nextStage.name} (${nextStage.percentValue}%)`}
+                    >
+                      {isAdvancing ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Advancing...</span>
+                        </>
+                      ) : nextStage.name === 'Complete' && !isManager ? (
+                        <>
+                          <CheckCircle2 size={13} />
+                          <span>QC Polish Done (Awaiting Review)</span>
+                        </>
+                      ) : (
+                        <>
+                          <FastForward size={13} className="shrink-0" />
+                          <span>Advance: {nextStage.name} ({nextStage.percentValue}%)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {/* Footer: Due Date & Action */}
                 <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/5 text-xs text-zinc-500">
@@ -598,6 +728,8 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             const lastOpenedIso = openedMap[p.id] || null;
             const lastOpenedLabel = formatLastOpenedRelative(lastOpenedIso);
             const isUnopened = !lastOpenedIso;
+            const nextStage = getNextStage(p.currentStageName, p.currentPercentComplete);
+            const isAdvancing = advancingProjectId === p.id;
 
             return (
               <Card
@@ -645,15 +777,39 @@ const SetterDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                   </div>
                 </div>
 
-                {/* Right: Stage, Progress & Arrow */}
-                <div className="flex items-center gap-4 shrink-0">
-                  <div className="w-28 sm:w-36">
+                {/* Right: Stage, Progress & 1-Tap Advance */}
+                <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                  <div className="w-24 sm:w-32">
                     <div className="flex justify-between items-center text-[10px] text-zinc-400 mb-1">
                       <span className="truncate">{p.currentStageName || 'Intake'}</span>
                       <span className="font-mono font-bold text-lux-gold">{p.currentPercentComplete || 0}%</span>
                     </div>
                     <ProgressBar progress={p.currentPercentComplete || 0} />
                   </div>
+
+                  {activeTab === 'ACTIVE' && nextStage && (
+                    <button
+                      type="button"
+                      disabled={isAdvancing || (!isManager && nextStage.name === 'Complete')}
+                      onClick={(e) => handleQuickAdvanceStage(e, p, nextStage)}
+                      className={`min-h-[38px] px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 shrink-0 ${
+                        nextStage.name === 'Complete' && !isManager
+                          ? 'bg-zinc-800/40 text-zinc-500 border border-zinc-700/40 cursor-not-allowed text-[11px]'
+                          : 'bg-lux-gold/15 hover:bg-lux-gold text-lux-gold hover:text-black border border-lux-gold/30 hover:border-lux-gold shadow-sm'
+                      }`}
+                      title={nextStage.name === 'Complete' && !isManager ? 'QC Complete — Awaiting manager sign-off' : `Advance stage to ${nextStage.name} (${nextStage.percentValue}%)`}
+                    >
+                      {isAdvancing ? (
+                        <RefreshCw size={12} className="animate-spin" />
+                      ) : (
+                        <FastForward size={12} />
+                      )}
+                      <span className="hidden sm:inline">
+                        {nextStage.name === 'Complete' && !isManager ? 'QC Done' : nextStage.name}
+                      </span>
+                      <span>{nextStage.percentValue}%</span>
+                    </button>
+                  )}
 
                   <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-lux-gold/20 flex items-center justify-center transition-colors">
                     <ChevronRight size={16} className="text-zinc-500 group-hover:text-lux-gold transition-colors" />
