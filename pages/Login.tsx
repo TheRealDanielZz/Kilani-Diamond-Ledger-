@@ -133,7 +133,7 @@ const Login: React.FC<{ onLogin: (email: string, pass?: string) => Promise<boole
         ) : (
           <>
             <div className="w-28 h-28 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-md rounded-3xl border border-white/10 flex items-center justify-center mb-8 shadow-glass transform rotate-3 hover:rotate-0 transition-all duration-700 overflow-hidden group-hover:shadow-lux-gold/20 group-hover:border-lux-gold/30">
-                <img src="/brand-logo.jpg" alt="Kilani Logo" className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-1000" />
+                <img src="/brand-logo.jpg" alt="Kilani Logo" fetchPriority="high" decoding="async" className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-1000" />
             </div>
             <div className="flex flex-col items-center">
               <h1 className="text-5xl font-bold text-white tracking-tight mb-2 font-serif group-hover:text-lux-gold transition-colors duration-500">KILANI</h1>

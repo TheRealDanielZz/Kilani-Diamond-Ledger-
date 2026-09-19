@@ -249,7 +249,7 @@ export const SetterAvatar: React.FC<{ name: string; color?: string; size?: 'sm' 
   const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2);
   const sizeClasses = size === 'sm' ? 'w-8 h-8 text-[10px]' : size === 'lg' ? 'w-16 h-16 text-xl' : 'w-10 h-10 text-xs';
   
-  if (image) return <img src={image} alt={name} className={`${sizeClasses} rounded-full object-cover ring-2 ring-white/5 shadow-lg`} />;
+  if (image) return <img src={image} alt={name} loading="lazy" decoding="async" className={`${sizeClasses} rounded-full object-cover ring-2 ring-white/5 shadow-lg`} />;
   
   return (
     <div className={`${sizeClasses} relative rounded-full flex items-center justify-center text-white font-bold ring-2 ring-theme-border overflow-hidden shadow-lg`} style={{ backgroundColor: color ? undefined : '#52525B' }}>

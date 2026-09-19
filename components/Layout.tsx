@@ -84,7 +84,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
              ) : (
                <>
                  <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-2xl border border-white/10 group-hover:border-lux-gold/50 transition-all duration-500 shadow-lux-gold/5">
-                    <img src="/brand-logo.jpg" alt="Kilani Logo" className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-700" />
+                    <img src="/brand-logo.jpg" alt="Kilani Logo" fetchPriority="high" decoding="async" className="w-full h-full object-cover scale-110 group-hover:scale-125 transition-transform duration-700" />
                  </div>
                  <div className="flex flex-col">
                    <h1 className="text-xl font-bold tracking-tight text-theme-text-primary leading-none mb-1 font-serif group-hover:text-lux-gold transition-colors">KILANI</h1>
@@ -154,7 +154,7 @@ export const Layout: React.FC<{ user: User | null; onLogout: () => void }> = ({ 
               ) : (
                 <>
                   <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shadow-lg shadow-lux-gold/10">
-                     <img src="/brand-logo.jpg" alt="Kilani Logo" className="w-full h-full object-cover" />
+                     <img src="/brand-logo.jpg" alt="Kilani Logo" fetchPriority="high" decoding="async" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex flex-col">
                     <span className="font-bold text-lg text-white font-serif leading-none">KILANI</span>

@@ -40,13 +40,14 @@ export const generateThumbnail = (base64: string): Promise<string> => {
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
       
-      resolve(canvas.toDataURL('image/jpeg', 0.5));
+      const webpThumb = canvas.toDataURL('image/webp', 0.6);
+      resolve(webpThumb.startsWith('data:image/webp') ? webpThumb : canvas.toDataURL('image/jpeg', 0.5));
     };
     img.onerror = (err) => reject(err);
   });
 };
 
-// Helper to compress image
+// Helper to compress image (Modern Web Guidance: Deliver optimized formats)
 export const compressImage = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -57,7 +58,6 @@ export const compressImage = (file: File): Promise<string> => {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         // Limit both width and height to 600 to prevent exceeding Firestore 1MB document limit
-        // Since multiple images can be stored in a single document array, we must keep them very small.
         const MAX_DIMENSION = 600; 
         
         let width = img.width;
@@ -81,12 +81,16 @@ export const compressImage = (file: File): Promise<string> => {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         
-        // Compress to JPEG 0.6 quality to keep size small (usually < 100KB)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        // Prefer WebP for enhanced diamond clarity and ~40% smaller payload
+        let dataUrl = canvas.toDataURL('image/webp', 0.7);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        }
         
-        // Check size, if still too large (> 200KB), compress further
+        // If still > 200KB, compress further
         if (dataUrl.length > 200000) {
-          resolve(canvas.toDataURL('image/jpeg', 0.4));
+          const lower = canvas.toDataURL('image/webp', 0.5);
+          resolve(lower.startsWith('data:image/webp') ? lower : canvas.toDataURL('image/jpeg', 0.4));
         } else {
           resolve(dataUrl);
         }

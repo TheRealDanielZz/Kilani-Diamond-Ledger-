@@ -1285,8 +1285,8 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
 
                        {(repair.beforeImage || repair.afterImage) && (
                          <div className="mt-4 grid grid-cols-2 gap-3">
-                           {repair.beforeImage && <img src={repair.beforeImage} className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
-                           {repair.afterImage && <img src={repair.afterImage} className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
+                           {repair.beforeImage && <img src={repair.beforeImage} alt="Before repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
+                           {repair.afterImage && <img src={repair.afterImage} alt="After repair" loading="lazy" decoding="async" className="h-28 w-full object-cover rounded-2xl border border-white/5" />}
                          </div>
                        )}
                    </div>
@@ -2515,7 +2515,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
                                        <div className={`p-3 sm:p-4 rounded-3xl ${isMe ? 'bg-lux-gold/10 border border-lux-gold/20 text-white rounded-tr-sm' : 'bg-black/20 border border-zinc-800 text-zinc-200 rounded-tl-sm'}`}>
                                           {log.note && <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words">{log.note}</p>}
                                           {log.attachment && (
-                                             <img src={log.attachment} className="mt-2 sm:mt-3 rounded-2xl max-h-48 sm:max-h-64 w-full object-cover border border-zinc-700/50 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(log.attachment, '_blank')} />
+                                             <img src={log.attachment} alt="Design log attachment" loading="lazy" decoding="async" className="mt-2 sm:mt-3 rounded-2xl max-h-48 sm:max-h-64 w-full object-cover border border-zinc-700/50 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(log.attachment, '_blank')} />
                                           )}
                                        </div>
                                    </div>
@@ -2548,7 +2548,7 @@ const ProjectDetail: React.FC<Props> = ({ currentUser, projectId: propProjectId 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {project.projectPhotos?.map((photo, idx) => (
                       <div key={idx} className="aspect-square rounded-3xl overflow-hidden relative group border border-zinc-800 bg-black shadow-lg cursor-pointer" onClick={() => setLightboxIndex(idx)}>
-                          <img src={photo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <img src={photo} alt={`Project photo ${idx + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                               <button onClick={(e) => {e.stopPropagation(); setLightboxIndex(idx)}} className="p-2 bg-white/10 rounded-full hover:bg-white/20 text-white hidden lg:block"><ZoomIn size={18}/></button>
                               {canModifyProject && project.status === ProjectStatus.ACTIVE && <button onClick={(e) => {e.stopPropagation(); initiateDeletePhoto(idx)}} className="p-2 bg-red-500/20 rounded-full hover:bg-red-500 text-red-200 hidden lg:block"><Trash2 size={18}/></button>}
