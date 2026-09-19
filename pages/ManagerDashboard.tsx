@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
-import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle, ControlTile } from '../components/UI';
-import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart, Gem } from 'lucide-react';
+import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle } from '../components/UI';
+import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
@@ -264,17 +264,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
          .filter((info): info is { bag: DiamondBag; tx?: BagReturnTransaction } => Boolean(info));
    }, [returnReport.rows, returnBags]);
 
-   const rushProjectsCount = React.useMemo(() => {
-      return store.getProjects().filter(p => p.status === ProjectStatus.ACTIVE && p.priority === Priority.RUSH).length;
-   }, [overviewProjectReport.total]);
-
-   const totalPendingRequestsStones = React.useMemo(() => {
-      return requests.reduce((sum, r) => sum + r.lines.reduce((s, l) => s + (l.requestedPcs || 0), 0), 0);
-   }, [requests]);
-
-   const totalDiamondBagsIssuedCount = React.useMemo(() => {
-      return store.getBags().filter(b => b.status === BagStatus.ISSUED).length;
-   }, [returnBags]);
 
    const exportManagerReport = async (
       section: 'REQUESTS' | 'RETURNS',
@@ -615,42 +604,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             </div>
          </div>
 
-         {/* ─── EXECUTIVE SITUATIONAL AWARENESS STRIP (UI/UX Pro Max) ─── */}
-         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <ControlTile
-               title="Active Queue"
-               value={overviewProjectReport.total}
-               subtitle={rushProjectsCount > 0 ? `${rushProjectsCount} rush priority` : 'Normal priority flow'}
-               badge={rushProjectsCount > 0 ? <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">RUSH: {rushProjectsCount}</span> : <Badge color="green">Steady</Badge>}
-               icon={<Layers size={18} className="text-lux-gold" />}
-               onClick={() => navigate('/projects')}
-               vibrant={rushProjectsCount > 0}
-            />
-            <ControlTile
-               title="Live Requests"
-               value={requests.length}
-               subtitle={`${totalPendingRequestsStones} stones pending`}
-               badge={<Badge color={requests.length > 0 ? 'blue' : 'gray'}>{requests.length} Open</Badge>}
-               icon={<Inbox size={18} className="text-blue-400" />}
-               onClick={requests.length > 0 ? () => setShowAllRequests(true) : undefined}
-            />
-            <ControlTile
-               title="Returns Queue"
-               value={returnBags.length}
-               subtitle={`${totalDiamondBagsIssuedCount} bags with setters`}
-               badge={<Badge color={returnBags.length > 0 ? 'amber' : 'gray'}>{returnBags.length} Pending</Badge>}
-               icon={<PackageCheck size={18} className="text-amber-400" />}
-               onClick={returnBags.length > 0 ? () => setShowAllReturns(true) : undefined}
-            />
-            <ControlTile
-               title="Inventory Parcels"
-               value={inventorySummary.filter(s => (s.pcs || 0) > 0).length}
-               subtitle="In-stock diamond specs"
-               badge={<Badge color="green">Stocked</Badge>}
-               icon={<Gem size={18} className="text-emerald-400" />}
-               onClick={() => navigate('/inventory')}
-            />
-         </div>
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 items-start">
             {/* ─── REQUESTS CARD ─── */}
