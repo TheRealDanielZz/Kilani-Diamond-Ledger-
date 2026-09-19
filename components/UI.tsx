@@ -683,8 +683,10 @@ export const SelectionChip: React.FC<{
   label: string;
   badge?: React.ReactNode;
   className?: string;
-}> = ({ selected, onClick, icon, label, badge, className = '' }) => {
+  disabled?: boolean;
+}> = ({ selected, onClick, icon, label, badge, className = '', disabled = false }) => {
   const handleClick = () => {
+    if (disabled) return;
     triggerHaptic('selection');
     onClick();
   };
@@ -692,13 +694,15 @@ export const SelectionChip: React.FC<{
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={handleClick}
       className={`
-        flex items-center gap-2 px-3.5 py-3 rounded-2xl border text-xs font-bold
+        flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-2xl border text-xs font-bold
         transition-all active:scale-[0.97]
-        ${selected
+        ${disabled ? 'opacity-40 cursor-not-allowed border-theme-border text-theme-text-muted bg-theme-input-bg' : ''}
+        ${!disabled && selected
           ? 'bg-lux-gold/15 border-lux-gold text-lux-gold shadow-[0_0_15px_rgba(245,194,73,0.2)]'
-          : 'bg-theme-input-bg border-theme-border text-theme-text-muted hover:border-lux-gold/40 hover:text-theme-text-primary'
+          : !disabled ? 'bg-theme-input-bg border-theme-border text-theme-text-muted hover:border-lux-gold/40 hover:text-theme-text-primary' : ''
         }
         ${className}
       `}
@@ -759,13 +763,14 @@ const MODAL_SIZES = {
   sm: 'max-w-md',
   md: 'max-w-lg',
   lg: 'max-w-xl',
-  xl: 'max-w-5xl'
+  xl: 'max-w-3xl',
+  '2xl': 'max-w-5xl'
 };
 
 export const ModalShell: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   children: React.ReactNode;
   className?: string;
   fullHeight?: boolean;
@@ -787,7 +792,7 @@ export const ModalShell: React.FC<{
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  const isWide = size === 'xl';
+  const isWide = size === 'xl' || size === '2xl';
 
   return (
     <AnimatePresence>

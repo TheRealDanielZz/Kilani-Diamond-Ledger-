@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { store } from '../services/store';
 import { IssueRequest, DiamondBag, BagStatus, Project, ProjectStatus, User, Role, Priority, InventoryMovementType, BagItem, BagReturnTransaction, CanonicalProjectServiceCode } from '../types';
-import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle } from '../components/UI';
-import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart } from 'lucide-react';
+import { Card, Button, Badge, SetterAvatar, Input, StatusPill, ProgressBar, ProjectMilestones, Textarea, SectionTitle, ModalShell, ModalHeader, SelectionChip, FieldLabel } from '../components/UI';
+import { Inbox, PackageCheck, Plus, AlertOctagon, ChevronRight, Scale, Layers, X, AlertCircle, AlertTriangle, FileBarChart, Wrench, Clock, Sparkles, Gem, UserPlus } from 'lucide-react';
 import { ImageUpload } from '../components/ImageUpload';
 import { useToast } from '../App';
 import { GoldPriceCard } from '../components/GoldPriceCard';
@@ -47,19 +47,8 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
    const [setters, setSetters] = useState<User[]>([]);
    const [salesReps, setSalesReps] = useState<User[]>([]);
 
-   // UI State
    const [isCreating, setIsCreating] = useState(false);
    const [isQuickRepairing, setIsQuickRepairing] = useState(false);
-   const [quickRepair, setQuickRepair] = useState<Partial<Project>>({
-      clientName: '',
-      clientPhone: '',
-      repairDetails: {
-         date: new Date().toISOString().split('T')[0],
-         items: [{ stoneSize: '', quantity: 0 }],
-         totalQuantity: 0,
-         report: ''
-      }
-   });
    const [loading, setLoading] = useState(false);
    const { viewMode, setViewMode } = useProjectViewPreference(currentUser.id, 'overview', 'LIST');
    const [showAllRequests, setShowAllRequests] = useState(false);
@@ -462,40 +451,23 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       }
    };
 
-   const handleLogQuickRepair = async () => {
-      if ((quickRepair.repairDetails?.items.length || 0) === 0) return showToast("Add at least one item");
-      setLoading(true);
-      try {
-         await store.logQuickRepair(quickRepair);
-         setIsQuickRepairing(false);
-         showToast("Repair Logged Successfully");
-      } catch (e: any) {
-         showToast(e.message || "Error logging repair");
-      } finally {
-         setLoading(false);
-      }
-   };
-
    const toggleService = (svc: CanonicalProjectServiceCode) => {
       if (svc === 'OTHER') return;
-      if (svc === 'REPAIR') {
-         setIsCreating(false);
-         setIsQuickRepairing(true);
-         setQuickRepair({
-            clientName: newProject.clientName || '',
-            clientPhone: newProject.clientPhone || '',
-            repairDetails: {
-               date: new Date().toISOString().split('T')[0],
-               items: [{ stoneSize: '', quantity: 0 }],
-               totalQuantity: 0,
-               report: ''
-            }
-         });
-         return;
-      }
-
       setSelectedServices([svc]);
-      if (svc === 'CUSTOM_MAKE') {
+
+      if (svc === 'REPAIR') {
+         if (!newProject.repairDetails) {
+            setNewProject(prev => ({
+               ...prev,
+               repairDetails: {
+                  date: new Date().toISOString().split('T')[0],
+                  items: [{ stoneSize: '', quantity: 0 }],
+                  totalQuantity: 0,
+                  report: ''
+               }
+            }));
+         }
+      } else if (svc === 'CUSTOM_MAKE') {
          const designers = store.getUsers().filter(u => u.role === Role.DESIGNER && u.active);
          if (designers.length > 0) {
             const designerIds = designers.map(d => d.id);
@@ -516,80 +488,7 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
       <div className="max-w-7xl mx-auto px-4 py-8 pb-32">
          <QuickRepairModal isOpen={isQuickRepairing} onClose={() => setIsQuickRepairing(false)} currentUser={currentUser} />
 
-         {false && isQuickRepairing && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-               <div className="w-full max-w-lg bg-theme-modal-bg rounded-3xl border border-theme-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                  <div className="px-6 py-5 border-b border-zinc-800/50 flex justify-between items-center">
-                     <h2 className="text-xl font-bold text-theme-text-primary tracking-tight">Quick Repair Log</h2>
-                     <button onClick={() => setIsQuickRepairing(false)} className="text-zinc-500 hover:text-theme-text-primary p-2 rounded-full hover:bg-zinc-800 transition-colors">
-                        <X size={20} />
-                     </button>
-                  </div>
 
-                  <div className="p-6 space-y-6">
-                     <div className="grid grid-cols-2 gap-4">
-                        <Input label="Client Name (Optional)" value={quickRepair.clientName} onChange={e => setQuickRepair({ ...quickRepair, clientName: e.target.value })} placeholder="John Doe" />
-                        <Input label="Client Phone (Optional)" value={quickRepair.clientPhone} onChange={e => setQuickRepair({ ...quickRepair, clientPhone: e.target.value })} placeholder="555-0192" />
-                     </div>
-
-                     <div className="space-y-4">
-                        <div className="flex justify-between items-end">
-                           <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Repair Items</label>
-                           <div className="text-right">
-                              <div className="text-[10px] text-zinc-500 uppercase font-bold">Total Pcs</div>
-                              <div className="text-lg font-bold text-lux-gold">{quickRepair.repairDetails?.totalQuantity || 0}</div>
-                           </div>
-                        </div>
-
-                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                           {quickRepair.repairDetails?.items.map((item, index) => (
-                              <div key={index} className="flex gap-3 items-end group animate-in slide-in-from-left-2">
-                                 <div className="flex-1">
-                                    <Input label={index === 0 ? "Stone Size" : ""} placeholder="e.g. 1.5mm" value={item.stoneSize} onChange={e => {
-                                       const items = [...quickRepair.repairDetails!.items];
-                                       items[index].stoneSize = e.target.value;
-                                       setQuickRepair({ ...quickRepair, repairDetails: { ...quickRepair.repairDetails!, items } });
-                                    }} />
-                                 </div>
-                                 <div className="w-24">
-                                    <Input label={index === 0 ? "Quantity" : ""} type="number" value={item.quantity === 0 ? '' : item.quantity.toString()} onChange={e => {
-                                       const val = parseInt(e.target.value) || 0;
-                                       const items = [...quickRepair.repairDetails!.items];
-                                       items[index].quantity = val;
-                                       const total = items.reduce((sum, i) => sum + i.quantity, 0);
-                                       setQuickRepair({ ...quickRepair, repairDetails: { ...quickRepair.repairDetails!, items, totalQuantity: total } });
-                                    }} />
-                                 </div>
-                                 <button onClick={() => {
-                                    const items = quickRepair.repairDetails!.items.filter((_, i) => i !== index);
-                                    const total = items.reduce((sum, i) => sum + i.quantity, 0);
-                                    setQuickRepair({ ...quickRepair, repairDetails: { ...quickRepair.repairDetails!, items, totalQuantity: total } });
-                                 }}
-                                    className="p-3.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all mb-0.5 opacity-0 group-hover:opacity-100"
-                                    disabled={quickRepair.repairDetails!.items.length === 1}
-                                 >
-                                    <X size={16} />
-                                 </button>
-                              </div>
-                           ))}
-                        </div>
-                        <button onClick={() => {
-                           const items = [...quickRepair.repairDetails!.items, { stoneSize: '', quantity: 0 }];
-                           setQuickRepair({ ...quickRepair, repairDetails: { ...quickRepair.repairDetails!, items } });
-                        }}
-                           className="w-full py-3 rounded-2xl border border-dashed border-zinc-700 text-zinc-500 hover:text-lux-gold hover:border-lux-gold hover:bg-lux-gold/5 transition-all text-sm font-bold flex items-center justify-center gap-2"
-                        >
-                           <Plus size={16} /> Add Another Size
-                        </button>
-                     </div>
-
-                     <div className="pt-4 border-t border-zinc-800/50">
-                        <Button onClick={handleLogQuickRepair} className="w-full py-4 text-base" loading={loading}>Log Repair</Button>
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )}
 
          <div data-tour="manager-header" className="flex flex-col md:flex-row justify-between items-end gap-4 mb-8">
             <div>
@@ -597,7 +496,15 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                <p className="text-xs text-theme-text-secondary font-medium uppercase tracking-[0.2em] mt-2 font-mono">Welcome, {currentUser.name}</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-8 md:gap-10">
+            <div className="flex flex-wrap items-center gap-3">
+               <Button
+                  variant="secondary"
+                  onClick={() => setIsQuickRepairing(true)}
+                  icon={<Wrench size={18} />}
+                  className="font-bold border-lux-gold/30 hover:border-lux-gold text-lux-gold"
+               >
+                  Quick Repair
+               </Button>
                <div data-tour="manager-new-project">
                   <Button onClick={() => { setSelectedServices(['CUSTOM_MAKE']); setIsCreating(true); }} icon={<Plus size={20} />}>New Project</Button>
                </div>
@@ -939,215 +846,256 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
             </button>
          )}
 
-         {isCreating && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-6">
-               <div className="w-full max-w-3xl bg-theme-modal-bg rounded-3xl border border-theme-border shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
-                  <div className="px-6 py-5 border-b border-theme-border flex justify-between items-center sticky top-0 bg-theme-modal-bg/90 backdrop-blur-md z-20">
-                     <h2 className="text-xl font-bold text-theme-text-primary tracking-tight">Create New Project</h2>
-                     <button onClick={() => setIsCreating(false)} className="text-zinc-500 hover:text-theme-text-primary p-2 rounded-full hover:bg-zinc-800 transition-colors"><X size={20} /></button>
-                  </div>
-                  <div className="p-6 overflow-y-auto custom-scrollbar space-y-8">
-                     <section className="space-y-4">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Project Details</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                           <Input label="Project Code" value={newProject.code} onChange={e => setNewProject({ ...newProject, code: e.target.value })} placeholder="e.g. DR-24-001" autoFocus />
-                           <Input label="Piece Name" value={newProject.pieceName} onChange={e => setNewProject({ ...newProject, pieceName: e.target.value })} placeholder="e.g. 3.5ct Solitaire Ring" />
-                           <Input label="Client Name" value={newProject.clientName} onChange={e => setNewProject({ ...newProject, clientName: e.target.value })} placeholder="e.g. John Doe" />
-                           <Input label="Client Phone" value={newProject.clientPhone} onChange={e => setNewProject({ ...newProject, clientPhone: e.target.value })} placeholder="e.g. 555-0192" />
-                        </div>
-                     </section>
-                     {!selectedServices.includes('REPAIR') && (
-                        <section className="space-y-4">
-                           <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Logistics</h3>
-                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                              <Input label="Due Date" type="date" value={newProject.dueDate} onChange={e => setNewProject({ ...newProject, dueDate: e.target.value })} />
-                              <div>
-                                 <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase">Priority</label>
-                                 <select className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border-transparent p-3.5 text-sm focus:ring-lux-gold transition-all" value={newProject.priority} onChange={e => setNewProject({ ...newProject, priority: e.target.value as Priority })}>
-                                    <option value={Priority.NORMAL}>Normal</option>
-                                    <option value={Priority.RUSH}>Rush</option>
-                                    <option value={Priority.LOW}>Low</option>
-                                 </select>
-                              </div>
-                              <div>
-                                 <label className="block text-xs font-bold text-zinc-500 mb-2 uppercase">Sales Rep</label>
-                                 <select className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border-transparent p-3.5 text-sm focus:ring-lux-gold transition-all" value={newProject.salesRepId} onChange={e => setNewProject({ ...newProject, salesRepId: e.target.value })}>
-                                    <option value="">Select Rep...</option>
-                                    {salesReps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                 </select>
-                              </div>
-                           </div>
-                        </section>
-                     )}
-                     <section className="space-y-4">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{selectedServices.includes('REPAIR') ? 'Selection' : 'Materials'}</h3>
-                        <div className="bg-theme-input-bg p-5 rounded-2xl border border-theme-border">
-                           {!selectedServices.includes('REPAIR') && (
-                              <>
-                                 {newProject.goldComponents?.map((comp, index) => (
-                                    <div key={comp.id} className="mb-6 pb-6 border-b border-theme-border last:border-0 last:mb-0 last:pb-0 relative group">
-                                       <div className="flex justify-between items-center mb-4">
-                                          <div className="flex-1 mr-4">
-                                             <Input label={`Component ${index + 1} Label`} value={comp.label} onChange={e => {
-                                                const newComps = [...(newProject.goldComponents || [])];
-                                                newComps[index].label = e.target.value;
-                                                setNewProject({ ...newProject, goldComponents: newComps });
-                                             }} placeholder="e.g. Main Ring" />
-                                          </div>
-                                          {(newProject.goldComponents?.length || 0) > 1 && (
-                                             <button onClick={() => {
-                                                const newComps = newProject.goldComponents!.filter((_, i) => i !== index);
-                                                setNewProject({ ...newProject, goldComponents: newComps });
-                                             }} className="text-zinc-500 hover:text-red-500 p-2 rounded-xl hover:bg-red-500/10 transition-colors mt-6"><X size={18} /></button>
-                                          )}
-                                       </div>
-                                       <label className="block text-xs font-bold text-zinc-500 mb-3 uppercase">Gold Type</label>
-                                       <div className="flex flex-col sm:flex-row flex-wrap gap-3 mb-5">
-                                          {[
-                                             { id: 'Yellow', label: 'Yellow', gradient: 'linear-gradient(135deg, #F5D061 0%, #E1B32A 100%)', text: '#5B4300' },
-                                             { id: 'White', label: 'White', gradient: 'linear-gradient(135deg, #E8E8E8 0%, #C0C0C0 100%)', text: '#4A4A4A' },
-                                             { id: 'Rose', label: 'Rose', gradient: 'linear-gradient(135deg, #F0C4B5 0%, #D69786 100%)', text: '#5D3A31' },
-                                             { id: 'Platinum', label: 'Platinum', gradient: 'linear-gradient(135deg, #1E293B 0%, #64748B 100%)', text: '#FFFFFF' }
-                                          ].map((type) => (
-                                             <button key={type.id} onClick={() => {
-                                                const newComps = [...(newProject.goldComponents || [])];
-                                                newComps[index].type = type.id;
-                                                if (type.id === 'Platinum') { newComps[index].purity = '950'; newComps[index].purityRatioPpm = 0; }
-                                                else if (newComps[index].purity === '950') newComps[index].purity = '14k';
-                                                if (type.id !== 'Platinum') newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000 } as Record<string, number>)[newComps[index].purity] || 0;
-                                                const updates: any = { goldComponents: newComps };
-                                                if (index === 0) { updates.goldType = type.id; updates.goldPurity = newComps[0].purity; }
-                                                setNewProject({ ...newProject, ...updates });
-                                             }} className={`flex-1 h-12 rounded-xl flex items-center justify-center font-bold text-sm transition-all relative overflow-hidden ${comp.type === type.id ? 'ring-2 ring-white scale-105 shadow-lg' : 'opacity-70 hover:opacity-100'}`} style={{ background: type.gradient, color: type.text }}>{type.label}</button>
-                                          ))}
-                                       </div>
-                                       <label className="block text-xs font-bold text-zinc-500 mb-3 uppercase">Purity</label>
-                                       <div className="flex flex-wrap gap-2">
-                                          {(comp.type === 'Platinum' ? ['950'] : ['10k', '14k', '18k', '21k']).map(k => (
-                                             <button key={k} onClick={() => {
-                                                const newComps = [...(newProject.goldComponents || [])];
-                                                newComps[index].purity = k;
-                                                newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000, '950': 0 } as Record<string, number>)[k] || 0;
-                                                const updates: any = { goldComponents: newComps };
-                                                if (index === 0) updates.goldPurity = k;
-                                                setNewProject({ ...newProject, ...updates });
-                                             }} className={`flex-1 min-w-[60px] py-2.5 rounded-xl text-sm font-bold border transition-all ${comp.purity === k ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm' : 'bg-transparent text-zinc-500 border-theme-border hover:text-theme-text-primary hover:border-zinc-700'}`}>{k}</button>
-                                          ))}
-                                       </div>
-                                    </div>
-                                 ))}
-                                 <button onClick={() => {
-                                    const count = (newProject.goldComponents?.length || 0) + 1;
-                                    const id = crypto.randomUUID();
-                                    setNewProject({ ...newProject, goldComponents: [...(newProject.goldComponents || []), { id, componentId: id, revisionId: id, revisionVersion: 0, state: 'ACTIVE', label: `Component ${count}`, type: 'Yellow', purity: '14k', purityRatioPpm: 585000 }] });
-                                 }} className="w-full mt-2 py-3 rounded-xl border border-dashed border-theme-border text-zinc-500 hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-sm font-bold transition-all"><Plus size={16} /> Add Another Gold Component</button>
-                              </>
-                           )}
-                        </div>
-                     </section>
-                     <section className="space-y-4">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Services</h3>
-                        <div className="bg-theme-input-bg rounded-2xl p-4 border border-theme-border flex flex-wrap gap-2">
-                           {SERVICE_OPTIONS.map(option => (
-                              <button
-                                 key={option.code}
-                                 disabled={option.disabled}
-                                 onClick={() => toggleService(option.code)}
-                                 className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${option.disabled
-                                       ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed opacity-60'
-                                       : selectedServices.includes(option.code)
-                                          ? 'bg-lux-gold text-black border-lux-gold shadow-sm'
-                                          : 'bg-theme-modal-bg border-theme-border text-zinc-400 hover:text-theme-text-primary hover:border-zinc-700'
-                                    }`}
-                              >
-                                 {PROJECT_SERVICE_LABELS[option.code]}
-                              </button>
-                           ))}
-                        </div>
-                        {selectedServices.includes('ENGAGEMENT') && (
-                           <div className="p-3 bg-blue-950/30 border border-blue-900/50 rounded-xl text-xs text-blue-400 font-medium">
-                              Engagement uses the standard project foundation. Specialized workflow tools will be available in a future update.
-                           </div>
-                        )}
-                        <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-xs text-zinc-500 font-medium">
-                           Other project workflows will be available in a future update.
-                        </div>
-                        {selectedServices.includes('REPAIR') && (
-                           <div className="bg-theme-input-bg/40 p-5 rounded-2xl border border-theme-border space-y-6 animate-in fade-in slide-in-from-top-2">
-                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                                 <SectionTitle title="Repair Menu" />
-                                 <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                       <div className="text-[10px] text-theme-text-muted uppercase font-bold">Total Pcs</div>
-                                       <div className="text-lg font-bold text-lux-gold">{newProject.repairDetails?.totalQuantity || 0}</div>
-                                    </div>
-                                    <div className="w-44">
-                                      <Input type="date" label="Repair Date" value={newProject.repairDetails?.date || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, date: e.target.value } })} />
-                                    </div>
-                                 </div>
-                              </div>
-                              <div className="space-y-3">
-                                 {newProject.repairDetails?.items.map((item, index) => (
-                                    <div key={index} className="flex items-end gap-3 group animate-in slide-in-from-left-2">
-                                       <div className="flex-1"><Input label={index === 0 ? "Stone Size" : ""} placeholder="e.g. 1.5mm" value={item.stoneSize} onChange={e => {
-                                          const newItems = [...newProject.repairDetails!.items];
-                                          newItems[index].stoneSize = e.target.value;
-                                          setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems } });
-                                       }} /></div>
-                                       <div className="w-24"><Input label={index === 0 ? "Quantity" : ""} type="number" placeholder="0" value={item.quantity?.toString() || ''} onChange={e => {
-                                          const val = parseInt(e.target.value) || 0;
-                                          const newItems = [...newProject.repairDetails!.items];
-                                          newItems[index].quantity = val;
-                                          const total = newItems.reduce((sum, i) => sum + i.quantity, 0);
-                                          setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems, totalQuantity: total } });
-                                       }} /></div>
-                                       <div className="pb-1">
-                                          {newProject.repairDetails!.items.length > 1 && (
-                                             <button onClick={() => {
-                                                const newItems = newProject.repairDetails!.items.filter((_, i) => i !== index);
-                                                const total = newItems.reduce((sum, i) => sum + i.quantity, 0);
-                                                setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems, totalQuantity: total } });
-                                             }} className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"><X size={18} /></button>
-                                          )}
-                                       </div>
-                                    </div>
-                                 ))}
-                                 <button onClick={() => {
-                                    const newItems = [...newProject.repairDetails!.items, { stoneSize: '', quantity: 0 }];
-                                    setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems } });
-                                 }} className="w-full py-3 rounded-xl border border-dashed border-theme-border text-theme-text-muted hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-sm font-bold transition-all"><Plus size={16} /> Add Another Stone</button>
-                              </div>
-                              <div>
-                                 <Textarea label="Report" placeholder="Repair report details..." value={newProject.repairDetails?.report || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, report: e.target.value } })} />
-                              </div>
-                           </div>
-                        )}
-                     </section>
-                     {!selectedServices.includes('REPAIR') && (
-                        <section className="space-y-4">
-                           <Textarea label="Work Details / Instructions" placeholder="Describe the work required..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} rows={4} />
-                        </section>
-                     )}
-                     <section className="space-y-4">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Assign Team (Optional)</h3>
-                        <div className="flex flex-wrap gap-2">
-                           {setters.map(u => (
-                              <button key={u.id} onClick={() => setNewAssignees(prev => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id])} className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${newAssignees.includes(u.id) ? 'bg-lux-gold/10 border-lux-gold text-lux-gold shadow-sm' : 'bg-theme-input-bg border-theme-border text-zinc-400 hover:bg-theme-modal-bg'}`}>
-                                 <SetterAvatar name={u.name} color={u.setterColor} size="sm" />
-                                 <span className="text-xs font-bold">{u.name}</span>
-                                 <Badge color={u.role === Role.DESIGNER ? 'blue' : u.role === Role.MANAGER ? 'amber' : 'gray'}>{u.role}</Badge>
-                              </button>
-                           ))}
-                        </div>
-                     </section>
-                  </div>
-                  <div className="px-6 py-5 border-t border-theme-border bg-theme-modal-bg/90 backdrop-blur-md sticky bottom-0 z-20 flex justify-end gap-3 safe-pb">
-                     <Button variant="secondary" onClick={() => setIsCreating(false)} className="px-6">Cancel</Button>
-                     <Button onClick={handleCreateProject} loading={loading} className="px-8 shadow-glow">Create Project</Button>
-                  </div>
-               </div>
-            </div>
-         )}
+
+          <ModalShell isOpen={isCreating} onClose={() => setIsCreating(false)} size="xl">
+             <ModalHeader
+                title="Create New Project"
+                subtitle="Commercial bespoke manufacturing & repair intake"
+                icon={<Plus size={20} />}
+                badge="New"
+                onClose={() => setIsCreating(false)}
+             />
+             <div className="p-6 overflow-y-auto custom-scrollbar space-y-8 flex-1">
+                {/* 1. Project Details */}
+                <section className="space-y-4">
+                   <SectionTitle icon={<Layers size={14} />} title="Project Details" />
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Input label="Project Code" value={newProject.code} onChange={e => setNewProject({ ...newProject, code: e.target.value })} placeholder="e.g. DR-24-001" autoFocus required />
+                      <Input label="Piece Name" value={newProject.pieceName} onChange={e => setNewProject({ ...newProject, pieceName: e.target.value })} placeholder="e.g. 3.5ct Solitaire Ring" required />
+                      <Input label="Client Name" value={newProject.clientName} onChange={e => setNewProject({ ...newProject, clientName: e.target.value })} placeholder="e.g. John Doe" />
+                      <Input label="Client Phone" value={newProject.clientPhone} onChange={e => setNewProject({ ...newProject, clientPhone: e.target.value })} placeholder="e.g. 555-0192" />
+                   </div>
+                </section>
+
+                {/* 2. Logistics (Hidden if quick Repair) */}
+                {!selectedServices.includes('REPAIR') && (
+                   <section className="space-y-4">
+                      <SectionTitle icon={<Clock size={14} />} title="Logistics" />
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                         <Input label="Due Date" type="date" value={newProject.dueDate} onChange={e => setNewProject({ ...newProject, dueDate: e.target.value })} />
+                         <div>
+                            <FieldLabel>Priority</FieldLabel>
+                            <select className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border border-theme-border p-3.5 text-sm focus:ring-lux-gold focus:border-lux-gold transition-all" value={newProject.priority} onChange={e => setNewProject({ ...newProject, priority: e.target.value as Priority })}>
+                               <option value={Priority.NORMAL}>Normal</option>
+                               <option value={Priority.RUSH}>Rush</option>
+                               <option value={Priority.LOW}>Low</option>
+                            </select>
+                         </div>
+                         <div>
+                            <FieldLabel>Sales Rep</FieldLabel>
+                            <select className="w-full bg-theme-input-bg text-theme-text-primary rounded-2xl border border-theme-border p-3.5 text-sm focus:ring-lux-gold focus:border-lux-gold transition-all" value={newProject.salesRepId} onChange={e => setNewProject({ ...newProject, salesRepId: e.target.value })}>
+                               <option value="">Select Rep...</option>
+                               {salesReps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                         </div>
+                      </div>
+                   </section>
+                )}
+
+                {/* 3. Services Selection */}
+                <section className="space-y-4">
+                   <SectionTitle icon={<Sparkles size={14} />} title="Services" />
+                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {SERVICE_OPTIONS.map(option => (
+                         <SelectionChip
+                            key={option.code}
+                            disabled={option.disabled}
+                            selected={selectedServices.includes(option.code)}
+                            onClick={() => toggleService(option.code)}
+                            label={PROJECT_SERVICE_LABELS[option.code]}
+                         />
+                      ))}
+                   </div>
+                   {selectedServices.includes('ENGAGEMENT') && (
+                      <div className="p-3.5 bg-blue-500/10 border border-blue-500/25 rounded-2xl text-xs text-blue-400 font-medium">
+                         Engagement uses the standard project foundation. Specialized workflow tools will be available in a future update.
+                      </div>
+                   )}
+                </section>
+
+                {/* 4. Materials OR Repair Details */}
+                {selectedServices.includes('REPAIR') ? (
+                   <section className="space-y-4">
+                      <SectionTitle icon={<Wrench size={14} />} title="Repair Intake Details" />
+                      <div className="bg-theme-input-bg/40 p-5 rounded-3xl border border-theme-border space-y-6">
+                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                            <div>
+                               <div className="text-xs font-bold text-theme-text-primary uppercase tracking-wider font-mono">Stone Specification</div>
+                               <div className="text-[11px] text-theme-text-secondary">Enter sizes and quantities for replacement or setting</div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                               <div className="text-right">
+                                  <div className="text-[10px] text-theme-text-muted uppercase font-bold font-mono">Total Pcs</div>
+                                  <div className="text-lg font-bold text-lux-gold font-mono tabular-nums">{newProject.repairDetails?.totalQuantity || 0}</div>
+                               </div>
+                               <div className="w-44">
+                                  <Input type="date" label="Repair Date" value={newProject.repairDetails?.date || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, date: e.target.value } })} />
+                               </div>
+                            </div>
+                         </div>
+                         <div className="space-y-3">
+                            {newProject.repairDetails?.items.map((item, index) => (
+                               <div key={index} className="flex items-end gap-3 group">
+                                  <div className="flex-1">
+                                     <Input label={index === 0 ? "Stone Size" : ""} placeholder="e.g. 1.5mm" value={item.stoneSize} onChange={e => {
+                                        const newItems = [...newProject.repairDetails!.items];
+                                        newItems[index].stoneSize = e.target.value;
+                                        setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems } });
+                                     }} />
+                                  </div>
+                                  <div className="w-28">
+                                     <Input label={index === 0 ? "Quantity" : ""} type="number" placeholder="0" value={item.quantity?.toString() || ''} onChange={e => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        const newItems = [...newProject.repairDetails!.items];
+                                        newItems[index].quantity = val;
+                                        const total = newItems.reduce((sum, i) => sum + i.quantity, 0);
+                                        setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems, totalQuantity: total } });
+                                     }} />
+                                  </div>
+                                  <div className="pb-1">
+                                     {newProject.repairDetails!.items.length > 1 && (
+                                        <button onClick={() => {
+                                           const newItems = newProject.repairDetails!.items.filter((_, i) => i !== index);
+                                           const total = newItems.reduce((sum, i) => sum + i.quantity, 0);
+                                           setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems, totalQuantity: total } });
+                                        }} className="p-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"><X size={18} /></button>
+                                     )}
+                                  </div>
+                               </div>
+                            ))}
+                            <button onClick={() => {
+                               const newItems = [...newProject.repairDetails!.items, { stoneSize: '', quantity: 0 }];
+                               setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, items: newItems } });
+                            }} className="w-full py-3 rounded-2xl border border-dashed border-theme-border text-theme-text-muted hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-xs font-bold font-mono uppercase tracking-wider transition-all"><Plus size={16} /> Add Another Stone Spec</button>
+                         </div>
+                         <div>
+                            <Textarea label="Repair Report / Instructions" placeholder="Detailed notes for bench jeweler or setter..." value={newProject.repairDetails?.report || ''} onChange={e => setNewProject({ ...newProject, repairDetails: { ...newProject.repairDetails!, report: e.target.value } })} rows={3} />
+                         </div>
+                      </div>
+                   </section>
+                ) : (
+                   <section className="space-y-4">
+                      <SectionTitle icon={<Gem size={14} />} title="Materials & Components" />
+                      <div className="bg-theme-input-bg/40 p-5 rounded-3xl border border-theme-border space-y-6">
+                         {newProject.goldComponents?.map((comp, index) => (
+                            <div key={comp.id} className="pb-6 border-b border-theme-border last:border-0 last:pb-0 relative group space-y-4">
+                               <div className="flex justify-between items-center">
+                                  <div className="flex-1 mr-4">
+                                     <Input label={`Component ${index + 1} Label`} value={comp.label} onChange={e => {
+                                        const newComps = [...(newProject.goldComponents || [])];
+                                        newComps[index].label = e.target.value;
+                                        setNewProject({ ...newProject, goldComponents: newComps });
+                                     }} placeholder="e.g. Main Ring" />
+                                  </div>
+                                  {(newProject.goldComponents?.length || 0) > 1 && (
+                                     <button onClick={() => {
+                                        const newComps = newProject.goldComponents!.filter((_, i) => i !== index);
+                                        setNewProject({ ...newProject, goldComponents: newComps });
+                                     }} className="text-zinc-500 hover:text-red-500 p-2 rounded-xl hover:bg-red-500/10 transition-colors mt-6"><X size={18} /></button>
+                                  )}
+                               </div>
+
+                               <div>
+                                  <FieldLabel>Gold Type</FieldLabel>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                     {[
+                                        { id: 'Yellow', label: 'Yellow Gold' },
+                                        { id: 'White', label: 'White Gold' },
+                                        { id: 'Rose', label: 'Rose Gold' },
+                                        { id: 'Platinum', label: 'Platinum' }
+                                     ].map((type) => (
+                                        <SelectionChip
+                                           key={type.id}
+                                           selected={comp.type === type.id}
+                                           onClick={() => {
+                                              const newComps = [...(newProject.goldComponents || [])];
+                                              newComps[index].type = type.id;
+                                              if (type.id === 'Platinum') { newComps[index].purity = '950'; newComps[index].purityRatioPpm = 0; }
+                                              else if (newComps[index].purity === '950') newComps[index].purity = '14k';
+                                              if (type.id !== 'Platinum') newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000 } as Record<string, number>)[newComps[index].purity] || 0;
+                                              const updates: any = { goldComponents: newComps };
+                                              if (index === 0) { updates.goldType = type.id; updates.goldPurity = newComps[0].purity; }
+                                              setNewProject({ ...newProject, ...updates });
+                                           }}
+                                           label={type.label}
+                                        />
+                                     ))}
+                                  </div>
+                               </div>
+
+                               <div>
+                                  <FieldLabel>Purity</FieldLabel>
+                                  <div className="flex flex-wrap gap-2">
+                                     {(comp.type === 'Platinum' ? ['950'] : ['10k', '14k', '18k', '21k']).map(k => (
+                                        <SelectionChip
+                                           key={k}
+                                           selected={comp.purity === k}
+                                           onClick={() => {
+                                              const newComps = [...(newProject.goldComponents || [])];
+                                              newComps[index].purity = k;
+                                              newComps[index].purityRatioPpm = ({ '10k': 417000, '14k': 585000, '18k': 750000, '21k': 875000, '950': 0 } as Record<string, number>)[k] || 0;
+                                              const updates: any = { goldComponents: newComps };
+                                              if (index === 0) updates.goldPurity = k;
+                                              setNewProject({ ...newProject, ...updates });
+                                           }}
+                                           label={k}
+                                           className="flex-1 min-w-[60px]"
+                                        />
+                                     ))}
+                                  </div>
+                               </div>
+                            </div>
+                         ))}
+                         <button onClick={() => {
+                            const count = (newProject.goldComponents?.length || 0) + 1;
+                            const id = crypto.randomUUID();
+                            setNewProject({ ...newProject, goldComponents: [...(newProject.goldComponents || []), { id, componentId: id, revisionId: id, revisionVersion: 0, state: 'ACTIVE', label: `Component ${count}`, type: 'Yellow', purity: '14k', purityRatioPpm: 585000 }] });
+                         }} className="w-full py-3 rounded-2xl border border-dashed border-theme-border text-theme-text-muted hover:border-lux-gold hover:text-lux-gold flex items-center justify-center gap-2 text-xs font-bold font-mono uppercase tracking-wider transition-all"><Plus size={16} /> Add Another Gold Component</button>
+                      </div>
+                   </section>
+                )}
+
+                {/* 5. Work Details for Non-Repair */}
+                {!selectedServices.includes('REPAIR') && (
+                   <section className="space-y-4">
+                      <SectionTitle icon={<Layers size={14} />} title="Work Details / Instructions" />
+                      <Textarea placeholder="Describe the bespoke piece, setting requirements, and artisan instructions..." value={newProject.workDetails} onChange={e => setNewProject({ ...newProject, workDetails: e.target.value })} rows={3} />
+                   </section>
+                )}
+
+                {/* 6. Assign Team */}
+                <section className="space-y-4">
+                   <SectionTitle icon={<UserPlus size={14} />} title="Assign Team (Optional)" />
+                   <div className="flex flex-wrap gap-2.5">
+                      {setters.map(u => (
+                         <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => setNewAssignees(prev => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl border transition-all active:scale-[0.98] ${
+                               newAssignees.includes(u.id)
+                                  ? 'bg-lux-gold/15 border-lux-gold text-lux-gold shadow-[0_0_15px_rgba(245,194,73,0.2)]'
+                                  : 'bg-theme-input-bg border-theme-border text-theme-text-muted hover:text-theme-text-primary hover:border-lux-gold/40'
+                            }`}
+                         >
+                            <SetterAvatar name={u.name} color={u.setterColor} size="sm" />
+                            <span className="text-xs font-bold">{u.name}</span>
+                            <Badge color={u.role === Role.DESIGNER ? 'blue' : u.role === Role.MANAGER ? 'amber' : 'gray'}>{u.role}</Badge>
+                         </button>
+                      ))}
+                   </div>
+                </section>
+             </div>
+             <div className="px-6 py-4.5 border-t border-theme-border bg-theme-modal-bg/95 backdrop-blur-md flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2 text-xs text-theme-text-secondary font-mono">
+                   <span>Service: <strong className="text-lux-gold font-bold">{PROJECT_SERVICE_LABELS[selectedServices[0] || 'CUSTOM_MAKE']}</strong></span>
+                </div>
+                <div className="flex items-center gap-3">
+                   <Button variant="secondary" size="sm" onClick={() => setIsCreating(false)} className="px-5">Cancel</Button>
+                   <Button size="sm" onClick={handleCreateProject} loading={loading} className="px-7 shadow-[0_0_25px_rgba(245,194,73,0.35)]">Create Project</Button>
+                </div>
+             </div>
+          </ModalShell>
 
          {fulfillReq && (
             <IssueDiamondsModal
