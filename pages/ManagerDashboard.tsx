@@ -10,7 +10,6 @@ import { GoldPriceCard } from '../components/GoldPriceCard';
 import { RepairProjectModal } from '../components/RepairProjectModal';
 import { QuickRepairModal } from '../components/QuickRepairModal';
 import { IssueDiamondsModal } from '../components/IssueDiamondsModal';
-import { TodayAtAGlance } from '../components/TodayAtAGlance';
 import { createCanonicalService, PROJECT_SERVICE_LABELS } from '../services/projectServiceModel';
 import { ReportFilterBar, ReportMessage, ReportPagination } from '../components/reports/ReportFilterBar';
 import { ReportFilterDefinition, ReportFilterState, newReportFilterState, toPhase7Request } from '../services/reportFilters';
@@ -595,15 +594,6 @@ const ManagerDashboard: React.FC<{ currentUser: any }> = ({ currentUser }) => {
                </div>
             </div>
          </div>
-
-         {/* Today at a Glance - Luxury Morning Overview */}
-         <TodayAtAGlance
-            currentUser={currentUser}
-            requests={requests}
-            returnBags={returnBags}
-            onRequestClick={requests.length > 0 ? () => setShowAllRequests(true) : undefined}
-            onReturnClick={returnBags.length > 0 ? () => setShowAllReturns(true) : undefined}
-         />
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 items-start">
             {/* ─── REQUESTS CARD ─── */}
